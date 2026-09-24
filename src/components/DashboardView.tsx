@@ -16,7 +16,10 @@ import {
   ChevronRight,
   Sparkles,
   Building2,
-  Plus
+  Plus,
+  Droplet,
+  Wrench,
+  Package
 } from 'lucide-react';
 import { DailyReport, Equipment, UserRole, Client } from '../types';
 import { storageService } from '../services/storageService';
@@ -28,6 +31,7 @@ interface DashboardViewProps {
   onOpenPdfReport: (reportId: string) => void;
   onOpenWizard?: () => void;
   onNavigateReports?: () => void;
+  onNavigateLogistics?: () => void;
   onApproveReport: (reportId: string) => void;
   userRole: UserRole;
   clients: Client[];
@@ -42,6 +46,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onOpenPdfReport,
   onOpenWizard,
   onNavigateReports,
+  onNavigateLogistics,
   onApproveReport,
   userRole,
   clients,
@@ -53,6 +58,41 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const isFiltered = selectedClientId !== 'ALL';
   const activeClient = clients.find((c) => c.id === selectedClientId);
   const fuelTrends = storageService.getWeeklyFuelTrends(selectedClientId);
+
+  // Real-time Logistics & Inventory Snapshot for Director
+  const inventory = storageService.getInventory();
+  const logisticsTx = storageService.getLogisticsTransactions(selectedClientId);
+
+  // 1. BBM (Solar B35)
+  const fuelItem = inventory.find((i) => i.category === 'BBM') || { 
+    id: 'inv-1', code: 'BBM-SOL', name: 'Solar Industri B35', category: 'BBM' as const, stockQuantity: 4734, unit: 'Liter', minThreshold: 1000 
+  };
+  const tankCapacityLiters = 10000;
+  const fuelTankPercent = Math.min(100, Number(((fuelItem.stockQuantity / tankCapacityLiters) * 100).toFixed(1)));
+  const pendingFuelInflow = logisticsTx
+    .filter((t) => t.category === 'BBM' && t.type === 'in' && t.approvalStatus === 'pending')
+    .reduce((acc, t) => acc + t.quantity, 0);
+
+  // 2. Pelumas & Oli (Mesin, Hidrolik, Transmisi, Grease)
+  const oliItems = inventory.filter((i) => i.category === 'Oli');
+  const totalOliLiters = oliItems.reduce((acc, i) => acc + i.stockQuantity, 0);
+  const oliEng = inventory.find((i) => i.code === 'OLI-ENG')?.stockQuantity || 180;
+  const oliHyd = inventory.find((i) => i.code === 'OLI-HYD')?.stockQuantity || 140;
+  const oliTrm = inventory.find((i) => i.code === 'OLI-TRM')?.stockQuantity || 90;
+  const greaseItem = inventory.find((i) => i.category === 'Grease') || { 
+    id: 'inv-5', code: 'GRS-CH', name: 'Grease Chassis EP-2', category: 'Grease' as const, stockQuantity: 42, unit: 'Kg', minThreshold: 15 
+  };
+  const pendingLubricantInflow = logisticsTx
+    .filter((t) => (t.category === 'Oli' || t.category === 'Grease') && t.type === 'in' && t.approvalStatus === 'pending')
+    .reduce((acc, t) => acc + t.quantity, 0);
+
+  // 3. Spare Part Kritis
+  const sparePartItems = inventory.filter((i) => i.category === 'Spare Part');
+  const totalSpareParts = sparePartItems.reduce((acc, i) => acc + i.stockQuantity, 0);
+  const lowStockParts = sparePartItems.filter((i) => i.stockQuantity <= i.minThreshold);
+
+  // Total pending inbound transactions requiring Director approval
+  const totalPendingInbound = logisticsTx.filter((t) => t.type === 'in' && t.approvalStatus === 'pending').length;
 
   // Filter reports to match client selection
   const displayedReports = isFiltered 
@@ -213,6 +253,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <span>Rekap Laporan & Otorisasi</span>
               </button>
             )}
+
+            {onNavigateLogistics && (
+              <button
+                onClick={onNavigateLogistics}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-xl text-xs border border-slate-700 transition cursor-pointer"
+              >
+                <Fuel className="w-4 h-4 text-amber-400" />
+                <span>Inventaris Logistik & Stok</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -305,238 +355,253 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* MULTI-CLIENT PORTFOLIO CARDS (DISPLAYED WHEN "ALL CLIENTS" IS SELECTED) */}
-      {!isFiltered && (
-        <div className="bg-white rounded-2xl p-5 shadow-lg border border-slate-200 space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-black text-slate-900 uppercase tracking-wide flex items-center gap-2">
-                <Building2 className="w-4 h-4 text-amber-500" />
-                Daftar Proyek Klien Aktif (Perbandingan Capaian Ha)
-              </h3>
-              <p className="text-xs text-slate-500">
-                Memantau seluruh proyek klien dalam satu layar pengawasan terpadu PT. SURYALAND GROUP.
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {clients.map((c) => {
-              const pct = c.totalAreaHa > 0 ? ((c.clearedAreaHa / c.totalAreaHa) * 100).toFixed(1) : '0';
-              return (
-                <div
-                  key={c.id}
-                  onClick={() => setSelectedClientId(c.id)}
-                  className="p-4 rounded-xl border border-slate-200 hover:border-amber-400 bg-slate-50/70 hover:bg-amber-50/30 transition cursor-pointer flex flex-col justify-between space-y-3"
-                >
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-black text-sm text-slate-900">{c.name}</span>
-                      <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                        {c.status}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-600 line-clamp-1 font-medium">{c.fullCompanyName}</p>
-                    <p className="text-[11px] text-slate-400 font-mono mt-0.5">SPK: {c.contractNumber}</p>
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between items-baseline text-xs mb-1">
-                      <span className="text-slate-500">Capaian:</span>
-                      <strong className="text-slate-900 font-mono">{c.clearedAreaHa} / {c.totalAreaHa} Ha ({pct}%)</strong>
-                    </div>
-                    <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
-                      <div
-                        className="bg-amber-500 h-full rounded-full"
-                        style={{ width: `${Math.min(100, parseFloat(pct))}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-[11px] text-amber-700 font-bold">
-                    <span>Lihat Detail Dashboard</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* GRAFIK TREN RASIO KONSUMSI BBM (LITER/HA) MINGGUAN DENGAN RECHARTS */}
-      <WeeklyFuelRatioChart
-        trends={fuelTrends}
-        selectedClientId={selectedClientId}
-        clientName={activeClient?.name}
-      />
-
-      {/* PROMINENT FUEL EFFICIENCY ALERT */}
-      {alertEquipments.length > 0 && (
-        <div className="bg-rose-50 border-2 border-rose-300 rounded-2xl p-4 sm:p-5 shadow-md">
+      {/* PUSAT TINDAKAN PERHATIAN DIREKTUR DAN SISTEM DETEKSI */}
+      <div className="bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 rounded-2xl p-5 shadow-xl border border-amber-400">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-start gap-3.5">
-            <div className="p-2 bg-rose-600 text-white rounded-xl shadow shrink-0">
-              <AlertTriangle className="w-6 h-6" />
+            <div className="p-2.5 bg-slate-950 text-amber-400 rounded-xl font-black shadow shrink-0">
+              <ShieldCheck className="w-6 h-6" />
             </div>
-            <div className="flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-sm sm:text-base font-black text-rose-950 uppercase tracking-wide">
-                  Sistem Deteksi Efisiensi BBM: Alert Konsumsi Di Atas Batas Standar
-                </h3>
-                <span className="bg-rose-600 text-white text-[10px] font-black uppercase px-2 py-0.5 rounded">
-                  Perhatian Direktur
+            <div>
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-slate-950 text-amber-400">
+                  Pusat Tindakan & Eksekutif
                 </span>
+                <h3 className="text-base font-black text-slate-950 uppercase tracking-tight">
+                  Pusat Tindakan Perhatian Direktur dan Sistem Deteksi
+                </h3>
               </div>
-              <p className="text-xs text-rose-800 mt-1">
-                Terdeteksi unit alat berat yang rasio konsumsi solarnya melebihi standar toleransi proyek:
+              <p className="text-xs text-slate-900 font-medium">
+                Pusat pengawasan otorisasi dan persetujuan eksekutif untuk laporan kerja lapangan dan penerimaan pasokan logistik.
               </p>
 
-              <div className="mt-2.5 space-y-1.5">
-                {alertEquipments.map((alert, idx) => (
-                  <div
-                    key={idx}
-                    className="p-2.5 bg-white border border-rose-200 rounded-lg text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2"
-                  >
-                    <div className="flex items-center gap-2 font-mono">
-                      <strong className="text-rose-700 bg-rose-100 px-2 py-0.5 rounded font-bold">
-                        {alert.equipmentId}
-                      </strong>
-                      {alert.clientName && (
-                        <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[11px] font-bold">
-                          Klien: {alert.clientName}
-                        </span>
-                      )}
-                      <span className="font-bold text-slate-900">
-                        {alert.fuelRatio.toFixed(1)} Liter/HM
-                      </span>
-                      <span className="text-slate-500">
-                        (&gt; Batas Standar {alert.standardLimit.toFixed(1)} L/HM)
-                      </span>
-                    </div>
-                    <div className="text-slate-600 text-[11px] italic">
-                      {alert.note}
-                    </div>
-                  </div>
-                ))}
+              {/* Status Points */}
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                {totalPendingInbound > 0 ? (
+                  <span className="inline-flex items-center gap-1.5 bg-slate-950 text-amber-300 px-3 py-1.5 rounded-xl font-bold">
+                    <Clock className="w-3.5 h-3.5 text-amber-400" />
+                    <span>{totalPendingInbound} Pengiriman Stok Masuk Menunggu Approval Direktur</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 bg-slate-950/80 text-emerald-300 px-3 py-1.5 rounded-xl font-bold">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Seluruh Pengiriman Stok Masuk Telah Disetujui</span>
+                  </span>
+                )}
+
+                {displayedReports.filter((r) => r.status !== 'Disetujui Direktur').length > 0 ? (
+                  <span className="inline-flex items-center gap-1.5 bg-slate-950 text-amber-300 px-3 py-1.5 rounded-xl font-bold">
+                    <FileText className="w-3.5 h-3.5 text-amber-400" />
+                    <span>{displayedReports.filter((r) => r.status !== 'Disetujui Direktur').length} Laporan Harian Menunggu Persetujuan</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 bg-slate-950/80 text-emerald-300 px-3 py-1.5 rounded-xl font-bold">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Seluruh Laporan Harian Telah Disetujui</span>
+                  </span>
+                )}
               </div>
             </div>
           </div>
-        </div>
-      )}
 
-      {/* DOWNTIME ANALYSIS & FUEL EFFICIENCY COMPARISON */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Downtime Breakdown Analysis */}
-        <div className="bg-white rounded-2xl p-5 shadow-lg border border-slate-200 space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div>
-              <h3 className="text-sm font-black text-slate-900 uppercase tracking-wide flex items-center gap-2">
-                <Clock className="w-4 h-4 text-rose-500" />
-                Analisis Jam Mati (Downtime) Cuaca vs Kerusakan
-              </h3>
-              <p className="text-xs text-slate-500">
-                Memastikan pertanggungjawaban jelas antara faktor alam dan kendala alat berat.
-              </p>
-            </div>
-          </div>
+          <div className="flex flex-wrap items-center gap-2 self-start lg:self-center shrink-0">
+            {totalPendingInbound > 0 && onNavigateLogistics && (
+              <button
+                onClick={onNavigateLogistics}
+                className="px-4 py-2 bg-slate-950 hover:bg-slate-900 text-amber-400 font-black rounded-xl text-xs shadow-md transition cursor-pointer"
+              >
+                Verifikasi Otorisasi Sekarang →
+              </button>
+            )}
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="p-4 rounded-xl bg-blue-50/80 border border-blue-200">
-              <div className="text-xs font-bold text-blue-900 uppercase">Cuaca Buruk / Hujan</div>
-              <div className="text-2xl font-black text-blue-800 my-1 font-mono">
-                {metrics.totalWeatherDowntime.toFixed(1)} <span className="text-xs font-bold text-blue-600">Jam</span>
-              </div>
-              <p className="text-[11px] text-blue-700">
-                Pekerjaan dihentikan karena hujan lebat / gambut basah rawan amblas.
-              </p>
-            </div>
-
-            <div className="p-4 rounded-xl bg-rose-50/80 border border-rose-200">
-              <div className="text-xs font-bold text-rose-900 uppercase">Kerusakan Alat (Breakdown)</div>
-              <div className="text-2xl font-black text-rose-800 my-1 font-mono">
-                {metrics.totalBreakdownDowntime.toFixed(1)} <span className="text-xs font-bold text-rose-600">Jam</span>
-              </div>
-              <p className="text-[11px] text-rose-700">
-                Insiden mekanis (selang hidrolik pecah, perbaikan track, dll).
-              </p>
-            </div>
-          </div>
-
-          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1">
-            <div className="font-bold text-slate-800 flex items-center justify-between">
-              <span>Rasio Downtime terhadap Total Waktu:</span>
-              <span className="font-mono text-slate-900 font-black">
-                {metrics.totalDowntime > 0
-                  ? ((metrics.totalDowntime / (metrics.totalEffectiveHours + metrics.totalDowntime)) * 100).toFixed(1)
-                  : 0}%
-              </span>
-            </div>
-            <p className="text-slate-500 text-[11px]">
-              Toleransi target operasional PT. SURYALAND GROUP adalah downtime kerusakan &lt; 5%.
-            </p>
-          </div>
-        </div>
-
-        {/* Efisiensi BBM Unit Alat Berat */}
-        <div className="bg-white rounded-2xl p-5 shadow-lg border border-slate-200 space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div>
-              <h3 className="text-sm font-black text-slate-900 uppercase tracking-wide flex items-center gap-2">
-                <Fuel className="w-4 h-4 text-amber-500" />
-                Monitoring Konsumsi BBM Alat Berat (Liter / HM)
-              </h3>
-              <p className="text-xs text-slate-500">
-                Deteksi dini potensi kebocoran solar atau ketidakefisienan unit.
-              </p>
-            </div>
-          </div>
-
-          <div className="space-y-2.5">
-            {fuelComparisons.slice(0, 4).map((fc) => {
-              const isOver = fc.isAlert || (fc.latestRatio > fc.standardLimit);
-              return (
-                <div
-                  key={fc.equipment.id}
-                  className="p-3 rounded-xl border border-slate-200 bg-slate-50/60 flex items-center justify-between text-xs"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-slate-200 flex items-center justify-center font-bold text-slate-800 shrink-0 font-mono text-[11px]">
-                      {fc.equipment.id.split('-')[0]}
-                    </div>
-                    <div>
-                      <div className="font-bold text-slate-900 flex items-center gap-1.5">
-                        <span>{fc.equipment.name}</span>
-                        {isOver && (
-                          <span className="text-[10px] bg-rose-100 text-rose-700 px-1.5 py-0.2 rounded font-black">
-                            OVER LIMIT
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[11px] text-slate-500">
-                        Operator: {fc.equipment.operatorName} • Total HM: {fc.equipment.currentHm}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="text-right">
-                    <div className={`font-mono font-bold text-sm ${isOver ? 'text-rose-600' : 'text-slate-900'}`}>
-                      {fc.latestRatio.toFixed(1)} <span className="text-xs font-normal text-slate-500">L/HM</span>
-                    </div>
-                    <div className="text-[10px] text-slate-500">
-                      Standar: {fc.standardLimit.toFixed(1)} L/HM
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+            {onNavigateReports && (
+              <button
+                onClick={onNavigateReports}
+                className="px-4 py-2 bg-slate-900/90 hover:bg-slate-900 text-white font-bold rounded-xl text-xs shadow-md transition cursor-pointer"
+              >
+                Otorisasi Laporan Harian →
+              </button>
+            )}
           </div>
         </div>
       </div>
 
-      {/* TABEL LAPORAN HARIAN TERBARU */}
+      {/* SISTEM DETEKSI EFISIENSI BBM: ALERT KONSUMSI DI ATAS BATAS STANDAR */}
+      <div className={`rounded-2xl p-4 sm:p-5 shadow-md border-2 transition ${
+        alertEquipments.length > 0
+          ? 'bg-rose-50 border-rose-300'
+          : 'bg-emerald-50/70 border-emerald-300'
+      }`}>
+        <div className="flex items-start gap-3.5">
+          <div className={`p-2 rounded-xl shadow shrink-0 ${
+            alertEquipments.length > 0 ? 'bg-rose-600 text-white' : 'bg-emerald-600 text-white'
+          }`}>
+            {alertEquipments.length > 0 ? (
+              <AlertTriangle className="w-6 h-6" />
+            ) : (
+              <CheckCircle2 className="w-6 h-6" />
+            )}
+          </div>
+          <div className="flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${
+                alertEquipments.length > 0 ? 'bg-rose-600 text-white' : 'bg-emerald-600 text-white'
+              }`}>
+                Sistem Deteksi
+              </span>
+              <h3 className={`text-sm sm:text-base font-black uppercase tracking-wide ${
+                alertEquipments.length > 0 ? 'text-rose-950' : 'text-emerald-950'
+              }`}>
+                Sistem Deteksi Efisiensi BBM: Alert Konsumsi Di Atas Batas Standar
+              </h3>
+              {alertEquipments.length > 0 && (
+                <span className="bg-rose-600 text-white text-[10px] font-black uppercase px-2 py-0.5 rounded">
+                  {alertEquipments.length} Unit Melebihi Batas
+                </span>
+              )}
+            </div>
+
+            {alertEquipments.length > 0 ? (
+              <>
+                <p className="text-xs text-rose-800 mt-1">
+                  Terdeteksi unit alat berat yang rasio konsumsi solarnya melebihi standar toleransi proyek:
+                </p>
+
+                <div className="mt-2.5 space-y-1.5">
+                  {alertEquipments.map((alert, idx) => (
+                    <div
+                      key={idx}
+                      className="p-2.5 bg-white border border-rose-200 rounded-lg text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                    >
+                      <div className="flex items-center gap-2 font-mono">
+                        <strong className="text-rose-700 bg-rose-100 px-2 py-0.5 rounded font-bold">
+                          {alert.equipmentId}
+                        </strong>
+                        {alert.clientName && (
+                          <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[11px] font-bold">
+                            Klien: {alert.clientName}
+                          </span>
+                        )}
+                        <span className="font-bold text-slate-900">
+                          {alert.fuelRatio.toFixed(1)} Liter/HM
+                        </span>
+                        <span className="text-slate-500">
+                          (&gt; Batas Standar {alert.standardLimit.toFixed(1)} L/HM)
+                        </span>
+                      </div>
+                      <div className="text-slate-600 text-[11px] italic">
+                        {alert.note}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="text-xs text-emerald-800 mt-1">
+                Kondisi Aman: Seluruh unit alat berat beroperasi secara optimal dan berada dalam batas toleransi standar konsumsi BBM (L/HM).
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 1. DAFTAR PROYEK KLIEN AKTIF (PERBANDINGAN CAPAIAN HA) */}
+      <div className="bg-white rounded-2xl p-5 shadow-lg border border-slate-200 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-500 text-slate-950">
+                1. Portofolio Proyek
+              </span>
+              <span className="text-xs text-slate-500 font-semibold">
+                Capaian Luasan Realisasi Fisik (Ha)
+              </span>
+            </div>
+            <h3 className="text-base font-black text-slate-900 uppercase tracking-wide flex items-center gap-2">
+              <Building2 className="w-5 h-5 text-amber-500" />
+              Daftar Proyek Klien Aktif (Perbandingan Capaian Ha)
+            </h3>
+            <p className="text-xs text-slate-500">
+              Memantau seluruh proyek klien dalam satu layar pengawasan terpadu PT. SURYALAND GROUP. Klik kartu klien untuk memfilter analisis.
+            </p>
+          </div>
+          {isFiltered && (
+            <button
+              onClick={() => setSelectedClientId('ALL')}
+              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition cursor-pointer self-start sm:self-auto border border-slate-300"
+            >
+              Tampilkan Semua Klien (Reset Filter)
+            </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {clients.map((c) => {
+            const pct = c.totalAreaHa > 0 ? ((c.clearedAreaHa / c.totalAreaHa) * 100).toFixed(1) : '0';
+            const isSelected = selectedClientId === c.id;
+            return (
+              <div
+                key={c.id}
+                onClick={() => setSelectedClientId(isSelected ? 'ALL' : c.id)}
+                className={`p-4 rounded-xl border transition cursor-pointer flex flex-col justify-between space-y-3 ${
+                  isSelected 
+                    ? 'border-amber-500 bg-amber-50/60 ring-2 ring-amber-400/50 shadow-md' 
+                    : 'border-slate-200 hover:border-amber-400 bg-slate-50/70 hover:bg-amber-50/30 shadow-xs'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-black text-sm text-slate-900 flex items-center gap-1.5">
+                      {c.name}
+                      {isSelected && (
+                        <span className="text-[10px] font-bold bg-amber-500 text-slate-950 px-1.5 py-0.2 rounded">
+                          Aktif
+                        </span>
+                      )}
+                    </span>
+                    <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                      {c.status}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600 line-clamp-1 font-medium">{c.fullCompanyName}</p>
+                  <p className="text-[11px] text-slate-400 font-mono mt-0.5">SPK: {c.contractNumber}</p>
+                </div>
+
+                <div>
+                  <div className="flex justify-between items-baseline text-xs mb-1">
+                    <span className="text-slate-500">Capaian:</span>
+                    <strong className="text-slate-900 font-mono">{c.clearedAreaHa} / {c.totalAreaHa} Ha ({pct}%)</strong>
+                  </div>
+                  <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                    <div
+                      className="bg-amber-500 h-full rounded-full transition-all duration-500"
+                      style={{ width: `${Math.min(100, parseFloat(pct))}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-[11px] text-amber-700 font-bold">
+                  <span>{isSelected ? 'Klik untuk batalkan filter' : 'Pilih & Filter Klien Ini'}</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 2. REKAPITULASI LAPORAN HARIAN TERBARU (MULTI-KLIEN) */}
       <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
         <div className="p-4 sm:p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-500 text-slate-950">
+                2. Rekapitulasi Dokumen
+              </span>
+              <span className="text-xs text-slate-500 font-semibold">
+                Validasi Mandor & Geotag Watermark
+              </span>
+            </div>
             <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
               <FileText className="w-5 h-5 text-amber-500" />
               Rekapitulasi Laporan Harian Terbaru {isFiltered && activeClient ? `(${activeClient.name})` : '(Multi-Klien)'}
@@ -547,9 +612,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-slate-500 font-medium">
               Total {displayedReports.length} Dokumen
             </span>
+            {onNavigateReports && (
+              <button
+                onClick={onNavigateReports}
+                className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-amber-400 text-xs font-bold rounded-xl transition cursor-pointer"
+              >
+                Lihat Rekap Lengkap →
+              </button>
+            )}
           </div>
         </div>
 
@@ -570,7 +643,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {displayedReports.map((report) => {
+              {displayedReports.slice(0, 5).map((report) => {
                 const totalDwWeather = report.equipmentWorkLogs.reduce((a, b) => a + b.downtimeWeatherHours, 0);
                 const totalDwBreakdown = report.equipmentWorkLogs.reduce((a, b) => a + b.downtimeBreakdownHours, 0);
                 const totalEffHm = report.equipmentWorkLogs.reduce((a, b) => a + b.effectiveWorkHours, 0);
@@ -652,6 +725,385 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               })}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* 3 & 4. DOWNTIME ANALYSIS & FUEL EFFICIENCY COMPARISON */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* 3. Analisis Jam Mati (Downtime) Cuaca vs Kerusakan */}
+        <div className="bg-white rounded-2xl p-5 shadow-lg border border-slate-200 space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-rose-100 text-rose-800 border border-rose-200">
+                  3. Analisis Jam Mati
+                </span>
+              </div>
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-wide flex items-center gap-2">
+                <Clock className="w-4 h-4 text-rose-500" />
+                Analisis Jam Mati (Downtime) Cuaca vs Kerusakan
+              </h3>
+              <p className="text-xs text-slate-500">
+                Memastikan pertanggungjawaban jelas antara faktor alam dan kendala alat berat.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="p-4 rounded-xl bg-blue-50/80 border border-blue-200">
+              <div className="text-xs font-bold text-blue-900 uppercase">Cuaca Buruk / Hujan</div>
+              <div className="text-2xl font-black text-blue-800 my-1 font-mono">
+                {metrics.totalWeatherDowntime.toFixed(1)} <span className="text-xs font-bold text-blue-600">Jam</span>
+              </div>
+              <p className="text-[11px] text-blue-700">
+                Pekerjaan dihentikan karena hujan lebat / gambut basah rawan amblas.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-rose-50/80 border border-rose-200">
+              <div className="text-xs font-bold text-rose-900 uppercase">Kerusakan Alat (Breakdown)</div>
+              <div className="text-2xl font-black text-rose-800 my-1 font-mono">
+                {metrics.totalBreakdownDowntime.toFixed(1)} <span className="text-xs font-bold text-rose-600">Jam</span>
+              </div>
+              <p className="text-[11px] text-rose-700">
+                Insiden mekanis (selang hidrolik pecah, perbaikan track, dll).
+              </p>
+            </div>
+          </div>
+
+          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1">
+            <div className="font-bold text-slate-800 flex items-center justify-between">
+              <span>Rasio Downtime terhadap Total Waktu:</span>
+              <span className="font-mono text-slate-900 font-black">
+                {metrics.totalDowntime > 0
+                  ? ((metrics.totalDowntime / (metrics.totalEffectiveHours + metrics.totalDowntime)) * 100).toFixed(1)
+                  : 0}%
+              </span>
+            </div>
+            <p className="text-slate-500 text-[11px]">
+              Toleransi target operasional PT. SURYALAND GROUP adalah downtime kerusakan &lt; 5%.
+            </p>
+          </div>
+        </div>
+
+        {/* 4. Monitoring Konsumsi BBM Alat Berat (Liter / HM) */}
+        <div className="bg-white rounded-2xl p-5 shadow-lg border border-slate-200 space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200">
+                  4. Rasio Unit
+                </span>
+              </div>
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-wide flex items-center gap-2">
+                <Fuel className="w-4 h-4 text-amber-500" />
+                Monitoring Konsumsi BBM Alat Berat (Liter / HM)
+              </h3>
+              <p className="text-xs text-slate-500">
+                Deteksi dini potensi kebocoran solar atau ketidakefisienan unit.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-2.5">
+            {fuelComparisons.slice(0, 4).map((fc) => {
+              const isOver = fc.isAlert || (fc.latestRatio > fc.standardLimit);
+              return (
+                <div
+                  key={fc.equipment.id}
+                  className="p-3 rounded-xl border border-slate-200 bg-slate-50/60 flex items-center justify-between text-xs"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-slate-200 flex items-center justify-center font-bold text-slate-800 shrink-0 font-mono text-[11px]">
+                      {fc.equipment.id.split('-')[0]}
+                    </div>
+                    <div>
+                      <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                        <span>{fc.equipment.name}</span>
+                        {isOver && (
+                          <span className="text-[10px] bg-rose-100 text-rose-700 px-1.5 py-0.2 rounded font-black">
+                            OVER LIMIT
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-slate-500">
+                        Operator: {fc.equipment.operatorName} • Total HM: {fc.equipment.currentHm}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-right">
+                    <div className={`font-mono font-bold text-sm ${isOver ? 'text-rose-600' : 'text-slate-900'}`}>
+                      {fc.latestRatio.toFixed(1)} <span className="text-xs font-normal text-slate-500">L/HM</span>
+                    </div>
+                    <div className="text-[10px] text-slate-500">
+                      Standar: {fc.standardLimit.toFixed(1)} L/HM
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* 5. RINGKASAN KONTROL BAHAN BAKAR (WEEKLY FUEL TRENDS CHART) */}
+      <WeeklyFuelRatioChart
+        trends={fuelTrends}
+        selectedClientId={selectedClientId}
+        clientName={activeClient?.name}
+      />
+
+      {/* RINGKASAN INVENTARIS LOGISTIK DIREKTUR */}
+      <div className="bg-white rounded-2xl p-5 shadow-lg border border-slate-200 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="px-2.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-500 text-slate-950">
+                Ringkasan Inventaris Logistik Direktur
+              </span>
+              <span className="text-xs font-semibold text-slate-500">
+                Pemantauan Cepat Ketersediaan Sumber Daya Lapangan
+              </span>
+            </div>
+            <h3 className="text-base font-black text-slate-900 uppercase tracking-wide flex items-center gap-2">
+              <Layers className="w-5 h-5 text-amber-500" />
+              Status Stok Utama Logistik (BBM, Pelumas & Spare Part)
+            </h3>
+            <p className="text-xs text-slate-500">
+              Menampilkan volume stok fisik aktif di basecamp untuk menjamin kelancaran operasional armada alat berat tanpa hambatan supply.
+            </p>
+          </div>
+
+          {onNavigateLogistics && (
+            <button
+              onClick={onNavigateLogistics}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-amber-400 font-bold rounded-xl text-xs transition cursor-pointer self-start sm:self-auto shrink-0 shadow-xs"
+            >
+              <span>Kelola Logistik Lapangan</span>
+              <ArrowUpRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        {/* 3 KARTU STATUS VISUAL UTAMA */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          
+          {/* KARTU 1: BBM SOLAR INDUSTRI B35 */}
+          <div className="bg-gradient-to-br from-amber-50/60 via-white to-amber-50/20 border-2 border-amber-300/80 rounded-2xl p-4.5 flex flex-col justify-between space-y-3.5 shadow-xs hover:border-amber-400 transition">
+            <div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-bold shadow-xs">
+                    <Fuel className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-black uppercase text-amber-950 block tracking-wide">
+                      Bahan Bakar Minyak
+                    </span>
+                    <h4 className="text-xs font-bold text-slate-700">Solar Industri B35</h4>
+                  </div>
+                </div>
+
+                <span
+                  className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${
+                    fuelItem.stockQuantity > 2000
+                      ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                      : fuelItem.stockQuantity > 1000
+                      ? 'bg-amber-100 text-amber-800 border-amber-300'
+                      : 'bg-rose-100 text-rose-800 border-rose-300'
+                  }`}
+                >
+                  {fuelItem.stockQuantity > 2000 ? 'Stok Aman' : fuelItem.stockQuantity > 1000 ? 'Waspada' : 'Kritis'}
+                </span>
+              </div>
+
+              {/* Big Metric Display */}
+              <div className="mt-3">
+                <div className="text-3xl font-black text-slate-950 font-mono tracking-tight">
+                  {fuelItem.stockQuantity.toLocaleString()}{' '}
+                  <span className="text-sm font-bold text-slate-500">Liter</span>
+                </div>
+                <div className="text-xs font-semibold text-slate-600 mt-0.5 flex items-center gap-1.5">
+                  <span className="text-amber-800 font-bold font-mono">{fuelTankPercent}%</span>
+                  <span>dari kapasitas tangki basecamp (10.000 L)</span>
+                </div>
+              </div>
+
+              {/* Visual Tank Gauge Bar */}
+              <div className="mt-2.5 space-y-1">
+                <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden p-0.5 border border-slate-300">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      fuelTankPercent >= 25 ? 'bg-amber-500' : 'bg-rose-500'
+                    }`}
+                    style={{ width: `${fuelTankPercent}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                  <span>0 L</span>
+                  <span className="text-amber-900 font-bold">Min: 1.000 L</span>
+                  <span>10.000 L</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Details Footer */}
+            <div className="pt-2 border-t border-amber-200/60 text-[11px] space-y-1">
+              <div className="flex justify-between items-center text-slate-600">
+                <span>Estimasi Ketahanan:</span>
+                <strong className="font-mono text-slate-900 font-bold">~12 - 14 Hari Kerja</strong>
+              </div>
+              <div className="flex justify-between items-center text-slate-600">
+                <span>Penerimaan Pending:</span>
+                {pendingFuelInflow > 0 ? (
+                  <strong className="font-mono text-rose-700 font-bold">
+                    +{pendingFuelInflow.toLocaleString()} L (Menunggu Persetujuan)
+                  </strong>
+                ) : (
+                  <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" /> Seluruh DO Sah
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* KARTU 2: PELUMAS & OLI UNIT (MESIN, HIDROLIK, TRANSMISI, GREASE) */}
+          <div className="bg-gradient-to-br from-blue-50/60 via-white to-blue-50/20 border-2 border-blue-300/80 rounded-2xl p-4.5 flex flex-col justify-between space-y-3.5 shadow-xs hover:border-blue-400 transition">
+            <div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold shadow-xs">
+                    <Droplet className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-black uppercase text-blue-950 block tracking-wide">
+                      Pelumas & Gemuk
+                    </span>
+                    <h4 className="text-xs font-bold text-slate-700">Oli Drum & Grease EP-2</h4>
+                  </div>
+                </div>
+
+                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full border bg-emerald-100 text-emerald-800 border-emerald-300">
+                  Tersedia Lengkap
+                </span>
+              </div>
+
+              {/* Big Metric Display */}
+              <div className="mt-3">
+                <div className="text-3xl font-black text-slate-950 font-mono tracking-tight">
+                  {totalOliLiters.toLocaleString()}{' '}
+                  <span className="text-sm font-bold text-slate-500">Liter Oli</span>
+                </div>
+                <div className="text-xs font-semibold text-slate-600 mt-0.5 flex items-center gap-1.5">
+                  <span className="text-emerald-700 font-bold font-mono">+{greaseItem.stockQuantity} Kg</span>
+                  <span>Grease Chassis High Temp</span>
+                </div>
+              </div>
+
+              {/* Rincian Stok Jenis Oli */}
+              <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+                <div className="bg-white p-2 rounded-lg border border-blue-200">
+                  <span className="text-[10px] text-slate-500 block">Oli Mesin 15W-40</span>
+                  <strong className="font-mono font-bold text-slate-900">{oliEng} Liter</strong>
+                </div>
+                <div className="bg-white p-2 rounded-lg border border-blue-200">
+                  <span className="text-[10px] text-slate-500 block">Oli Hidrolik 68</span>
+                  <strong className="font-mono font-bold text-slate-900">{oliHyd} Liter</strong>
+                </div>
+                <div className="bg-white p-2 rounded-lg border border-blue-200">
+                  <span className="text-[10px] text-slate-500 block">Oli Transmisi 90</span>
+                  <strong className="font-mono font-bold text-slate-900">{oliTrm} Liter</strong>
+                </div>
+                <div className="bg-white p-2 rounded-lg border border-blue-200">
+                  <span className="text-[10px] text-slate-500 block">Grease Chassis</span>
+                  <strong className="font-mono font-bold text-slate-900">{greaseItem.stockQuantity} Kg</strong>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Details Footer */}
+            <div className="pt-2 border-t border-blue-200/60 text-[11px] space-y-1">
+              <div className="flex justify-between items-center text-slate-600">
+                <span>Peruntukan Servis:</span>
+                <strong className="text-blue-900 font-bold">Jadwal 250 & 500 HM Unit</strong>
+              </div>
+              <div className="flex justify-between items-center text-slate-600">
+                <span>Penyimpanan:</span>
+                <span className="text-slate-800 font-medium">Drum Tertutup Workshop Basecamp</span>
+              </div>
+            </div>
+          </div>
+
+          {/* KARTU 3: SPARE PART & KOMPONEN KRITIS */}
+          <div className="bg-gradient-to-br from-purple-50/60 via-white to-purple-50/20 border-2 border-purple-300/80 rounded-2xl p-4.5 flex flex-col justify-between space-y-3.5 shadow-xs hover:border-purple-400 transition">
+            <div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-purple-700 text-white flex items-center justify-center font-bold shadow-xs">
+                    <Wrench className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-black uppercase text-purple-950 block tracking-wide">
+                      Komponen Kritis
+                    </span>
+                    <h4 className="text-xs font-bold text-slate-700">Suku Cadang Alat Berat</h4>
+                  </div>
+                </div>
+
+                <span
+                  className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${
+                    lowStockParts.length === 0
+                      ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                      : 'bg-amber-100 text-amber-800 border-amber-300'
+                  }`}
+                >
+                  {lowStockParts.length === 0 ? 'Ready Stock' : `${lowStockParts.length} Item Menipis`}
+                </span>
+              </div>
+
+              {/* Big Metric Display */}
+              <div className="mt-3">
+                <div className="text-3xl font-black text-slate-950 font-mono tracking-tight">
+                  {totalSpareParts}{' '}
+                  <span className="text-sm font-bold text-slate-500">Pcs Komponen</span>
+                </div>
+                <div className="text-xs font-semibold text-slate-600 mt-0.5 flex items-center gap-1.5">
+                  <span className="text-purple-800 font-bold font-mono">{sparePartItems.length} Jenis Item</span>
+                  <span>Tersedia untuk Penggantian Cepat</span>
+                </div>
+              </div>
+
+              {/* Rincian Spare Part Kritis */}
+              <div className="mt-3 space-y-1.5 text-[11px]">
+                {sparePartItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="p-1.5 bg-white rounded-lg border border-purple-200/80 flex items-center justify-between"
+                  >
+                    <span className="text-slate-800 truncate pr-2 font-medium">{item.name}</span>
+                    <span className="font-mono font-bold text-purple-900 bg-purple-50 px-2 py-0.5 rounded shrink-0">
+                      {item.stockQuantity} {item.unit}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Quick Details Footer */}
+            <div className="pt-2 border-t border-purple-200/60 text-[11px] space-y-1">
+              <div className="flex justify-between items-center text-slate-600">
+                <span>Fungsi Utama:</span>
+                <strong className="text-purple-950 font-bold">Mencegah Breakdown Lama</strong>
+              </div>
+              <div className="flex justify-between items-center text-slate-600">
+                <span>Tim Pemasang:</span>
+                <span className="text-slate-800 font-medium">Mekanik Lapangan (Toni & Doni)</span>
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
 

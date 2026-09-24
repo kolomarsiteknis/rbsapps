@@ -23,17 +23,16 @@ import {
   TrendingUp,
   CheckCircle2
 } from 'lucide-react';
-import { Equipment, Worker, Block, InventoryItem, Client, Project, DailyLocationTarget } from '../types';
+import { Equipment, Worker, Block, Client, Project, DailyLocationTarget } from '../types';
 import { storageService } from '../services/storageService';
 
 export const MasterDataView: React.FC = () => {
-  const [activeSubTab, setActiveSubTab] = useState<'client' | 'blocks' | 'dailyTargets' | 'equipments' | 'workers' | 'inventory'>('client');
+  const [activeSubTab, setActiveSubTab] = useState<'client' | 'blocks' | 'dailyTargets' | 'equipments' | 'workers'>('client');
   
   const [clients, setClients] = useState<Client[]>(() => storageService.getClients());
   const [blocks, setBlocks] = useState<Block[]>(() => storageService.getBlocks());
   const [equipments, setEquipments] = useState<Equipment[]>(() => storageService.getEquipments());
   const [workers, setWorkers] = useState<Worker[]>(() => storageService.getWorkers());
-  const [inventory, setInventory] = useState<InventoryItem[]>(() => storageService.getInventory());
 
   const [selectedClientForBlock, setSelectedClientForBlock] = useState<string>('ALL');
 
@@ -56,12 +55,12 @@ export const MasterDataView: React.FC = () => {
 
   // Block Modal State
   const [isBlockModalOpen, setIsBlockModalOpen] = useState(false);
+  const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
   const [blockForm, setBlockForm] = useState<Partial<Block>>({
     clientId: clients[0]?.id || 'client-1',
     code: '',
     targetAreaHa: 50,
     dailyTargetAreaHa: 4.0,
-    drainageTargetM: 1250,
     status: 'Dalam Pengerjaan',
   });
 
@@ -83,16 +82,6 @@ export const MasterDataView: React.FC = () => {
     assignedBlockId: 'ALL',
   });
 
-  // Quick update daily target for block by Director
-  const handleUpdateDailyTarget = (blockId: string, dailyTargetHa: number) => {
-    const blk = blocks.find((b) => b.id === blockId);
-    if (blk) {
-      blk.dailyTargetAreaHa = dailyTargetHa;
-      storageService.saveBlock(blk);
-      setBlocks([...storageService.getBlocks()]);
-    }
-  };
-
   // Daily Target State & Filters (CRUD Target Harian Ha per Hari per Lokasi Kerja)
   const [dailyTargets, setDailyTargets] = useState<DailyLocationTarget[]>(() => storageService.getDailyTargets());
   const [selectedClientForTarget, setSelectedClientForTarget] = useState<string>('ALL');
@@ -102,12 +91,47 @@ export const MasterDataView: React.FC = () => {
   const [isTargetModalOpen, setIsTargetModalOpen] = useState(false);
   const [editingTargetId, setEditingTargetId] = useState<string | null>(null);
   const [targetToDelete, setTargetToDelete] = useState<DailyLocationTarget | null>(null);
+
+  // Helper to fetch target info from "Target Harian Land Clearing (Ha) per Lokasi Kerja"
+  const getBlockDailyTargetInfo = (blockId?: string) => {
+    if (!blockId) return null;
+    const blockTargets = dailyTargets.filter((t) => t.blockId === blockId);
+    if (blockTargets.length === 0) return null;
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todayTarget = blockTargets.find((t) => t.date === todayStr);
+    if (todayTarget) return todayTarget;
+    return [...blockTargets].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+  };
+
+  const handleOpenAddBlock = (presetClientId?: string) => {
+    setEditingBlockId(null);
+    setBlockForm({
+      clientId: presetClientId || (selectedClientForBlock !== 'ALL' ? selectedClientForBlock : clients[0]?.id || 'client-1'),
+      code: '',
+      targetAreaHa: 50,
+      dailyTargetAreaHa: 4.0,
+      status: 'Dalam Pengerjaan',
+    });
+    setIsBlockModalOpen(true);
+  };
+
+  const handleOpenEditBlock = (b: Block) => {
+    setEditingBlockId(b.id);
+    const targetInfo = getBlockDailyTargetInfo(b.id);
+    setBlockForm({
+      clientId: b.clientId,
+      code: b.code,
+      targetAreaHa: b.targetAreaHa,
+      dailyTargetAreaHa: targetInfo ? targetInfo.dailyTargetAreaHa : (b.dailyTargetAreaHa ?? 4.0),
+      status: b.status,
+    });
+    setIsBlockModalOpen(true);
+  };
   const [targetForm, setTargetForm] = useState<Partial<DailyLocationTarget>>({
     clientId: clients[0]?.id || 'client-1',
     blockId: blocks[0]?.id || 'blk-1',
     date: new Date().toISOString().split('T')[0],
     dailyTargetAreaHa: 4.0,
-    dailyDrainageTargetM: 100,
     soilType: 'Tanah Mineral',
     vegetationDensity: 'Sedang / Semak Belukar',
     assignedEquipmentCount: 3,
@@ -132,7 +156,6 @@ export const MasterDataView: React.FC = () => {
       blockId: chosenBlock?.id || 'blk-1',
       date: todayStr,
       dailyTargetAreaHa: chosenBlock?.dailyTargetAreaHa || 4.0,
-      dailyDrainageTargetM: 100,
       soilType: 'Tanah Mineral',
       vegetationDensity: 'Sedang / Semak Belukar',
       assignedEquipmentCount: 3,
@@ -170,7 +193,6 @@ export const MasterDataView: React.FC = () => {
       blockCode: block?.code || 'Blok',
       date: targetForm.date,
       dailyTargetAreaHa: Number(targetForm.dailyTargetAreaHa) || 4.0,
-      dailyDrainageTargetM: Number(targetForm.dailyDrainageTargetM) || 0,
       soilType: targetForm.soilType || 'Tanah Mineral',
       vegetationDensity: targetForm.vegetationDensity || 'Sedang / Semak Belukar',
       assignedEquipmentCount: Number(targetForm.assignedEquipmentCount) || 3,
@@ -344,8 +366,6 @@ export const MasterDataView: React.FC = () => {
         targetAreaHa: newClient.totalAreaHa,
         clearedAreaHa: 0,
         status: 'Dalam Pengerjaan',
-        drainageTargetM: newClient.totalAreaHa * 25,
-        drainageDoneM: 0,
       };
       storageService.saveBlock(newBlock);
     }
@@ -362,29 +382,43 @@ export const MasterDataView: React.FC = () => {
     setClients(storageService.getClients());
   };
 
-  // Save Block
+  // Save Block (Create or Update)
   const handleSaveBlock = (e: React.FormEvent) => {
     e.preventDefault();
     if (!blockForm.code) {
       return;
     }
 
-    const newBlock: Block = {
-      id: `blk-${Date.now()}`,
-      projectId: `proj-${blockForm.clientId}`,
-      clientId: blockForm.clientId || clients[0]?.id || 'client-1',
-      code: blockForm.code,
-      targetAreaHa: Number(blockForm.targetAreaHa) || 50,
-      dailyTargetAreaHa: Number(blockForm.dailyTargetAreaHa) || 4.0,
-      clearedAreaHa: 0,
-      status: (blockForm.status as any) || 'Dalam Pengerjaan',
-      drainageTargetM: Number(blockForm.drainageTargetM) || 1000,
-      drainageDoneM: 0,
-    };
+    if (editingBlockId) {
+      const existing = blocks.find((b) => b.id === editingBlockId);
+      const updatedBlock: Block = {
+        id: editingBlockId,
+        projectId: existing?.projectId || `proj-${blockForm.clientId}`,
+        clientId: blockForm.clientId || existing?.clientId || clients[0]?.id || 'client-1',
+        code: blockForm.code,
+        targetAreaHa: Number(blockForm.targetAreaHa) || 50,
+        dailyTargetAreaHa: existing?.dailyTargetAreaHa ?? Number(blockForm.dailyTargetAreaHa) ?? 4.0,
+        clearedAreaHa: existing?.clearedAreaHa || 0,
+        status: (blockForm.status as any) || existing?.status || 'Dalam Pengerjaan',
+      };
+      storageService.saveBlock(updatedBlock);
+    } else {
+      const newBlock: Block = {
+        id: `blk-${Date.now()}`,
+        projectId: `proj-${blockForm.clientId}`,
+        clientId: blockForm.clientId || clients[0]?.id || 'client-1',
+        code: blockForm.code,
+        targetAreaHa: Number(blockForm.targetAreaHa) || 50,
+        dailyTargetAreaHa: Number(blockForm.dailyTargetAreaHa) || 4.0,
+        clearedAreaHa: 0,
+        status: (blockForm.status as any) || 'Dalam Pengerjaan',
+      };
+      storageService.saveBlock(newBlock);
+    }
 
-    storageService.saveBlock(newBlock);
     setBlocks(storageService.getBlocks());
     setIsBlockModalOpen(false);
+    setEditingBlockId(null);
   };
 
   // Delete Block
@@ -525,18 +559,6 @@ export const MasterDataView: React.FC = () => {
             <Users className="w-4 h-4" />
             <span>Tim & Personel ({workers.length})</span>
           </button>
-
-          <button
-            onClick={() => setActiveSubTab('inventory')}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl transition cursor-pointer ${
-              activeSubTab === 'inventory'
-                ? 'bg-amber-500 text-slate-950 shadow font-black'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            <Fuel className="w-4 h-4" />
-            <span>Inventaris Logistik Lapangan</span>
-          </button>
         </div>
       </div>
 
@@ -638,16 +660,7 @@ export const MasterDataView: React.FC = () => {
                   {/* Action Buttons */}
                   <div className="flex items-center justify-between pt-3 border-t border-slate-100">
                     <button
-                      onClick={() => {
-                        setBlockForm({
-                          clientId: c.id,
-                          code: '',
-                          targetAreaHa: 50,
-                          drainageTargetM: 1250,
-                          status: 'Dalam Pengerjaan',
-                        });
-                        setIsBlockModalOpen(true);
-                      }}
+                      onClick={() => handleOpenAddBlock(c.id)}
                       className="text-xs font-bold text-blue-600 hover:text-blue-800 underline flex items-center gap-1 cursor-pointer"
                     >
                       <Plus className="w-3 h-3" />
@@ -719,16 +732,7 @@ export const MasterDataView: React.FC = () => {
               </button>
 
               <button
-                onClick={() => {
-                  setBlockForm({
-                    clientId: selectedClientForBlock !== 'ALL' ? selectedClientForBlock : clients[0]?.id,
-                    code: '',
-                    targetAreaHa: 50,
-                    drainageTargetM: 1250,
-                    status: 'Dalam Pengerjaan',
-                  });
-                  setIsBlockModalOpen(true);
-                }}
+                onClick={() => handleOpenAddBlock()}
                 className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs shadow-md transition cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
@@ -742,6 +746,10 @@ export const MasterDataView: React.FC = () => {
               .filter((b) => selectedClientForBlock === 'ALL' || b.clientId === selectedClientForBlock)
               .map((b) => {
                 const ownerClient = clients.find((c) => c.id === b.clientId);
+                const targetInfo = getBlockDailyTargetInfo(b.id);
+                const targetHa = targetInfo ? targetInfo.dailyTargetAreaHa : (b.dailyTargetAreaHa ?? 4.0);
+                const todayStr = new Date().toISOString().split('T')[0];
+
                 return (
                   <div key={b.id} className="bg-white rounded-2xl p-4 shadow-lg border border-slate-200 space-y-3">
                     <div className="flex items-center justify-between">
@@ -753,15 +761,27 @@ export const MasterDataView: React.FC = () => {
                           </div>
                         )}
                       </div>
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          b.status === 'Dalam Pengerjaan'
-                            ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                            : 'bg-slate-100 text-slate-600'
-                        }`}
-                      >
-                        {b.status}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            b.status === 'Dalam Pengerjaan'
+                              ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                              : b.status === 'Selesai'
+                              ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}
+                        >
+                          {b.status}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditBlock(b)}
+                          className="p-1 hover:bg-amber-100 rounded-lg text-slate-500 hover:text-amber-800 transition cursor-pointer"
+                          title="Edit Lokasi Blok Kerja"
+                        >
+                          <Edit2 className="w-3.5 h-3.5 text-amber-700" />
+                        </button>
+                      </div>
                     </div>
 
                     <div className="space-y-1.5 text-xs">
@@ -770,24 +790,37 @@ export const MasterDataView: React.FC = () => {
                         <strong className="font-mono text-slate-900">{b.targetAreaHa} Hektar</strong>
                       </div>
 
-                      {/* TARGET HARIAN LAND CLEARING DITENTUKAN DIREKTUR */}
-                      <div className="flex items-center justify-between bg-amber-50/80 p-2 rounded-xl border border-amber-200 text-xs">
-                        <div>
-                          <span className="font-bold text-amber-950 flex items-center gap-1 text-[11px]">
-                            <Lock className="w-3 h-3 text-amber-700" /> Target Harian LC (Ha):
+                      {/* INFORMASI TARGET HARIAN LAND CLEARING - HANYA MENAMPILKAN INFORMASI DARI FITUR TARGET HARIAN (BUKAN INPUTAN) */}
+                      <div className="bg-amber-50/80 p-2.5 rounded-xl border border-amber-200 text-xs space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-amber-950 flex items-center gap-1.5 text-[11px]">
+                            <Target className="w-3.5 h-3.5 text-amber-700" /> Target Harian LC (Ha):
                           </span>
-                          <span className="text-[10px] text-amber-700">Terkunci di Form Pengawas</span>
+                          <div className="flex items-baseline gap-1">
+                            <span className="font-mono font-black text-amber-950 text-sm">
+                              {targetHa.toFixed(1)}
+                            </span>
+                            <span className="font-bold text-amber-900 text-xs">Ha/hari</span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="number"
-                            step="0.1"
-                            value={b.dailyTargetAreaHa ?? 4.0}
-                            onChange={(e) => handleUpdateDailyTarget(b.id, parseFloat(e.target.value) || 0)}
-                            className="w-16 px-2 py-1 bg-white border border-amber-300 rounded font-mono font-black text-amber-950 text-right text-xs shadow-xs focus:ring-1 focus:ring-amber-500"
-                            title="Tentukan target harian untuk lokasi ini (akan terkunci di formulir pelaporan pengawas)"
-                          />
-                          <span className="font-bold text-amber-900 text-xs">Ha</span>
+                        <div className="flex items-center justify-between text-[10px] text-amber-700 pt-0.5 border-t border-amber-200/60">
+                          <span className="truncate max-w-[200px]">
+                            {targetInfo
+                              ? `Data Target Harian (${targetInfo.date === todayStr ? 'Hari Ini' : targetInfo.date})`
+                              : 'Default Lokasi (Belum ada jadwal harian)'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveSubTab('dailyTargets');
+                              setSelectedClientForTarget(b.clientId);
+                              setSelectedBlockForTarget(b.id);
+                            }}
+                            className="font-bold hover:underline hover:text-amber-950 cursor-pointer shrink-0 ml-1"
+                            title="Buka menu Target Harian untuk mengatur jadwal target"
+                          >
+                            Atur Target →
+                          </button>
                         </div>
                       </div>
 
@@ -796,14 +829,6 @@ export const MasterDataView: React.FC = () => {
                         <strong className="font-mono text-emerald-700">
                           {b.clearedAreaHa} Ha ({b.targetAreaHa > 0 ? ((b.clearedAreaHa / b.targetAreaHa) * 100).toFixed(1) : 0}%)
                         </strong>
-                      </div>
-                      <div className="flex justify-between text-slate-600">
-                        <span>Target Drainase:</span>
-                        <strong className="font-mono text-slate-900">{b.drainageTargetM} Meter</strong>
-                      </div>
-                      <div className="flex justify-between text-slate-600">
-                        <span>Realisasi Drainase:</span>
-                        <strong className="font-mono text-blue-700">{b.drainageDoneM} Meter</strong>
                       </div>
                     </div>
 
@@ -828,13 +853,27 @@ export const MasterDataView: React.FC = () => {
                         <span>+ Target Harian (Ha)</span>
                       </button>
 
-                      <button
-                        onClick={() => handleDeleteBlock(b.id, b.code)}
-                        className="text-[11px] text-slate-400 hover:text-rose-600 flex items-center gap-1 cursor-pointer"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                        <span>Hapus Blok</span>
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditBlock(b)}
+                          className="text-[11px] font-bold text-amber-800 hover:text-amber-950 flex items-center gap-1 px-2 py-1 hover:bg-amber-50 rounded-lg transition cursor-pointer"
+                          title="Edit Lokasi Blok Kerja"
+                        >
+                          <Edit2 className="w-3 h-3 text-amber-600" />
+                          <span>Edit</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteBlock(b.id, b.code)}
+                          className="text-[11px] text-slate-400 hover:text-rose-600 flex items-center gap-1 px-2 py-1 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                          title="Hapus Blok"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Hapus</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -868,9 +907,6 @@ export const MasterDataView: React.FC = () => {
           ? (dailyTargets.reduce((acc, t) => acc + (t.dailyTargetAreaHa || 0), 0) / dailyTargets.length).toFixed(1)
           : '0.0';
 
-        const totalDrainageTargetM = dailyTargets
-          .reduce((acc, t) => acc + (t.dailyDrainageTargetM || 0), 0);
-
         const uniqueCoveredBlocks = new Set(dailyTargets.map((t) => t.blockId)).size;
 
         return (
@@ -889,7 +925,7 @@ export const MasterDataView: React.FC = () => {
                   Target Harian Land Clearing (Ha) per Lokasi Kerja
                 </h3>
                 <p className="text-xs text-slate-600 max-w-2xl leading-relaxed">
-                  Kelola dan jadwalkan target harian pembersihan lahan (Ha/hari) serta target saluran drainase (Meter/hari) untuk masing-masing blok kerja per hari. Nilai target ini akan <strong>terkunci secara otomatis</strong> pada formulir pelaporan pengawas lapangan guna memastikan disiplin ritme kerja.
+                  Kelola dan jadwalkan target harian pembersihan lahan (Ha/hari) untuk masing-masing blok kerja per hari. Nilai target ini akan <strong>terkunci secara otomatis</strong> pada formulir pelaporan pengawas lapangan guna memastikan disiplin ritme kerja.
                 </p>
               </div>
 
@@ -905,8 +941,8 @@ export const MasterDataView: React.FC = () => {
               </div>
             </div>
 
-            {/* 5 Summary Metric Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            {/* 4 Summary Metric Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs">
                 <span className="text-[10px] font-bold uppercase text-slate-500 block">Total Jadwal Target</span>
                 <strong className="text-xl font-black text-slate-900">{dailyTargets.length} Record</strong>
@@ -926,14 +962,7 @@ export const MasterDataView: React.FC = () => {
                 </strong>
                 <span className="text-[10px] text-blue-600 block mt-0.5">Standar Ritme Produksi</span>
               </div>
-              <div className="bg-white p-3.5 rounded-xl border border-indigo-200 shadow-xs bg-indigo-50/20">
-                <span className="text-[10px] font-bold uppercase text-indigo-800 block">Total Target Parit</span>
-                <strong className="text-xl font-black text-indigo-800">
-                  {totalDrainageTargetM.toLocaleString()} M
-                </strong>
-                <span className="text-[10px] text-indigo-600 block mt-0.5">Saluran & Drainase</span>
-              </div>
-              <div className="bg-white p-3.5 rounded-xl border border-emerald-200 shadow-xs bg-emerald-50/20 col-span-2 sm:col-span-1">
+              <div className="bg-white p-3.5 rounded-xl border border-emerald-200 shadow-xs bg-emerald-50/20">
                 <span className="text-[10px] font-bold uppercase text-emerald-800 block">Lokasi Tercover</span>
                 <strong className="text-xl font-black text-emerald-800">
                   {uniqueCoveredBlocks} / {blocks.length} Blok
@@ -1050,7 +1079,6 @@ export const MasterDataView: React.FC = () => {
                       <th className="py-3 px-3.5 bg-amber-950/40 text-amber-300 border-x border-amber-900/50">
                         Target Luas Harian (Ha)
                       </th>
-                      <th className="py-3 px-3.5">Target Drainase</th>
                       <th className="py-3 px-3.5">Kondisi Lahan</th>
                       <th className="py-3 px-3.5">Alokasi Armada & SDM</th>
                       <th className="py-3 px-3.5">Instruksi Khusus Direktur</th>
@@ -1061,7 +1089,7 @@ export const MasterDataView: React.FC = () => {
                   <tbody className="divide-y divide-slate-100">
                     {filteredTargets.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="py-10 text-center text-slate-400 bg-slate-50/50">
+                        <td colSpan={8} className="py-10 text-center text-slate-400 bg-slate-50/50">
                           <div className="max-w-md mx-auto space-y-2">
                             <Target className="w-8 h-8 text-slate-300 mx-auto" />
                             <p className="font-bold text-slate-600 text-sm">Tidak Ada Target Harian Ditemukan</p>
@@ -1153,14 +1181,6 @@ export const MasterDataView: React.FC = () => {
                                   {((item.actualClearedHa / item.dailyTargetAreaHa) * 100).toFixed(0)}%)
                                 </div>
                               )}
-                            </td>
-
-                            {/* Target Drainase */}
-                            <td className="py-3 px-3.5 align-top whitespace-nowrap">
-                              <span className="font-mono font-bold text-slate-800">
-                                {item.dailyDrainageTargetM ? `${item.dailyDrainageTargetM} M` : '-'}
-                              </span>
-                              <span className="text-[10px] text-slate-400 block mt-0.5">Parit & Saluran</span>
                             </td>
 
                             {/* Kondisi Lahan */}
@@ -1496,7 +1516,7 @@ export const MasterDataView: React.FC = () => {
                 Daftar Personil, Tim Pekerja & Lokasi Penugasan
               </h3>
               <p className="text-xs text-slate-500">
-                Superadmin menentukan tim kerja (Operator, Rintis, Mekanik, Drainase) dan lokasi kerja penugasan (Klien & Blok).
+                Superadmin menentukan tim kerja (Operator, Rintis, Mekanik, K3) dan lokasi kerja penugasan (Klien & Blok).
               </p>
             </div>
 
@@ -1544,7 +1564,6 @@ export const MasterDataView: React.FC = () => {
                 <option value="Tim Operator Alat Berat">Tim Operator Alat Berat</option>
                 <option value="Tim Rintis & Imas Kayu">Tim Rintis & Imas Kayu</option>
                 <option value="Tim Mekanik Maintenance">Tim Mekanik Maintenance</option>
-                <option value="Tim Drainase & Parit">Tim Drainase & Parit</option>
                 <option value="Tim Pengawas & K3">Tim Pengawas & K3</option>
               </select>
 
@@ -1595,8 +1614,6 @@ export const MasterDataView: React.FC = () => {
                     ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
                     : w.teamName?.includes('Mekanik')
                     ? 'bg-cyan-100 text-cyan-900 border-cyan-300'
-                    : w.teamName?.includes('Drainase') || w.teamName?.includes('Parit')
-                    ? 'bg-blue-100 text-blue-900 border-blue-300'
                     : 'bg-purple-100 text-purple-900 border-purple-300';
 
                 return (
@@ -1687,35 +1704,6 @@ export const MasterDataView: React.FC = () => {
               Belum ada personil terdaftar. Klik "+ Tambah Personil & Tim" untuk mendaftarkan.
             </div>
           )}
-        </div>
-      )}
-
-      {/* SUB-TAB: INVENTORY */}
-      {activeSubTab === 'inventory' && (
-        <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
-          <div className="p-4 bg-slate-900 text-white">
-            <h3 className="font-bold text-sm">Inventaris Logistik Lapangan (BBM Tangki, Pelumas & Spare Part)</h3>
-            <p className="text-xs text-slate-400">Penyimpanan di basecamp lapangan proyek perkebunan.</p>
-          </div>
-          <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {inventory.map((inv) => (
-              <div key={inv.id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1 text-xs">
-                <div className="flex justify-between items-center">
-                  <span className="font-mono text-[10px] bg-slate-200 px-1.5 py-0.5 rounded font-bold">
-                    {inv.code}
-                  </span>
-                  <span className="text-[10px] text-slate-500 uppercase">{inv.category}</span>
-                </div>
-                <div className="font-bold text-slate-900 text-sm">{inv.name}</div>
-                <div className="flex justify-between items-center pt-2 border-t border-slate-200 font-mono">
-                  <span className="text-slate-500">Stok Tersedia:</span>
-                  <span className="text-base font-black text-emerald-800">
-                    {inv.stockQuantity.toLocaleString()} {inv.unit}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
         </div>
       )}
 
@@ -1846,50 +1834,65 @@ export const MasterDataView: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL: TAMBAH BLOK BARU */}
-      {isBlockModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
-            <div className="border-b border-slate-100 pb-3">
-              <h3 className="text-base font-black text-slate-900 uppercase">
-                + Tambah Blok Kerja Baru
-              </h3>
-              <p className="text-xs text-slate-500">
-                Masukkan kode blok dan target pembukaan lahan.
-              </p>
-            </div>
-
-            <form onSubmit={handleSaveBlock} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Pilih Klien Pemilik Lahan</label>
-                <select
-                  value={blockForm.clientId}
-                  onChange={(e) => setBlockForm({ ...blockForm, clientId: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg font-bold text-slate-900"
-                >
-                  {clients.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} - {c.fullCompanyName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Kode / Nama Blok</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Contoh: Blok B-03 atau Blok AD"
-                  value={blockForm.code || ''}
-                  onChange={(e) => setBlockForm({ ...blockForm, code: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg font-bold text-sm"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      {/* MODAL: TAMBAH / EDIT BLOK KERJA */}
+      {isBlockModalOpen && (() => {
+        const targetInfoForModal = getBlockDailyTargetInfo(editingBlockId || undefined);
+        return (
+          <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+              <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Target Total (Ha)</label>
+                  <h3 className="text-base font-black text-slate-900 uppercase flex items-center gap-2">
+                    {editingBlockId ? (
+                      <>
+                        <Edit2 className="w-4 h-4 text-amber-600" />
+                        Edit Lokasi Blok Kerja
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4 text-amber-600" />
+                        Tambah Blok Kerja Baru
+                      </>
+                    )}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {editingBlockId 
+                      ? 'Perbarui data blok kerja, target total luas, dan status pengerjaan.'
+                      : 'Masukkan kode blok dan target pembukaan lahan.'}
+                  </p>
+                </div>
+              </div>
+
+              <form onSubmit={handleSaveBlock} className="space-y-3 text-xs">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Pilih Klien Pemilik Lahan</label>
+                  <select
+                    value={blockForm.clientId}
+                    onChange={(e) => setBlockForm({ ...blockForm, clientId: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-bold text-slate-900"
+                  >
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} - {c.fullCompanyName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Kode / Nama Blok</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Contoh: Blok B-03 atau Blok AD"
+                    value={blockForm.code || ''}
+                    onChange={(e) => setBlockForm({ ...blockForm, code: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-bold text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Target Total Luas Blok (Ha)</label>
                   <input
                     type="number"
                     required
@@ -1898,50 +1901,72 @@ export const MasterDataView: React.FC = () => {
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono font-bold"
                   />
                 </div>
-                <div>
-                  <label className="block font-bold text-amber-900 mb-1 flex items-center gap-1">
-                    <Lock className="w-3.5 h-3.5 text-amber-600" /> Target Harian (Ha)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    required
-                    value={blockForm.dailyTargetAreaHa ?? 4.0}
-                    onChange={(e) => setBlockForm({ ...blockForm, dailyTargetAreaHa: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 border border-amber-300 bg-amber-50/50 rounded-lg font-mono font-black text-amber-950"
-                  />
-                  <span className="text-[10px] text-amber-700 font-medium">Terkunci di Form Pengawas</span>
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Target Parit (M)</label>
-                  <input
-                    type="number"
-                    value={blockForm.drainageTargetM || 1000}
-                    onChange={(e) => setBlockForm({ ...blockForm, drainageTargetM: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono"
-                  />
-                </div>
-              </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setIsBlockModalOpen(false)}
-                  className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-bold cursor-pointer"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 text-xs bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-lg shadow cursor-pointer"
-                >
-                  Simpan Blok
-                </button>
-              </div>
-            </form>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Status Pengerjaan Blok</label>
+                  <select
+                    value={blockForm.status || 'Dalam Pengerjaan'}
+                    onChange={(e) => setBlockForm({ ...blockForm, status: e.target.value as any })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-bold text-slate-900"
+                  >
+                    <option value="Dalam Pengerjaan">Dalam Pengerjaan</option>
+                    <option value="Belum Dimulai">Belum Dimulai</option>
+                    <option value="Selesai">Selesai</option>
+                  </select>
+                </div>
+
+                {/* INFORMASI TARGET HARIAN LC (HA) - HANYA MENAMPILKAN INFORMASI DARI FITUR TARGET HARIAN (BUKAN INPUTAN) */}
+                <div className="bg-amber-50/80 border border-amber-200 rounded-xl p-3 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-amber-950 flex items-center gap-1.5 text-xs">
+                      <Target className="w-3.5 h-3.5 text-amber-600" />
+                      Target Harian LC (Ha)
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-200 text-amber-900 border border-amber-300">
+                      Hanya Informasi
+                    </span>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-mono font-black text-amber-950 text-xl">
+                      {targetInfoForModal 
+                        ? `${targetInfoForModal.dailyTargetAreaHa.toFixed(1)} Ha / Hari` 
+                        : (editingBlockId ? `${Number(blockForm.dailyTargetAreaHa ?? 4.0).toFixed(1)} Ha / Hari` : 'Ditetapkan di menu Target Harian')}
+                    </span>
+                    {targetInfoForModal && (
+                      <span className="text-[11px] text-amber-800 font-semibold">
+                        (Jadwal: {targetInfoForModal.date})
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-amber-800 leading-normal">
+                    ℹ️ <strong>Bukan sebuah inputan:</strong> Informasi Target Harian LC (Ha) ini diambil otomatis dari fitur <strong>"Target Harian Land Clearing (Ha) per Lokasi Kerja"</strong>. Anda dapat mengatur atau mengubah target harian melalui sub-tab Target Harian.
+                  </p>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsBlockModalOpen(false);
+                      setEditingBlockId(null);
+                    }}
+                    className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-bold cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 text-xs bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-lg shadow cursor-pointer flex items-center gap-1"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>{editingBlockId ? 'Simpan Perubahan Blok' : 'Simpan Blok Baru'}</span>
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* MODAL: TAMBAH / EDIT PERSONIL & PENUGASAN TIM */}
       {isWorkerModalOpen && (
@@ -2042,7 +2067,6 @@ export const MasterDataView: React.FC = () => {
                   <option value="Tim Operator Alat Berat">Tim Operator Alat Berat (Excavator, Dozer, Dump Truck)</option>
                   <option value="Tim Rintis & Imas Kayu">Tim Rintis & Imas Kayu (Chainsaw & Helper)</option>
                   <option value="Tim Mekanik Maintenance">Tim Mekanik Maintenance (Mekanik, Helper & Driver BBM)</option>
-                  <option value="Tim Drainase & Parit">Tim Drainase & Parit (Long Arm Excavator & Parit)</option>
                   <option value="Tim Pengawas & K3">Tim Pengawas & K3 (Mandor, Surveyor & Safety)</option>
                 </select>
               </div>
@@ -2488,75 +2512,45 @@ export const MasterDataView: React.FC = () => {
                 </div>
               </div>
 
-              {/* HIGHLIGHTED: TARGET LUAS HARIAN (HA) & TARGET DRAINASE (M) */}
+              {/* HIGHLIGHTED: TARGET LUAS HARIAN (HA) */}
               <div className="bg-amber-50 p-4 rounded-2xl border-2 border-amber-300 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="font-black text-amber-950 text-sm flex items-center gap-1.5">
                     <Target className="w-4 h-4 text-amber-700" />
-                    Penetapan Target Ritme Harian (Ha & Meter)
+                    Penetapan Target Ritme Harian Land Clearing (Ha)
                   </span>
                   <span className="text-[10px] font-bold text-amber-800 bg-amber-200/80 px-2 py-0.5 rounded-full border border-amber-400">
                     Terkunci di Form Pelaporan
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block font-black text-amber-950 mb-1 text-xs">
-                      Target Luas Harian (Hektar / Ha) <span className="text-rose-600">*</span>
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="0.1"
-                        placeholder="4.0"
-                        value={targetForm.dailyTargetAreaHa ?? 4.0}
-                        onChange={(e) =>
-                          setTargetForm({
-                            ...targetForm,
-                            dailyTargetAreaHa: parseFloat(e.target.value) || 0,
-                          })
-                        }
-                        className="w-full px-3 py-2.5 bg-white border-2 border-amber-400 rounded-xl font-mono font-black text-amber-950 text-base shadow-xs focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                        required
-                      />
-                      <span className="absolute right-3 top-2.5 font-black text-amber-900 text-sm">
-                        Ha / Hari
-                      </span>
-                    </div>
-                    <span className="text-[10px] text-amber-800 block mt-1">
-                      Standar umum: 3.5 - 5.0 Ha per hari per blok tergantung armada.
+                <div>
+                  <label className="block font-black text-amber-950 mb-1 text-xs">
+                    Target Luas Harian (Hektar / Ha) <span className="text-rose-600">*</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0.1"
+                      placeholder="4.0"
+                      value={targetForm.dailyTargetAreaHa ?? 4.0}
+                      onChange={(e) =>
+                        setTargetForm({
+                          ...targetForm,
+                          dailyTargetAreaHa: parseFloat(e.target.value) || 0,
+                        })
+                      }
+                      className="w-full px-3 py-2.5 bg-white border-2 border-amber-400 rounded-xl font-mono font-black text-amber-950 text-base shadow-xs focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                      required
+                    />
+                    <span className="absolute right-3 top-2.5 font-black text-amber-900 text-sm">
+                      Ha / Hari
                     </span>
                   </div>
-
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1 text-xs">
-                      Target Drainase / Saluran (Meter)
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        step="10"
-                        min="0"
-                        placeholder="100"
-                        value={targetForm.dailyDrainageTargetM ?? 100}
-                        onChange={(e) =>
-                          setTargetForm({
-                            ...targetForm,
-                            dailyDrainageTargetM: parseFloat(e.target.value) || 0,
-                          })
-                        }
-                        className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl font-mono font-bold text-slate-900 text-sm shadow-xs focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                      />
-                      <span className="absolute right-3 top-2.5 font-bold text-slate-600 text-xs">
-                        Meter / Hari
-                      </span>
-                    </div>
-                    <span className="text-[10px] text-slate-500 block mt-1">
-                      Pembuatan parit batas atau kanal pembuangan air.
-                    </span>
-                  </div>
+                  <span className="text-[10px] text-amber-800 block mt-1">
+                    Standar umum: 3.5 - 5.0 Ha per hari per blok tergantung armada alat berat.
+                  </span>
                 </div>
               </div>
 
@@ -2708,12 +2702,6 @@ export const MasterDataView: React.FC = () => {
                 <span className="text-slate-500">Target Luas:</span>
                 <strong className="font-mono text-amber-700">{targetToDelete.dailyTargetAreaHa} Ha / Hari</strong>
               </div>
-              {targetToDelete.dailyDrainageTargetM && (
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Target Drainase:</span>
-                  <span className="font-mono text-slate-800">{targetToDelete.dailyDrainageTargetM} M</span>
-                </div>
-              )}
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">

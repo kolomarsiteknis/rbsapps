@@ -20,7 +20,9 @@ import {
   ArrowUpRight,
   Info,
   Check,
-  X
+  X,
+  Printer,
+  Download
 } from 'lucide-react';
 import { 
   LogisticsTransaction, 
@@ -33,6 +35,7 @@ import {
   LogisticsUsagePurpose
 } from '../types';
 import { storageService } from '../services/storageService';
+import { LogisticsPrintModal } from './LogisticsPrintModal';
 
 interface LogisticsInventoryViewProps {
   authUser: AuthUser | null;
@@ -75,6 +78,15 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
 
   // View details modal
   const [detailTx, setDetailTx] = useState<LogisticsTransaction | null>(null);
+
+  // Print & Export modal states
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [printModalInitialMode, setPrintModalInitialMode] = useState<'all' | 'in' | 'out'>('all');
+
+  const openPrintModal = (mode: 'all' | 'in' | 'out' = 'all') => {
+    setPrintModalInitialMode(mode);
+    setIsPrintModalOpen(true);
+  };
 
   // Inflow form state (Penerimaan Stok Masuk - Di-input Pengawas, Disetujui Direktur)
   const [inflowForm, setInflowForm] = useState({
@@ -280,6 +292,161 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
     return matchCategory && matchType && matchStatus && matchSearch;
   });
 
+  // Handler to export CSV
+  const handleExportCsv = (mode: 'all' | 'in' | 'out') => {
+    try {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      let targetList = transactions;
+      if (mode === 'in') {
+        targetList = transactions.filter((t) => t.type === 'in');
+      } else if (mode === 'out') {
+        targetList = transactions.filter((t) => t.type === 'out');
+      }
+
+      let filename = `Laporan_Mutasi_Stok_Logistik_Suryaland_${todayStr}.csv`;
+      let headers: string[] = [];
+      let rows: string[][] = [];
+
+      if (mode === 'in') {
+        filename = `Laporan_Stok_Masuk_Logistik_Suryaland_${todayStr}.csv`;
+        headers = [
+          'No',
+          'ID Transaksi',
+          'Tanggal',
+          'Waktu',
+          'Kategori',
+          'Nama Barang',
+          'Jumlah Masuk',
+          'Satuan',
+          'Lokasi Penyimpanan',
+          'No Surat Jalan (SJ)',
+          'No PO Supplier',
+          'Klien',
+          'Blok Kerja',
+          'Pengawas Penerima',
+          'Status Otorisasi Direktur',
+          'Diverifikasi Oleh',
+          'Waktu Otorisasi',
+          'Catatan / Alasan'
+        ];
+        rows = targetList.map((t, idx) => [
+          String(idx + 1),
+          t.id,
+          t.date,
+          t.timestamp || '',
+          t.category,
+          `"${t.itemName.replace(/"/g, '""')}"`,
+          String(t.quantity),
+          t.unit,
+          `"${(t.sourceOrStorage || '').replace(/"/g, '""')}"`,
+          `"${(t.deliveryNoteNumber || '').replace(/"/g, '""')}"`,
+          `"${(t.supplierOrPoNumber || '').replace(/"/g, '""')}"`,
+          `"${(t.clientName || '').replace(/"/g, '""')}"`,
+          `"${(t.blockCode || '').replace(/"/g, '""')}"`,
+          `"${(t.submittedByName || '').replace(/"/g, '""')}"`,
+          t.approvalStatus === 'approved' ? 'Disetujui Direktur' : t.approvalStatus === 'pending' ? 'Menunggu Approval' : 'Ditolak',
+          `"${(t.approvedByDirectorName || '').replace(/"/g, '""')}"`,
+          `"${(t.approvedAt || '').replace(/"/g, '""')}"`,
+          `"${(t.rejectionReason || t.notes || '').replace(/"/g, '""')}"`
+        ]);
+      } else if (mode === 'out') {
+        filename = `Laporan_Stok_Keluar_Pemakaian_Suryaland_${todayStr}.csv`;
+        headers = [
+          'No',
+          'ID Transaksi',
+          'Tanggal',
+          'Waktu',
+          'Kategori',
+          'Nama Barang',
+          'Jumlah Keluar',
+          'Satuan',
+          'Unit Alat Berat',
+          'HM Unit Saat Pemakaian',
+          'Kegunaan / Keperluan',
+          'Klien',
+          'Blok Kerja',
+          'Pengawas Lapangan',
+          'Catatan'
+        ];
+        rows = targetList.map((t, idx) => [
+          String(idx + 1),
+          t.id,
+          t.date,
+          t.timestamp || '',
+          t.category,
+          `"${t.itemName.replace(/"/g, '""')}"`,
+          String(t.quantity),
+          t.unit,
+          `"${(t.equipmentId || '')} ${(t.equipmentName || '')}".replace(/"/g, '""')`,
+          t.equipmentHmAtUsage !== undefined ? String(t.equipmentHmAtUsage) : '-',
+          `"${(t.purpose || '').replace(/"/g, '""')}"`,
+          `"${(t.clientName || '').replace(/"/g, '""')}"`,
+          `"${(t.blockCode || '').replace(/"/g, '""')}"`,
+          `"${(t.submittedByName || '').replace(/"/g, '""')}"`,
+          `"${(t.notes || '').replace(/"/g, '""')}"`
+        ]);
+      } else {
+        filename = `Rekap_Mutasi_Stok_Logistik_Suryaland_${todayStr}.csv`;
+        headers = [
+          'No',
+          'ID Transaksi',
+          'Tanggal',
+          'Waktu',
+          'Tipe Mutasi',
+          'Kategori',
+          'Nama Barang',
+          'Jumlah',
+          'Satuan',
+          'Alat Berat / Tempat Simpan',
+          'HM Unit / No SJ',
+          'Keperluan / Info PO',
+          'Klien',
+          'Blok Kerja',
+          'Petugas Lapangan',
+          'Status Verifikasi',
+          'Catatan'
+        ];
+        rows = targetList.map((t, idx) => [
+          String(idx + 1),
+          t.id,
+          t.date,
+          t.timestamp || '',
+          t.type === 'in' ? 'Stok Masuk (Penerimaan)' : 'Stok Keluar (Pemakaian)',
+          t.category,
+          `"${t.itemName.replace(/"/g, '""')}"`,
+          String(t.quantity),
+          t.unit,
+          `"${(t.type === 'out' ? `${t.equipmentId || ''} ${t.equipmentName || ''}` : t.sourceOrStorage || '').replace(/"/g, '""')}"`,
+          t.type === 'out' ? (t.equipmentHmAtUsage !== undefined ? String(t.equipmentHmAtUsage) : '-') : `"${(t.deliveryNoteNumber || '').replace(/"/g, '""')}"`,
+          `"${(t.type === 'out' ? t.purpose || '' : t.supplierOrPoNumber || '').replace(/"/g, '""')}"`,
+          `"${(t.clientName || '').replace(/"/g, '""')}"`,
+          `"${(t.blockCode || '').replace(/"/g, '""')}"`,
+          `"${(t.submittedByName || '').replace(/"/g, '""')}"`,
+          t.type === 'in' 
+            ? (t.approvalStatus === 'approved' ? 'Disetujui Direktur' : t.approvalStatus === 'pending' ? 'Menunggu Approval' : 'Ditolak') 
+            : 'Pemakaian Sah Lapangan',
+          `"${(t.notes || t.rejectionReason || '').replace(/"/g, '""')}"`
+        ]);
+      }
+
+      const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      showToast(`Berhasil mengeksport ${targetList.length} baris data ke file ${filename}`, 'success');
+    } catch (err) {
+      console.error('Failed to export CSV:', err);
+      showToast('Gagal melakukan eksport data CSV.', 'warning');
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto py-6 px-3 sm:px-6 space-y-6">
       {/* Header Banner */}
@@ -358,11 +525,43 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
                 <span>+ Catat Pemakaian Lapangan (Pengawas)</span>
               </button>
             ) : (
-              <div className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 text-slate-500 text-xs rounded-xl border border-slate-200">
-                <Info className="w-3.5 h-3.5 text-slate-400" />
-                <span className="font-semibold">Pemakaian unit diinput Pengawas di lokasi</span>
+              <div className="flex items-center gap-2 px-3.5 py-2 bg-amber-50 text-amber-900 text-xs rounded-xl border border-amber-200 shadow-2xs">
+                <Info className="w-4 h-4 text-amber-600 shrink-0" />
+                <div>
+                  <span className="font-bold">Otorisasi Khusus Pengawas:</span> Pemakaian BBM & spare part dicatat Pengawas langsung di blok kerja secara real-time.
+                </div>
               </div>
             )}
+
+            {/* Tombol Cetak Dokumen Laporan Logistik */}
+            <button
+              onClick={() => openPrintModal('all')}
+              className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-amber-400 font-black rounded-xl text-xs shadow-md transition cursor-pointer"
+              title="Buka Pratinjau Cetak Laporan Resmi Logistik & Save as PDF"
+            >
+              <Printer className="w-4 h-4" />
+              <span>Cetak Laporan Logistik</span>
+            </button>
+
+            {/* Tombol Eksport Laporan Masuk CSV */}
+            <button
+              onClick={() => handleExportCsv('in')}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold rounded-xl text-xs shadow-2xs transition cursor-pointer"
+              title="Unduh Laporan Penerimaan Stok Masuk ke File Excel/CSV"
+            >
+              <Download className="w-4 h-4 text-emerald-600" />
+              <span>Eksport Laporan Masuk (.CSV)</span>
+            </button>
+
+            {/* Tombol Eksport Laporan Keluar CSV */}
+            <button
+              onClick={() => handleExportCsv('out')}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold rounded-xl text-xs shadow-2xs transition cursor-pointer"
+              title="Unduh Laporan Pemakaian Stok Keluar ke File Excel/CSV"
+            >
+              <Download className="w-4 h-4 text-amber-600" />
+              <span>Eksport Laporan Keluar (.CSV)</span>
+            </button>
           </div>
         </div>
 
@@ -548,7 +747,7 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
 
       {/* Log History Table */}
       <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
-        <div className="p-4 bg-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className="p-4 bg-slate-900 text-white flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div>
             <h3 className="font-bold text-sm flex items-center gap-2">
               <FileText className="w-4 h-4 text-amber-400" />
@@ -558,8 +757,33 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
               Menampilkan {filteredTransactions.length} riwayat mutasi barang di proyek perkebunan.
             </p>
           </div>
-          <div className="text-[11px] text-amber-300 font-mono">
-            {isDirector ? 'Mode Direktur: Otorisasi & Verifikasi Masuk' : 'Mode Pengawas: Pencatatan Pemakaian Real-Time'}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => openPrintModal('in')}
+              className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-700/80 hover:bg-emerald-600 text-white text-[11px] font-bold rounded-lg transition cursor-pointer"
+              title="Cetak Khusus Format Laporan Stok Masuk"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>Cetak Lap. Masuk</span>
+            </button>
+
+            <button
+              onClick={() => openPrintModal('out')}
+              className="flex items-center gap-1 px-2.5 py-1.5 bg-amber-600/90 hover:bg-amber-500 text-slate-950 text-[11px] font-bold rounded-lg transition cursor-pointer"
+              title="Cetak Khusus Format Laporan Stok Keluar"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>Cetak Lap. Keluar</span>
+            </button>
+
+            <button
+              onClick={() => handleExportCsv(typeFilter === 'in' ? 'in' : typeFilter === 'out' ? 'out' : 'all')}
+              className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[11px] font-bold rounded-lg transition cursor-pointer"
+              title="Unduh data tabel saat ini ke CSV"
+            >
+              <Download className="w-3.5 h-3.5 text-amber-400" />
+              <span>Eksport CSV</span>
+            </button>
           </div>
         </div>
 
@@ -772,6 +996,13 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
             </div>
 
             <form onSubmit={handleSubmitInflow} className="space-y-3.5 text-xs">
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-start gap-2 text-blue-900 text-[11px]">
+                <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                <p>
+                  <strong>Alur Verifikasi Direktur:</strong> Data stok masuk di-input oleh Pengawas Lapangan dan berstatus <em>"Menunggu Approval Direktur"</em>. Saldo stok aktif baru bertambah setelah disetujui resmi oleh Direktur.
+                </p>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Kategori Barang</label>
@@ -984,6 +1215,13 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
             </div>
 
             <form onSubmit={handleSubmitOutflow} className="space-y-3.5 text-xs">
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2 text-amber-900 text-[11px]">
+                <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <p>
+                  <strong>Pencatatan Lapangan Real-Time:</strong> Pengawas berada langsung di titik lokasi kerja (Blok) saat pengisian BBM atau perbaikan alat berlangsung, sehingga data yang dimasukkan bersifat real-time dan dicocokkan langsung dengan Hour Meter (HM) alat berat.
+                </p>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Kategori Barang</label>
@@ -1375,6 +1613,22 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Logistics Official Print & Export Modal */}
+      {isPrintModalOpen && (
+        <LogisticsPrintModal
+          isOpen={isPrintModalOpen}
+          onClose={() => setIsPrintModalOpen(false)}
+          transactions={transactions}
+          inventory={inventory}
+          clients={clients}
+          blocks={blocks}
+          equipments={equipments}
+          selectedClientId={selectedClientId}
+          initialMode={printModalInitialMode}
+          showToast={showToast}
+        />
       )}
     </div>
   );

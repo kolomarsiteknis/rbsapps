@@ -11,6 +11,8 @@ import { ReportWizard } from './components/ReportWizard';
 import { ReportListView } from './components/ReportListView';
 import { PdfReportModal } from './components/PdfReportModal';
 import { MasterDataView } from './components/MasterDataView';
+import { LogisticsInventoryView } from './components/LogisticsInventoryView';
+import { SupervisorToolsView } from './components/SupervisorToolsView';
 import { LoginPage } from './components/LoginPage';
 import { storageService } from './services/storageService';
 import { DailyReport, Equipment, UserRole, Client, AuthUser } from './types';
@@ -29,7 +31,7 @@ export default function App() {
     }
   });
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'wizard' | 'reports' | 'master' | 'official-pdf'>('wizard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'wizard' | 'reports' | 'master' | 'official-pdf' | 'logistics' | 'supervisor-tools'>('wizard');
   const [isOnline, setIsOnline] = useState<boolean>(true);
   
   const [clients, setClients] = useState<Client[]>([]);
@@ -133,7 +135,7 @@ export default function App() {
   };
 
   // Enforce Access Control when changing tabs
-  const handleTabChange = (tab: 'dashboard' | 'wizard' | 'reports' | 'master' | 'official-pdf') => {
+  const handleTabChange = (tab: 'dashboard' | 'wizard' | 'reports' | 'master' | 'official-pdf' | 'logistics') => {
     loadData();
 
     // Check permissions
@@ -216,6 +218,7 @@ export default function App() {
               equipments={equipments}
               onOpenPdfReport={handleOpenPdfModal}
               onNavigateReports={() => setActiveTab('reports')}
+              onNavigateLogistics={() => setActiveTab('logistics')}
               onApproveReport={handleApproveReport}
               userRole={effectiveRole}
               clients={clients}
@@ -275,7 +278,30 @@ export default function App() {
           />
         )}
 
-        {/* Tab 5: Master Data & Equipment Settings - STRICT: ONLY FOR DIRECTOR */}
+        {/* Tab 5: Inventaris Logistik Lapangan (BBM Tangki, Pelumas & Spare Part) */}
+        {activeTab === 'logistics' && (
+          <LogisticsInventoryView
+            authUser={authUser}
+            clients={clients}
+            selectedClientId={selectedClientId}
+            onSelectClientId={setSelectedClientId}
+            showToast={showToast}
+          />
+        )}
+
+        {/* Tab 6: Fitur Khusus Pengawas Lapangan (P2H, Geotag Camera, HM Calc, Fuel Bowser, Safety Log) */}
+        {activeTab === 'supervisor-tools' && (
+          <SupervisorToolsView
+            authUser={authUser}
+            clients={clients}
+            selectedClientId={selectedClientId}
+            onSelectClientId={setSelectedClientId}
+            showToast={showToast}
+            onNavigateToWizard={() => setActiveTab('wizard')}
+          />
+        )}
+
+        {/* Tab 7: Master Data & Equipment Settings - STRICT: ONLY FOR DIRECTOR */}
         {activeTab === 'master' && (
           authUser.role === 'director' ? (
             <MasterDataView />

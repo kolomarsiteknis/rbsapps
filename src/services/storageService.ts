@@ -8,7 +8,10 @@ import {
   Project,
   LogisticsTransaction,
   DailyLocationTarget,
-  WeeklyFuelTrend
+  WeeklyFuelTrend,
+  DailyP2HChecklist,
+  FuelBowserReceipt,
+  SoilHazardIncident
 } from '../types';
 import { 
   initialDailyReports, 
@@ -19,7 +22,10 @@ import {
   initialClients, 
   initialProjects,
   initialLogisticsTransactions,
-  initialDailyTargets
+  initialDailyTargets,
+  initialP2HChecklists,
+  initialFuelBowserReceipts,
+  initialSoilIncidents
 } from '../data/mockData';
 
 const STORAGE_KEYS = {
@@ -33,6 +39,9 @@ const STORAGE_KEYS = {
   LOGISTICS_TRANSACTIONS: 'suryaland_logistics_transactions_v1',
   DAILY_TARGETS: 'suryaland_daily_targets_v1',
   DRAFT_REPORT: 'suryaland_report_wizard_draft_v1',
+  P2H_CHECKLISTS: 'suryaland_p2h_checklists_v1',
+  FUEL_BOWSER: 'suryaland_fuel_bowser_v1',
+  SOIL_INCIDENTS: 'suryaland_soil_incidents_v1',
 };
 
 // Safe JSON parser helper
@@ -796,6 +805,124 @@ export const storageService = {
     return false;
   },
 
+  // 1. P2H Checklists (Pemeriksaan Pra-Operasi)
+  getP2HChecklists(selectedClientId?: string): DailyP2HChecklist[] {
+    const list = loadFromStorage<DailyP2HChecklist[]>(STORAGE_KEYS.P2H_CHECKLISTS, initialP2HChecklists as unknown as DailyP2HChecklist[]);
+    if (!selectedClientId || selectedClientId === 'ALL') {
+      return list;
+    }
+    return list.filter((item) => item.clientId === selectedClientId);
+  },
+
+  saveP2HChecklist(item: DailyP2HChecklist): DailyP2HChecklist {
+    const list = this.getP2HChecklists();
+    const idx = list.findIndex((i) => i.id === item.id);
+    if (idx >= 0) {
+      list[idx] = item;
+    } else {
+      list.unshift(item);
+    }
+    saveToStorage(STORAGE_KEYS.P2H_CHECKLISTS, list);
+    return item;
+  },
+
+  deleteP2HChecklist(id: string): boolean {
+    const list = this.getP2HChecklists();
+    const filtered = list.filter((i) => i.id !== id);
+    if (filtered.length !== list.length) {
+      saveToStorage(STORAGE_KEYS.P2H_CHECKLISTS, filtered);
+      return true;
+    }
+    return false;
+  },
+
+  // 4. Fuel Bowser Field Receipts
+  getFuelBowserReceipts(selectedClientId?: string): FuelBowserReceipt[] {
+    const list = loadFromStorage<FuelBowserReceipt[]>(STORAGE_KEYS.FUEL_BOWSER, initialFuelBowserReceipts as unknown as FuelBowserReceipt[]);
+    if (!selectedClientId || selectedClientId === 'ALL') {
+      return list;
+    }
+    return list.filter((item) => item.clientId === selectedClientId);
+  },
+
+  saveFuelBowserReceipt(receipt: FuelBowserReceipt): FuelBowserReceipt {
+    const list = this.getFuelBowserReceipts();
+    const idx = list.findIndex((r) => r.id === receipt.id);
+    if (idx >= 0) {
+      list[idx] = receipt;
+    } else {
+      list.unshift(receipt);
+    }
+    saveToStorage(STORAGE_KEYS.FUEL_BOWSER, list);
+
+    // Also auto-record into Logistics Transaction Outflow so fuel tracking is unified
+    const logisticsTx: LogisticsTransaction = {
+      id: `TX-${receipt.id}`,
+      date: receipt.date,
+      timestamp: `${receipt.time}:00`,
+      category: 'BBM',
+      itemName: 'Solar Industri B35',
+      quantity: receipt.totalLitersFilled,
+      unit: 'Liter',
+      type: 'out',
+      clientId: receipt.clientId,
+      clientName: receipt.clientName,
+      blockCode: receipt.blockCode,
+      purpose: 'Saat pengisian solar di lapangan (Operasional Rutin)',
+      equipmentId: receipt.equipmentId,
+      equipmentName: receipt.equipmentName,
+      equipmentHmAtUsage: receipt.equipmentHmAtRefuel,
+      submittedByRole: 'supervisor',
+      submittedByName: receipt.supervisorName,
+      approvalStatus: 'approved',
+      notes: `Pengisian dari Truk Bowser ${receipt.bowserTruckId}. Segel: ${receipt.sealNumber}. Flowmeter: ${receipt.flowmeterStart} - ${receipt.flowmeterEnd}. Supir: ${receipt.bowserDriverName}`,
+    };
+    this.saveLogisticsTransaction(logisticsTx);
+
+    return receipt;
+  },
+
+  deleteFuelBowserReceipt(id: string): boolean {
+    const list = this.getFuelBowserReceipts();
+    const filtered = list.filter((r) => r.id !== id);
+    if (filtered.length !== list.length) {
+      saveToStorage(STORAGE_KEYS.FUEL_BOWSER, filtered);
+      return true;
+    }
+    return false;
+  },
+
+  // 5. Soil & Safety Hazard Incidents
+  getSoilIncidents(selectedClientId?: string): SoilHazardIncident[] {
+    const list = loadFromStorage<SoilHazardIncident[]>(STORAGE_KEYS.SOIL_INCIDENTS, initialSoilIncidents as unknown as SoilHazardIncident[]);
+    if (!selectedClientId || selectedClientId === 'ALL') {
+      return list;
+    }
+    return list.filter((item) => item.clientId === selectedClientId);
+  },
+
+  saveSoilIncident(incident: SoilHazardIncident): SoilHazardIncident {
+    const list = this.getSoilIncidents();
+    const idx = list.findIndex((i) => i.id === incident.id);
+    if (idx >= 0) {
+      list[idx] = incident;
+    } else {
+      list.unshift(incident);
+    }
+    saveToStorage(STORAGE_KEYS.SOIL_INCIDENTS, list);
+    return incident;
+  },
+
+  deleteSoilIncident(id: string): boolean {
+    const list = this.getSoilIncidents();
+    const filtered = list.filter((i) => i.id !== id);
+    if (filtered.length !== list.length) {
+      saveToStorage(STORAGE_KEYS.SOIL_INCIDENTS, filtered);
+      return true;
+    }
+    return false;
+  },
+
   // Reset database to initial seed
   resetToDefault(): void {
     saveToStorage(STORAGE_KEYS.REPORTS, initialDailyReports);
@@ -806,6 +933,9 @@ export const storageService = {
     saveToStorage(STORAGE_KEYS.CLIENTS, initialClients);
     saveToStorage(STORAGE_KEYS.PROJECTS, initialProjects);
     saveToStorage(STORAGE_KEYS.LOGISTICS_TRANSACTIONS, initialLogisticsTransactions);
+    saveToStorage(STORAGE_KEYS.P2H_CHECKLISTS, initialP2HChecklists);
+    saveToStorage(STORAGE_KEYS.FUEL_BOWSER, initialFuelBowserReceipts);
+    saveToStorage(STORAGE_KEYS.SOIL_INCIDENTS, initialSoilIncidents);
     this.clearDraft();
   },
 };

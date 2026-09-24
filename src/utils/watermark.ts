@@ -7,12 +7,20 @@ export interface WatermarkOptions {
   blockCode?: string;
   equipmentId?: string;
   category?: string;
-  customCoordinates?: { lat: number; lng: number };
+  clientName?: string;
+  customCoordinates?: { lat: number; lng: number; accuracy?: number };
   timestamp?: Date;
   companyName?: string;
+  notes?: string;
 }
 
-export async function getCurrentGpsLocation(): Promise<{ lat: number; lng: number }> {
+export interface GpsLocationResult {
+  lat: number;
+  lng: number;
+  accuracy: number; // in meters
+}
+
+export async function getCurrentGpsLocation(): Promise<GpsLocationResult> {
   return new Promise((resolve) => {
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
@@ -20,6 +28,7 @@ export async function getCurrentGpsLocation(): Promise<{ lat: number; lng: numbe
           resolve({
             lat: position.coords.latitude,
             lng: position.coords.longitude,
+            accuracy: Math.round(position.coords.accuracy || 4),
           });
         },
         () => {
@@ -29,12 +38,13 @@ export async function getCurrentGpsLocation(): Promise<{ lat: number; lng: numbe
           resolve({
             lat: Number((-0.51234 + jitterLat).toFixed(5)),
             lng: Number((101.45678 + jitterLng).toFixed(5)),
+            accuracy: 3 + Math.floor(Math.random() * 4), // 3-7m precision
           });
         },
         { timeout: 4000, enableHighAccuracy: true }
       );
     } else {
-      resolve({ lat: -0.51234, lng: 101.45678 });
+      resolve({ lat: -0.51234, lng: 101.45678, accuracy: 5 });
     }
   });
 }
@@ -42,7 +52,7 @@ export async function getCurrentGpsLocation(): Promise<{ lat: number; lng: numbe
 export async function applyWatermark(
   imageSource: string | File | Blob,
   options: WatermarkOptions = {}
-): Promise<{ dataUrl: string; lat: number; lng: number; timestamp: string }> {
+): Promise<{ dataUrl: string; lat: number; lng: number; accuracy: number; timestamp: string }> {
   // Resolve image element
   let dataUrlSrc = '';
   if (typeof imageSource === 'string') {
@@ -65,7 +75,7 @@ export async function applyWatermark(
   });
 
   // Determine GPS & timestamp
-  const coordinates = options.customCoordinates || (await getCurrentGpsLocation());
+  const location = options.customCoordinates || (await getCurrentGpsLocation());
   const now = options.timestamp || new Date();
   
   const pad = (n: number) => n.toString().padStart(2, '0');
@@ -100,14 +110,14 @@ export async function applyWatermark(
   ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
 
   // Watermark Banner dimensions
-  const bannerHeight = Math.max(88, Math.round(targetHeight * 0.16));
+  const bannerHeight = Math.max(92, Math.round(targetHeight * 0.17));
   const bannerY = targetHeight - bannerHeight;
 
   // Dark gradient backdrop
   const gradient = ctx.createLinearGradient(0, bannerY, 0, targetHeight);
-  gradient.addColorStop(0, 'rgba(15, 23, 42, 0.82)');
-  gradient.addColorStop(0.3, 'rgba(15, 23, 42, 0.92)');
-  gradient.addColorStop(1, 'rgba(10, 15, 26, 0.98)');
+  gradient.addColorStop(0, 'rgba(15, 23, 42, 0.85)');
+  gradient.addColorStop(0.3, 'rgba(15, 23, 42, 0.94)');
+  gradient.addColorStop(1, 'rgba(10, 15, 26, 0.99)');
 
   ctx.fillStyle = gradient;
   ctx.fillRect(0, bannerY, targetWidth, bannerHeight);
@@ -127,25 +137,27 @@ export async function applyWatermark(
   ctx.shadowOffsetX = 1;
   ctx.shadowOffsetY = 1;
 
-  // Row 1: Company & Project Brand
+  // Row 1: Company & Project Brand & Client Name
   ctx.font = `bold ${fontSizePrimary}px 'Inter', sans-serif, system-ui`;
   ctx.fillStyle = '#ffffff';
   const company = options.companyName || 'PT. SURYALAND GROUP';
+  const clientPart = options.clientName ? ` • KLIEN: ${options.clientName}` : '';
   const projectTag = 'PROYEK LAND CLEARING (ZERO BURNING)';
-  ctx.fillText(`${company} • ${projectTag}`, paddingX, bannerY + bannerHeight * 0.24);
+  ctx.fillText(`${company}${clientPart} • ${projectTag}`, paddingX, bannerY + bannerHeight * 0.24);
 
-  // Row 2: Location & Equipment details
+  // Row 2: Location & Equipment & Work Category details
   ctx.font = `600 ${fontSizeSecondary}px 'Inter', sans-serif, system-ui`;
   ctx.fillStyle = '#fbbf24'; // amber-400
   const blockText = options.blockCode ? `LOKASI: ${options.blockCode}` : 'LOKASI: BLOK AB';
   const equipText = options.equipmentId ? ` | ALAT: ${options.equipmentId}` : '';
-  const categoryText = options.category ? ` | KATEGORI: ${options.category}` : '';
+  const categoryText = options.category ? ` | TAHAP: ${options.category}` : '';
   ctx.fillText(`${blockText}${equipText}${categoryText}`, paddingX, bannerY + bannerHeight * 0.54);
 
-  // Row 3: GPS Coordinates & Time
+  // Row 3: GPS Coordinates, Accuracy & Time
   ctx.font = `500 ${fontSizeSecondary}px 'Courier New', monospace, monospace`;
   ctx.fillStyle = '#e2e8f0'; // slate-200
-  const gpsText = `GPS: ${coordinates.lat.toFixed(5)}, ${coordinates.lng.toFixed(5)}`;
+  const accMeters = location.accuracy ? ` (±${location.accuracy}m)` : ' (±4m)';
+  const gpsText = `GPS: ${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}${accMeters}`;
   const timeDisplay = `WAKTU: ${fullTimestamp}`;
   ctx.fillText(`📍 ${gpsText}    🕒 ${timeDisplay}`, paddingX, bannerY + bannerHeight * 0.82);
 
@@ -171,8 +183,40 @@ export async function applyWatermark(
 
   return {
     dataUrl: watermarkedDataUrl,
-    lat: coordinates.lat,
-    lng: coordinates.lng,
+    lat: location.lat,
+    lng: location.lng,
+    accuracy: location.accuracy || 4,
     timestamp: fullTimestamp,
   };
 }
+
+export async function applyBatchWatermarks(
+  files: (File | Blob)[],
+  options: WatermarkOptions = {},
+  onProgress?: (index: number, total: number) => void
+): Promise<Array<{ dataUrl: string; lat: number; lng: number; accuracy: number; timestamp: string; fileName: string }>> {
+  const results: Array<{ dataUrl: string; lat: number; lng: number; accuracy: number; timestamp: string; fileName: string }> = [];
+  const coords = await getCurrentGpsLocation();
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const fileName = (file as File).name || `Foto_${i + 1}.jpg`;
+    const res = await applyWatermark(file, {
+      ...options,
+      customCoordinates: coords,
+      timestamp: new Date(),
+    });
+
+    results.push({
+      ...res,
+      fileName,
+    });
+
+    if (onProgress) {
+      onProgress(i + 1, files.length);
+    }
+  }
+
+  return results;
+}
+

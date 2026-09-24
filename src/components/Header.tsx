@@ -8,17 +8,17 @@ import {
   RotateCcw, 
   PlusCircle, 
   Printer, 
-  Building2,
   LogOut,
   HardHat,
   ShieldCheck,
-  AlertTriangle
+  AlertTriangle,
+  Fuel
 } from 'lucide-react';
 import { UserRole, Client, AuthUser } from '../types';
 
 interface HeaderProps {
-  activeTab: 'dashboard' | 'wizard' | 'reports' | 'master' | 'official-pdf';
-  setActiveTab: (tab: 'dashboard' | 'wizard' | 'reports' | 'master' | 'official-pdf') => void;
+  activeTab: 'dashboard' | 'wizard' | 'reports' | 'master' | 'official-pdf' | 'logistics' | 'supervisor-tools';
+  setActiveTab: (tab: 'dashboard' | 'wizard' | 'reports' | 'master' | 'official-pdf' | 'logistics' | 'supervisor-tools') => void;
   authUser: AuthUser | null;
   onLogout: () => void;
   userRole?: UserRole;
@@ -72,43 +72,8 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          {/* Client Filter Selector & Controls */}
+          {/* Controls */}
           <div className="flex flex-wrap items-center gap-2">
-            {/* Global Client Filter Selector */}
-            <div className="flex items-center bg-slate-800 border border-amber-500/40 rounded-lg px-2 py-1 gap-1.5 shadow-xs">
-              <Building2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-              <div className="flex flex-col">
-                <span className="text-[9px] text-slate-400 uppercase font-bold leading-none">Pilih Klien:</span>
-                <select
-                  value={selectedClientId}
-                  onChange={(e) => {
-                    if (e.target.value === 'ADD_NEW') {
-                      if (isDirector) {
-                        setActiveTab('master');
-                      }
-                    } else {
-                      setSelectedClientId(e.target.value);
-                    }
-                  }}
-                  className="bg-transparent text-xs font-bold text-amber-300 focus:outline-none cursor-pointer pr-1"
-                >
-                  <option value="ALL" className="bg-slate-900 text-white font-bold">
-                    Semua Klien (Konsolidasi Multi-Client)
-                  </option>
-                  {clients.map((c) => (
-                    <option key={c.id} value={c.id} className="bg-slate-900 text-white font-medium">
-                      {c.name} ({c.fullCompanyName.slice(0, 24)}...)
-                    </option>
-                  ))}
-                  {isDirector && (
-                    <option value="ADD_NEW" className="bg-slate-900 text-amber-400 font-bold">
-                      + Tambah Klien Baru...
-                    </option>
-                  )}
-                </select>
-              </div>
-            </div>
-
             {/* Offline/Online toggle */}
             <button
               onClick={() => setIsOnline(!isOnline)}
@@ -207,6 +172,19 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
+            {/* Fitur Cepat Pengawas Lapangan (P2H, Geotag, HM, Solar Bowser, K3) */}
+            <button
+              onClick={() => setActiveTab('supervisor-tools')}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                activeTab === 'supervisor-tools'
+                  ? 'bg-amber-500 text-slate-950 shadow-md font-black'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <HardHat className="w-3.5 h-3.5 text-amber-400" />
+              <span>Fitur Cepat Pengawas (P2H / Geotag / K3)</span>
+            </button>
+
             {/* 3. Rekapitulasi Laporan - Accessible to both */}
             <button
               onClick={() => setActiveTab('reports')}
@@ -220,7 +198,23 @@ export const Header: React.FC<HeaderProps> = ({
               <span>Rekap Laporan</span>
             </button>
 
-            {/* 4. Format Cetak PDF Resmi - Accessible to both */}
+            {/* 4. Inventaris Logistik Lapangan (BBM, Pelumas & Spare Part) - Accessible to both Direktur & Pengawas */}
+            <button
+              onClick={() => setActiveTab('logistics')}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer relative ${
+                activeTab === 'logistics'
+                  ? 'bg-amber-500 text-slate-950 shadow-md font-black'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <Fuel className="w-3.5 h-3.5 text-amber-400" />
+              <span>Logistik & Stok Lapangan</span>
+              {pendingSyncCount !== undefined && pendingSyncCount > 0 && (
+                <span className="sr-only">pending</span>
+              )}
+            </button>
+
+            {/* 5. Format Cetak PDF Resmi - Accessible to both */}
             <button
               onClick={() => setActiveTab('official-pdf')}
               className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${

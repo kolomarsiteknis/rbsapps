@@ -132,7 +132,7 @@ export const WeeklyFuelRatioChart: React.FC<WeeklyFuelRatioChartProps> = ({
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="px-2.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-500 text-slate-950 flex items-center gap-1">
-              <Fuel className="w-3 h-3 text-slate-950" /> Kontrol Bahan Bakar
+              <Fuel className="w-3 h-3 text-slate-950" /> Ringkasan Kontrol Bahan Bakar
             </span>
             <span className="text-xs text-slate-500 font-medium">
               Metode Zero Burning (Mekanis Tanpa Bakar)
@@ -140,7 +140,7 @@ export const WeeklyFuelRatioChart: React.FC<WeeklyFuelRatioChartProps> = ({
           </div>
 
           <h3 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-            Tren Rasio Konsumsi BBM (Liter / Ha) Setiap Minggu
+            Ringkasan Kontrol Bahan Bakar (Tren Rasio Liter / Ha Mingguan)
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
             {selectedClientId !== 'ALL' && clientName

@@ -260,9 +260,6 @@ export interface DailyReport {
     realizedAreaHa: number; // e.g. 3.80 Ha
     cumulativeAreaHa: number; // e.g. 48.80 Ha
     progressPercentage: number; // e.g. 48.80%
-    targetDrainageM?: number;
-    realizedDrainageM?: number;
-    cumulativeDrainageM?: number;
     notes: string;
   };
 
@@ -310,5 +307,99 @@ export interface WeeklyFuelTrend {
   totalHm: number;
   status: 'Sangat Efisien' | 'Optimal' | 'Mendekati Batas' | 'Over Benchmark';
   notes: string;
+}
+
+// 1. Checklist Inspeksi Harian Alat Berat (P2H - Pemeriksaan Pra-Operasi)
+export type P2HItemCondition = 'Baik / Normal' | 'Perlu Perhatian' | 'Rusak / Bahaya';
+
+export interface DailyP2HChecklist {
+  id: string; // e.g. "P2H-2026-09-24-EX01"
+  date: string; // YYYY-MM-DD
+  time: string; // HH:mm
+  equipmentId: string;
+  equipmentName: string;
+  operatorName: string;
+  supervisorName: string;
+  clientId: string;
+  clientName: string;
+  blockCode: string;
+  hmStart: number;
+  
+  // 8 Critical Pre-Operational Points
+  engineOilLevel: P2HItemCondition;
+  radiatorCoolant: P2HItemCondition;
+  hydraulicOilAndPressure: P2HItemCondition;
+  hydraulicHosesAndFittings: P2HItemCondition; // Deteksi dini selang retak/bocor
+  undercarriageAndTracks: P2HItemCondition; // Track shoe, link, roller
+  fuelLevelAndSeparator: P2HItemCondition;
+  electricalAndLights: P2HItemCondition;
+  safetyAparAndSeatbelt: P2HItemCondition;
+  
+  overallStatus: 'Layak Operasi' | 'Bersyarat (Pantau)' | 'Stop Operasi (Butuh Mekanik)';
+  mechanicActionNeeded: boolean;
+  notes?: string;
+  createdAt: string;
+}
+
+// 4. Form Cepat Penerimaan Solar Keliling (Fuel Bowser / Tangki Lapangan)
+export interface FuelBowserReceipt {
+  id: string; // e.g. "FBW-2026-09-24-001"
+  date: string;
+  time: string;
+  clientId: string;
+  clientName: string;
+  blockCode: string;
+  bowserTruckId: string; // e.g. "BM 8421 AU (Tangki 5.000 L)"
+  sealNumber: string; // No segel tangki supplier
+  deliveryDocNumber: string; // No Surat Jalan
+  equipmentId: string; // Unit yang diisi (e.g. EX-01)
+  equipmentName: string;
+  equipmentHmAtRefuel: number;
+  flowmeterStart: number;
+  flowmeterEnd: number;
+  totalLitersFilled: number; // calculated: flowmeterEnd - flowmeterStart
+  fuelQualityCheck: 'Jernih (B35 Standar)' | 'Keruh / Ada Air' | 'Kotor';
+  operatorName: string;
+  bowserDriverName: string;
+  supervisorName: string;
+  photoUrl?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+// 5. Log Insiden Lapangan & Kondisi Tanah (Safety & Soil Hazard Log)
+export type SoilIncidentType = 
+  | 'Alat Amblas di Tanah Gambut Dalam'
+  | 'Pohon Lapuk Roboh / Menimpa Jalur'
+  | 'Tanggul Jebol / Luapan Banjir Sungai Batas'
+  | 'Senggolan / Insiden Manuver Alat'
+  | 'Percikan Api / Kesiapsiagaan Karhutla'
+  | 'Patah Track / Roller Lepas di Lapangan'
+  | 'Lainnya';
+
+export type IncidentSeverity = 'Ringan (Tangani Sendiri)' | 'Sedang (Butuh Bantuan Winching)' | 'Kritis (Stop Operasi)';
+
+export interface SoilHazardIncident {
+  id: string; // e.g. "INC-2026-09-24-01"
+  date: string;
+  time: string;
+  clientId: string;
+  clientName: string;
+  blockCode: string;
+  incidentType: SoilIncidentType;
+  severity: IncidentSeverity;
+  affectedEquipmentId?: string;
+  affectedEquipmentName?: string;
+  operatorName?: string;
+  rescuingEquipmentId?: string; // Alat penolong (misal DZ-01 menarik EX-01)
+  evacuationDurationHours: number; // Pull-out duration (Jam)
+  soilCondition: 'Tanah Gambut Kedalaman > 2m' | 'Gambut Dangkal / Basah' | 'Tanah Mineral Licin / Berlumpur' | 'Rawa Rendahan';
+  injuryStatus: 'Zero Accident (Nihil Cidera)' | 'P3K Ringan' | 'Perlu Perawatan';
+  actionTaken: string;
+  preventionNotes: string;
+  photoUrl?: string;
+  resolvedStatus: 'Selesai Dievakuasi' | 'Dalam Penanganan' | 'Menunggu Bantuan Unit Tambahan';
+  supervisorName: string;
+  createdAt: string;
 }
 

@@ -449,29 +449,34 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
 
     setIsProcessingPhoto(true);
     try {
-      const file = files[0];
       const blockCode = activeBlock?.code || 'Blok AB';
-      
-      const watermarked = await applyWatermark(file, {
-        blockCode,
-        category: photoCategory,
-        companyName: 'PT. SURYALAND GROUP',
-      });
+      const clientName = selectedClient?.name || 'PT. A';
+      const newItems: ReportPhoto[] = [];
 
-      const newPhotoItem: ReportPhoto = {
-        id: `p-${Date.now()}`,
-        category: photoCategory,
-        caption: photoCaption || `Foto Lapangan ${photoCategory}`,
-        dataUrl: watermarked.dataUrl,
-        gpsCoordinates: {
-          lat: watermarked.lat,
-          lng: watermarked.lng,
-        },
-        timestamp: watermarked.timestamp,
-        blockCode,
-      };
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const watermarked = await applyWatermark(file, {
+          blockCode,
+          category: photoCategory,
+          companyName: 'PT. SURYALAND GROUP',
+          clientName: clientName,
+        });
 
-      setPhotos((prev) => [...prev, newPhotoItem]);
+        newItems.push({
+          id: `p-${Date.now()}-${i}`,
+          category: photoCategory,
+          caption: photoCaption || `Foto Lapangan ${photoCategory} (${file.name || `File ${i + 1}`})`,
+          dataUrl: watermarked.dataUrl,
+          gpsCoordinates: {
+            lat: watermarked.lat,
+            lng: watermarked.lng,
+          },
+          timestamp: watermarked.timestamp,
+          blockCode,
+        });
+      }
+
+      setPhotos((prev) => [...prev, ...newItems]);
       setPhotoCaption('');
     } catch (err) {
       console.error('Failed to watermark photo:', err);
@@ -1583,15 +1588,49 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                     </div>
                   </div>
 
-                  {/* 3. Effective calculation footer */}
-                  <div className="flex flex-wrap items-center justify-between text-xs pt-2 border-t border-slate-200 text-slate-600">
-                    <div>
-                      Rumus: <strong>Jam Buka ({log.totalHm} HM) - Downtime ({(log.downtimeWeatherHours + log.downtimeBreakdownHours + log.downtimeOtherHours).toFixed(1)} Jam)</strong>
-                    </div>
-                    <div className="font-bold text-slate-900">
-                      = Jam Kerja Efektif: <span className="text-emerald-700 text-sm">{log.effectiveWorkHours.toFixed(1)} HM</span>
-                    </div>
-                  </div>
+                  {/* 3. Effective calculation footer & Discrepancy Alert */}
+                  {(() => {
+                    const totalDowntime = Number((log.downtimeWeatherHours + log.downtimeBreakdownHours + log.downtimeOtherHours).toFixed(1));
+                    const isHmReversed = log.hmEnd < log.hmStart;
+                    const isDowntimeExceeded = totalDowntime > log.totalHm;
+
+                    return (
+                      <div className="space-y-2 pt-2 border-t border-slate-200">
+                        <div className="flex flex-wrap items-center justify-between text-xs text-slate-600">
+                          <div>
+                            Rumus: <strong>Jam Buka ({log.totalHm} HM) - Downtime ({totalDowntime} Jam)</strong>
+                          </div>
+                          <div className="font-bold text-slate-900 flex items-center gap-2">
+                            <span>Jam Kerja Efektif:</span>
+                            <span className="text-emerald-700 text-sm font-black font-mono">{log.effectiveWorkHours.toFixed(1)} HM</span>
+                          </div>
+                        </div>
+
+                        {/* DISCREPANCY ALERT BADGE */}
+                        {isHmReversed ? (
+                          <div className="p-2.5 bg-rose-50 border border-rose-300 rounded-lg flex items-center gap-2 text-xs text-rose-900 font-bold">
+                            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                            <span>ALERT DISKREPANSI: HM Akhir ({log.hmEnd}) lebih kecil dari HM Awal ({log.hmStart})! Periksa kembali inputan meteran alat!</span>
+                          </div>
+                        ) : isDowntimeExceeded ? (
+                          <div className="p-2.5 bg-rose-50 border border-rose-300 rounded-lg flex items-center gap-2 text-xs text-rose-900 font-bold">
+                            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                            <span>ALERT DISKREPANSI: Total Jam Mati ({totalDowntime} Jam) melebihi putaran fisik HM ({log.totalHm} HM)! Jam efektif diset 0.</span>
+                          </div>
+                        ) : log.totalHm > 0 ? (
+                          <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between text-[11px] text-emerald-900">
+                            <span className="flex items-center gap-1.5 font-bold">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>Validasi Jam Kerja: Sinkron Sempurna ({log.effectiveWorkHours} Jam Efektif + {totalDowntime} Jam Mati = {log.totalHm} HM)</span>
+                            </span>
+                            <span className="font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">
+                              ✓ 100% Valid
+                            </span>
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })()}
                 </div>
               ))}
             </div>
@@ -2024,7 +2063,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                 <input
                   type="file"
                   accept="image/*"
-                  capture="environment"
+                  multiple
                   ref={fileInputRef}
                   onChange={handlePhotoSelected}
                   className="hidden"
@@ -2034,10 +2073,10 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                   type="button"
                   disabled={isProcessingPhoto}
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs shadow-md transition disabled:opacity-50"
+                  className="flex items-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs shadow-md transition disabled:opacity-50 cursor-pointer"
                 >
                   <Camera className="w-4 h-4" />
-                  <span>Ambil Foto Kamera / Pilih File</span>
+                  <span>Ambil Foto / Batch Unggah (Multi-Foto)</span>
                 </button>
 
                 <button
