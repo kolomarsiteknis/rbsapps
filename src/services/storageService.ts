@@ -11,7 +11,12 @@ import {
   WeeklyFuelTrend,
   DailyP2HChecklist,
   FuelBowserReceipt,
-  SoilHazardIncident
+  SoilHazardIncident,
+  FieldGeotagPhoto,
+  HmDiscrepancyLog,
+  UserActivityLog,
+  ActivityActionCategory,
+  ManagedUser
 } from '../types';
 import { 
   initialDailyReports, 
@@ -25,7 +30,9 @@ import {
   initialDailyTargets,
   initialP2HChecklists,
   initialFuelBowserReceipts,
-  initialSoilIncidents
+  initialSoilIncidents,
+  initialJobTitles,
+  initialManagedUsers
 } from '../data/mockData';
 
 const STORAGE_KEYS = {
@@ -42,6 +49,10 @@ const STORAGE_KEYS = {
   P2H_CHECKLISTS: 'suryaland_p2h_checklists_v1',
   FUEL_BOWSER: 'suryaland_fuel_bowser_v1',
   SOIL_INCIDENTS: 'suryaland_soil_incidents_v1',
+  GEOTAG_PHOTOS: 'suryaland_geotag_photos_v1',
+  USER_ACTIVITIES: 'suryaland_user_activities_v1',
+  MANAGED_USERS: 'suryaland_managed_users_v1',
+  JOB_TITLES: 'suryaland_job_titles_v1',
 };
 
 // Safe JSON parser helper
@@ -923,6 +934,594 @@ export const storageService = {
     return false;
   },
 
+  // 2. Geotag Photos Management
+  getGeotagPhotos(selectedClientId?: string): FieldGeotagPhoto[] {
+    const defaultSeed: FieldGeotagPhoto[] = [
+      {
+        id: 'seed-geo-1',
+        fileName: 'Stacking_SubBlok_12_ZeroBurning.jpg',
+        dataUrl: 'https://images.unsplash.com/photo-1578328819058-b69f3a3b0f6b?auto=format&fit=crop&w=800&q=80',
+        lat: -0.51234,
+        lng: 101.45678,
+        accuracy: 3.5,
+        timestamp: '24/09/2026 09:15:20 WIB',
+        category: 'Progres Tumbang-Cincang (Stacking)',
+        blockCode: 'Blok AB',
+        equipmentId: 'EX-01',
+        clientId: 'client-1',
+        clientName: 'PT. A',
+        supervisorName: 'Budi Santoso',
+        notes: 'Perumpukan batang kayu cincang sejajar kontur tanah sesuai SOP Zero Burning.',
+      },
+      {
+        id: 'seed-geo-2',
+        fileName: 'Parit_Batas_Air_Siak.jpg',
+        dataUrl: 'https://images.unsplash.com/photo-1581094288338-2314dddb7ece?auto=format&fit=crop&w=800&q=80',
+        lat: -0.51345,
+        lng: 101.45789,
+        accuracy: 2.8,
+        timestamp: '24/09/2026 10:45:10 WIB',
+        category: 'Pembuatan Parit Batas (Trenching)',
+        blockCode: 'Blok AB',
+        equipmentId: 'EX-01',
+        clientId: 'client-1',
+        clientName: 'PT. A',
+        supervisorName: 'Budi Santoso',
+        notes: 'Parit batas blok lebar 2 meter kedalaman 1.5 meter untuk isolasi air & batas rintis.',
+      },
+      {
+        id: 'seed-geo-3',
+        fileName: 'Clearing_Perbatasan_Pelalawan.jpg',
+        dataUrl: 'https://images.unsplash.com/photo-1508873696983-2df5293cb32b?auto=format&fit=crop&w=800&q=80',
+        lat: 0.12345,
+        lng: 102.12345,
+        accuracy: 4.1,
+        timestamp: '24/09/2026 11:20:00 WIB',
+        category: 'Rabas & Pembersihan Semak',
+        blockCode: 'Blok B-01',
+        equipmentId: 'EX-02',
+        clientId: 'client-2',
+        clientName: 'PT. B',
+        supervisorName: 'Ahmad Fauzi',
+        notes: 'Pembersihan semak belukar tanah mineral sebelum perumpukan mekanik.',
+      },
+    ];
+
+    const stored = loadFromStorage<FieldGeotagPhoto[]>(STORAGE_KEYS.GEOTAG_PHOTOS, defaultSeed);
+
+    // Also include photos from daily reports that have GPS coordinates
+    const reports = this.getReports(selectedClientId);
+    const reportPhotos: FieldGeotagPhoto[] = [];
+    reports.forEach((rep) => {
+      rep.photos?.forEach((p, idx) => {
+        reportPhotos.push({
+          id: `rep-photo-${rep.id}-${idx}`,
+          fileName: `${rep.reportNumber}_${p.category.replace(/\s+/g, '_')}.jpg`,
+          dataUrl: p.dataUrl,
+          lat: p.gpsCoordinates?.lat || -0.51234,
+          lng: p.gpsCoordinates?.lng || 101.45678,
+          accuracy: 4.0,
+          timestamp: p.timestamp || rep.date,
+          category: p.category,
+          blockCode: p.blockCode || rep.blockCode,
+          equipmentId: p.equipmentId,
+          clientId: rep.clientId,
+          clientName: rep.clientName,
+          supervisorName: rep.signatures?.supervisor?.name || 'Pengawas Lapangan',
+          notes: p.caption,
+        });
+      });
+    });
+
+    const combined = [...stored];
+    reportPhotos.forEach((rp) => {
+      if (!combined.some((c) => c.id === rp.id)) {
+        combined.push(rp);
+      }
+    });
+
+    if (!selectedClientId || selectedClientId === 'ALL') {
+      return combined;
+    }
+    return combined.filter((p) => p.clientId === selectedClientId);
+  },
+
+  saveGeotagPhoto(photo: FieldGeotagPhoto): FieldGeotagPhoto {
+    const list = loadFromStorage<FieldGeotagPhoto[]>(STORAGE_KEYS.GEOTAG_PHOTOS, []);
+    const idx = list.findIndex((p) => p.id === photo.id);
+    if (idx >= 0) {
+      list[idx] = photo;
+    } else {
+      list.unshift(photo);
+    }
+    saveToStorage(STORAGE_KEYS.GEOTAG_PHOTOS, list);
+    return photo;
+  },
+
+  deleteGeotagPhoto(id: string): boolean {
+    const list = loadFromStorage<FieldGeotagPhoto[]>(STORAGE_KEYS.GEOTAG_PHOTOS, []);
+    const filtered = list.filter((p) => p.id !== id);
+    if (filtered.length !== list.length) {
+      saveToStorage(STORAGE_KEYS.GEOTAG_PHOTOS, filtered);
+      return true;
+    }
+    return false;
+  },
+
+  // 3. HM Discrepancy & Verification Logs from Daily Reports
+  getHmDiscrepancyLogs(selectedClientId?: string): HmDiscrepancyLog[] {
+    const reports = this.getReports(selectedClientId);
+    const logs: HmDiscrepancyLog[] = [];
+
+    reports.forEach((rep) => {
+      rep.equipmentWorkLogs?.forEach((log, idx) => {
+        const totalLogged = Number((log.effectiveWorkHours + log.downtimeWeatherHours + log.downtimeBreakdownHours + log.downtimeOtherHours).toFixed(1));
+        const disc = Number((log.totalHm - totalLogged).toFixed(1));
+        const isDisc = Math.abs(disc) >= 0.2;
+
+        logs.push({
+          id: `hm-disc-${rep.id}-${log.equipmentId}-${idx}`,
+          date: rep.date,
+          reportId: rep.id,
+          reportNumber: rep.reportNumber,
+          clientId: rep.clientId,
+          clientName: rep.clientName,
+          blockCode: rep.blockCode,
+          equipmentId: log.equipmentId,
+          equipmentName: log.equipmentName || log.type,
+          hmStart: log.hmStart,
+          hmEnd: log.hmEnd,
+          totalHm: log.totalHm,
+          effectiveWorkHours: log.effectiveWorkHours,
+          downtimeWeatherHours: log.downtimeWeatherHours,
+          downtimeBreakdownHours: log.downtimeBreakdownHours,
+          downtimeOtherHours: log.downtimeOtherHours,
+          totalLoggedHours: totalLogged,
+          discrepancyHours: disc,
+          isDiscrepancy: isDisc,
+          fuelAddedLiters: log.fuelAddedLiters,
+          fuelRatio: log.fuelRatio,
+          fuelStandardLimit: log.fuelStandardLimit,
+          isFuelAlert: log.isFuelAlert,
+          notes: log.downtimeBreakdownNote || log.downtimeWeatherNote || '',
+          supervisorName: rep.signatures?.supervisor?.name || 'Pengawas Lapangan',
+        });
+      });
+    });
+
+    // Sort newest date first
+    return logs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  },
+
+  // 4. User Activity Log & GPS Location History
+  getUserActivities(): UserActivityLog[] {
+    const defaultActivities: UserActivityLog[] = [
+      {
+        id: 'act-001',
+        timestamp: new Date(Date.now() - 1000 * 60 * 18).toISOString(),
+        formattedTime: '24/09/2026, 13:45:20 WIB',
+        userId: 'spv-01',
+        userName: 'Budi Santoso',
+        userRole: 'supervisor',
+        userEmail: 'pengawas.riau@suryaland.co.id',
+        actionCategory: 'P2H',
+        actionTitle: 'Checklist P2H Pra-Operasi Disimpan',
+        actionDescription: 'Melakukan inspeksi kelayakan harian Excavator EX-01 (Komatsu PC200). Status: Layak Operasi. HM Awal: 3.420,5.',
+        targetEntity: 'EX-01 (Komatsu PC200)',
+        clientId: 'client-1',
+        clientName: 'PT. A',
+        blockCode: 'Blok AB',
+        gpsTag: {
+          lat: -0.51234,
+          lng: 101.45678,
+          accuracy: 2.8,
+          locationName: 'Blok AB, Estate Siak (Dayun, Riau)',
+          mapsUrl: 'https://www.google.com/maps?q=-0.51234,101.45678',
+        },
+        deviceInfo: {
+          deviceType: 'Mobile',
+          browser: 'Chrome Mobile / Android 14',
+          isOnline: true,
+        },
+      },
+      {
+        id: 'act-002',
+        timestamp: new Date(Date.now() - 1000 * 60 * 42).toISOString(),
+        formattedTime: '24/09/2026, 13:21:10 WIB',
+        userId: 'spv-01',
+        userName: 'Budi Santoso',
+        userRole: 'supervisor',
+        userEmail: 'pengawas.riau@suryaland.co.id',
+        actionCategory: 'CAMERA_GEOTAG',
+        actionTitle: 'Upload Foto Geotagging GPS Progres',
+        actionDescription: 'Mengambil & memberi cap watermark GPS foto progres Stacking/Perumpukan kayu kontur tanah di Sub-Blok 12.',
+        targetEntity: 'Stacking_SubBlok_12_ZeroBurning.jpg',
+        clientId: 'client-1',
+        clientName: 'PT. A',
+        blockCode: 'Blok AB',
+        gpsTag: {
+          lat: -0.51238,
+          lng: 101.45670,
+          accuracy: 3.2,
+          locationName: 'Sub-Blok 12, Estate Siak (Riau)',
+          mapsUrl: 'https://www.google.com/maps?q=-0.51238,101.45670',
+        },
+        deviceInfo: {
+          deviceType: 'Mobile',
+          browser: 'Chrome Mobile / Android 14',
+          isOnline: true,
+        },
+      },
+      {
+        id: 'act-003',
+        timestamp: new Date(Date.now() - 1000 * 60 * 75).toISOString(),
+        formattedTime: '24/09/2026, 12:48:05 WIB',
+        userId: 'spv-02',
+        userName: 'Ahmad Fauzi',
+        userRole: 'supervisor',
+        userEmail: 'ahmad.fauzi@suryaland.co.id',
+        actionCategory: 'FUEL_BOWSER',
+        actionTitle: 'Penerimaan Solar Bowser Keliling Dicatat',
+        actionDescription: 'Mencatat pengisian solar dari Truk Bowser B 9821 TPA (Supir: Rahmat Santoso). Total: 1.200 Liter, Segel: S-7721, Status BBM: B35 Jernih/Lolos Uji Visual.',
+        targetEntity: 'B 9821 TPA (1.200 L)',
+        clientId: 'client-2',
+        clientName: 'PT. B',
+        blockCode: 'Blok B-01',
+        gpsTag: {
+          lat: 0.12345,
+          lng: 102.12345,
+          accuracy: 4.1,
+          locationName: 'Pangkalan Solar Blok B-01, Estate Pelalawan (Riau)',
+          mapsUrl: 'https://www.google.com/maps?q=0.12345,102.12345',
+        },
+        deviceInfo: {
+          deviceType: 'Mobile',
+          browser: 'Chrome Mobile / Android 13',
+          isOnline: true,
+        },
+      },
+      {
+        id: 'act-004',
+        timestamp: new Date(Date.now() - 1000 * 60 * 110).toISOString(),
+        formattedTime: '24/09/2026, 12:13:30 WIB',
+        userId: 'spv-02',
+        userName: 'Ahmad Fauzi',
+        userRole: 'supervisor',
+        userEmail: 'ahmad.fauzi@suryaland.co.id',
+        actionCategory: 'SOIL_INCIDENT',
+        actionTitle: 'Pencatatan Insiden K3 Tanah Gambut',
+        actionDescription: 'Merekam insiden alat berat amblas kedalaman 1,8 meter pada rintis parit. Evakuasi bantuan unit Dozer D65P penarik kabel seling. Nihil korban cidera (Zero Accident).',
+        targetEntity: 'Insiden Amblas EX-02',
+        clientId: 'client-2',
+        clientName: 'PT. B',
+        blockCode: 'Blok B-01',
+        gpsTag: {
+          lat: 0.12401,
+          lng: 102.12410,
+          accuracy: 3.5,
+          locationName: 'Area Gambut Rawang, Blok B-01 Pelalawan (Riau)',
+          mapsUrl: 'https://www.google.com/maps?q=0.12401,102.12410',
+        },
+        deviceInfo: {
+          deviceType: 'Mobile',
+          browser: 'Chrome Mobile / Android 13',
+          isOnline: true,
+        },
+      },
+      {
+        id: 'act-005',
+        timestamp: new Date(Date.now() - 1000 * 60 * 155).toISOString(),
+        formattedTime: '24/09/2026, 11:28:45 WIB',
+        userId: 'spv-01',
+        userName: 'Budi Santoso',
+        userRole: 'supervisor',
+        userEmail: 'pengawas.riau@suryaland.co.id',
+        actionCategory: 'REPORT',
+        actionTitle: 'Submit Laporan Harian #SRL-2026-001',
+        actionDescription: 'Menyimpan dan mengunggah Laporan Harian Progres Land Clearing PT. A (Progres 3.5 Ha, 4 Unit Alat Berat Beroperasi, Pemakaian BBM 650 Liter).',
+        targetEntity: 'Laporan #SRL-2026-001',
+        clientId: 'client-1',
+        clientName: 'PT. A',
+        blockCode: 'Blok AB',
+        gpsTag: {
+          lat: -0.51234,
+          lng: 101.45678,
+          accuracy: 3.0,
+          locationName: 'Posko Lapangan Blok AB Siak (Riau)',
+          mapsUrl: 'https://www.google.com/maps?q=-0.51234,101.45678',
+        },
+        deviceInfo: {
+          deviceType: 'Mobile',
+          browser: 'Chrome Mobile / Android 14',
+          isOnline: true,
+        },
+      },
+      {
+        id: 'act-006',
+        timestamp: new Date(Date.now() - 1000 * 60 * 205).toISOString(),
+        formattedTime: '24/09/2026, 10:38:12 WIB',
+        userId: 'dir-01',
+        userName: 'Ir. Hendra Wijaya, M.Si',
+        userRole: 'director',
+        userEmail: 'direktur@suryaland.co.id',
+        actionCategory: 'REPORT',
+        actionTitle: 'Approval Digital Dokumen Laporan',
+        actionDescription: 'Memberikan tanda tangan digital persetujuan Direktur untuk Laporan Harian #SRL-2026-001 PT. A.',
+        targetEntity: 'Approval Laporan #SRL-2026-001',
+        clientId: 'client-1',
+        clientName: 'PT. A',
+        blockCode: 'Blok AB',
+        gpsTag: {
+          lat: 0.50707,
+          lng: 101.44778,
+          accuracy: 5.0,
+          locationName: 'Kantor Pusat PT. Suryaland, Pekanbaru (Riau)',
+          mapsUrl: 'https://www.google.com/maps?q=0.50707,101.44778',
+        },
+        deviceInfo: {
+          deviceType: 'Desktop',
+          browser: 'Chrome / Windows 11 Pro',
+          isOnline: true,
+        },
+      },
+      {
+        id: 'act-007',
+        timestamp: new Date(Date.now() - 1000 * 60 * 270).toISOString(),
+        formattedTime: '24/09/2026, 09:33:00 WIB',
+        userId: 'spv-01',
+        userName: 'Budi Santoso',
+        userRole: 'supervisor',
+        userEmail: 'pengawas.riau@suryaland.co.id',
+        actionCategory: 'AUTH',
+        actionTitle: 'Masuk Sesi Pengawas Lapangan',
+        actionDescription: 'Pengawas berhasil login ke sistem di lokasi proyek Siak dengan sinyal 4G stabil.',
+        targetEntity: 'Sesi Mobile Pengawas',
+        clientId: 'client-1',
+        clientName: 'PT. A',
+        blockCode: 'Blok AB',
+        gpsTag: {
+          lat: -0.51234,
+          lng: 101.45678,
+          accuracy: 3.5,
+          locationName: 'Camp Pekerja Blok AB, Siak (Riau)',
+          mapsUrl: 'https://www.google.com/maps?q=-0.51234,101.45678',
+        },
+        deviceInfo: {
+          deviceType: 'Mobile',
+          browser: 'Chrome Mobile / Android 14',
+          isOnline: true,
+        },
+      },
+      {
+        id: 'act-008',
+        timestamp: new Date(Date.now() - 1000 * 60 * 330).toISOString(),
+        formattedTime: '24/09/2026, 08:33:14 WIB',
+        userId: 'spv-02',
+        userName: 'Ahmad Fauzi',
+        userRole: 'supervisor',
+        userEmail: 'ahmad.fauzi@suryaland.co.id',
+        actionCategory: 'AUTH',
+        actionTitle: 'Masuk Sesi Pengawas Lapangan',
+        actionDescription: 'Pengawas berhasil login ke sistem di estate Pelalawan.',
+        targetEntity: 'Sesi Mobile Pengawas',
+        clientId: 'client-2',
+        clientName: 'PT. B',
+        blockCode: 'Blok B-01',
+        gpsTag: {
+          lat: 0.12345,
+          lng: 102.12345,
+          accuracy: 4.0,
+          locationName: 'Divisi 1 Pelalawan Estate (Riau)',
+          mapsUrl: 'https://www.google.com/maps?q=0.12345,102.12345',
+        },
+        deviceInfo: {
+          deviceType: 'Mobile',
+          browser: 'Chrome Mobile / Android 13',
+          isOnline: true,
+        },
+      }
+    ];
+
+    return loadFromStorage<UserActivityLog[]>(STORAGE_KEYS.USER_ACTIVITIES, defaultActivities);
+  },
+
+  logUserActivity(activity: Partial<UserActivityLog>): UserActivityLog {
+    const list = this.getUserActivities();
+
+    const now = new Date();
+    const formatted = `${now.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' })}, ${now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })} WIB`;
+
+    const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown';
+    let deviceType: 'Mobile' | 'Tablet' | 'Desktop' = 'Desktop';
+    if (/Android|iPhone|iPod/i.test(userAgent)) deviceType = 'Mobile';
+    else if (/iPad|Tablet/i.test(userAgent)) deviceType = 'Tablet';
+
+    let browserName = 'Browser Web';
+    if (/Chrome/i.test(userAgent) && !/Edge|OPR/i.test(userAgent)) browserName = 'Google Chrome';
+    else if (/Safari/i.test(userAgent) && !/Chrome/i.test(userAgent)) browserName = 'Apple Safari';
+    else if (/Firefox/i.test(userAgent)) browserName = 'Mozilla Firefox';
+    else if (/Edge/i.test(userAgent)) browserName = 'Microsoft Edge';
+
+    const defaultLat = activity.userRole === 'director' ? 0.50707 : -0.51234;
+    const defaultLng = activity.userRole === 'director' ? 101.44778 : 101.45678;
+    const defaultLocName = activity.userRole === 'director' ? 'Kantor Direksi Pekanbaru' : (activity.blockCode ? `Blok ${activity.blockCode} Riau` : 'Estate Operasional Riau');
+
+    const fullEntry: UserActivityLog = {
+      id: `act-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: now.toISOString(),
+      formattedTime: formatted,
+      userId: activity.userId || 'usr-anonymous',
+      userName: activity.userName || 'Pengguna Aplikasi',
+      userRole: activity.userRole || 'supervisor',
+      userEmail: activity.userEmail,
+      actionCategory: activity.actionCategory || 'NAVIGATION',
+      actionTitle: activity.actionTitle || 'Aktivitas Pengguna',
+      actionDescription: activity.actionDescription || 'Melakukan interaksi pada aplikasi.',
+      targetEntity: activity.targetEntity,
+      clientId: activity.clientId,
+      clientName: activity.clientName,
+      blockCode: activity.blockCode,
+      gpsTag: activity.gpsTag || {
+        lat: defaultLat,
+        lng: defaultLng,
+        accuracy: 3.5,
+        locationName: defaultLocName,
+        mapsUrl: `https://www.google.com/maps?q=${defaultLat},${defaultLng}`,
+      },
+      deviceInfo: activity.deviceInfo || {
+        deviceType,
+        browser: `${browserName} (${typeof navigator !== 'undefined' && navigator.onLine ? 'Online' : 'Offline'})`,
+        isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
+      },
+    };
+
+    list.unshift(fullEntry);
+
+    // Keep last 300 logs
+    const trimmed = list.slice(0, 300);
+    saveToStorage(STORAGE_KEYS.USER_ACTIVITIES, trimmed);
+    return fullEntry;
+  },
+
+  clearUserActivities(): void {
+    saveToStorage(STORAGE_KEYS.USER_ACTIVITIES, []);
+  },
+
+  // ==========================================
+  // MANAJEMEN USER & JABATAN (CRUD SUPERADMIN)
+  // ==========================================
+  getManagedUsers(): ManagedUser[] {
+    const raw = loadFromStorage<ManagedUser[]>(STORAGE_KEYS.MANAGED_USERS, initialManagedUsers);
+    // Normalisasi: Direktur / Superadmin adalah Owner tanpa batasan penempatan proyek
+    return raw.map((u) => {
+      if (u.userLevel === 'Superadmin' || u.jobTitle.toLowerCase().includes('direktur')) {
+        return {
+          ...u,
+          assignedClientId: 'all',
+          assignedClientName: 'Semua Proyek (Owner)',
+          assignedBlockCodes: u.assignedBlockCodes && u.assignedBlockCodes.length > 0 && !u.assignedBlockCodes.includes('Blok AB')
+            ? u.assignedBlockCodes
+            : ['Akses Semua Blok (Tanpa Batas)'],
+        };
+      }
+      return u;
+    });
+  },
+
+  getManagedUserById(id: string): ManagedUser | undefined {
+    return this.getManagedUsers().find((u) => u.id === id);
+  },
+
+  getManagedUserByUsername(username: string): ManagedUser | undefined {
+    const trimmed = username.trim().toLowerCase();
+    return this.getManagedUsers().find((u) => u.username.trim().toLowerCase() === trimmed);
+  },
+
+  saveManagedUser(user: ManagedUser): ManagedUser {
+    const list = this.getManagedUsers();
+    const idx = list.findIndex((u) => u.id === user.id);
+
+    // If Superadmin / Direktur: Owner tanpa batasan penempatan proyek
+    const isSuper = user.userLevel === 'Superadmin' || user.jobTitle.toLowerCase().includes('direktur');
+    const normalizedUser: ManagedUser = isSuper
+      ? {
+          ...user,
+          assignedClientId: 'all',
+          assignedClientName: 'Semua Proyek (Owner)',
+          assignedBlockCodes: ['Akses Semua Blok (Tanpa Batas)'],
+        }
+      : user;
+
+    if (idx >= 0) {
+      list[idx] = {
+        ...normalizedUser,
+        updatedAt: new Date().toISOString(),
+      };
+    } else {
+      list.unshift({
+        ...normalizedUser,
+        createdAt: normalizedUser.createdAt || new Date().toISOString(),
+      });
+    }
+
+    saveToStorage(STORAGE_KEYS.MANAGED_USERS, list);
+
+    // Sync any new block codes to client's block list if not Superadmin
+    if (
+      !isSuper &&
+      normalizedUser.assignedClientId &&
+      normalizedUser.assignedClientId !== 'all' &&
+      normalizedUser.assignedBlockCodes &&
+      normalizedUser.assignedBlockCodes.length > 0
+    ) {
+      normalizedUser.assignedBlockCodes.forEach((bCode) => {
+        this.addBlockCodeToClient(normalizedUser.assignedClientId, bCode);
+      });
+    }
+
+    return normalizedUser;
+  },
+
+  deleteManagedUser(userId: string): boolean {
+    const list = this.getManagedUsers();
+    const filtered = list.filter((u) => u.id !== userId);
+    if (filtered.length !== list.length) {
+      saveToStorage(STORAGE_KEYS.MANAGED_USERS, filtered);
+      return true;
+    }
+    return false;
+  },
+
+  getJobTitles(): string[] {
+    const titles = loadFromStorage<string[]>(STORAGE_KEYS.JOB_TITLES, initialJobTitles);
+    // Ensure default core titles exist
+    const set = new Set([...initialJobTitles, ...titles]);
+    return Array.from(set);
+  },
+
+  saveJobTitle(newTitle: string): string[] {
+    const trimmed = newTitle.trim();
+    if (!trimmed) return this.getJobTitles();
+    const current = this.getJobTitles();
+    if (!current.some((t) => t.toLowerCase() === trimmed.toLowerCase())) {
+      const updated = [...current, trimmed];
+      saveToStorage(STORAGE_KEYS.JOB_TITLES, updated);
+      return updated;
+    }
+    return current;
+  },
+
+  // Helper untuk menambah kode blok baru ke klien jika belum terdaftar
+  addBlockCodeToClient(clientId: string, blockCode: string): Block | undefined {
+    const trimmedCode = blockCode.trim();
+    if (!trimmedCode) return undefined;
+
+    const allBlocks = this.getBlocks();
+    const existing = allBlocks.find(
+      (b) => b.clientId === clientId && b.code.toLowerCase() === trimmedCode.toLowerCase()
+    );
+    if (existing) return existing;
+
+    // Cari project ID terkait klien
+    const projects = this.getProjects().filter((p) => p.clientId === clientId);
+    const projId = projects.length > 0 ? projects[0].id : `proj-${clientId}`;
+
+    const newBlock: Block = {
+      id: `blk-custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      projectId: projId,
+      clientId: clientId,
+      code: trimmedCode,
+      targetAreaHa: 50,
+      dailyTargetAreaHa: 3.5,
+      clearedAreaHa: 0,
+      status: 'Dalam Pengerjaan',
+    };
+
+    allBlocks.push(newBlock);
+    saveToStorage(STORAGE_KEYS.BLOCKS, allBlocks);
+    return newBlock;
+  },
+
   // Reset database to initial seed
   resetToDefault(): void {
     saveToStorage(STORAGE_KEYS.REPORTS, initialDailyReports);
@@ -936,6 +1535,9 @@ export const storageService = {
     saveToStorage(STORAGE_KEYS.P2H_CHECKLISTS, initialP2HChecklists);
     saveToStorage(STORAGE_KEYS.FUEL_BOWSER, initialFuelBowserReceipts);
     saveToStorage(STORAGE_KEYS.SOIL_INCIDENTS, initialSoilIncidents);
+    saveToStorage(STORAGE_KEYS.USER_ACTIVITIES, this.getUserActivities());
+    saveToStorage(STORAGE_KEYS.MANAGED_USERS, initialManagedUsers);
+    saveToStorage(STORAGE_KEYS.JOB_TITLES, initialJobTitles);
     this.clearDraft();
   },
 };

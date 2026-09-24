@@ -19,7 +19,10 @@ import {
   Plus,
   Droplet,
   Wrench,
-  Package
+  Package,
+  ClipboardCheck,
+  Activity,
+  Users
 } from 'lucide-react';
 import { DailyReport, Equipment, UserRole, Client } from '../types';
 import { storageService } from '../services/storageService';
@@ -32,6 +35,9 @@ interface DashboardViewProps {
   onOpenWizard?: () => void;
   onNavigateReports?: () => void;
   onNavigateLogistics?: () => void;
+  onNavigateFieldMonitor?: () => void;
+  onNavigateActivityLog?: () => void;
+  onNavigateUserManagement?: () => void;
   onApproveReport: (reportId: string) => void;
   userRole: UserRole;
   clients: Client[];
@@ -47,6 +53,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onOpenWizard,
   onNavigateReports,
   onNavigateLogistics,
+  onNavigateFieldMonitor,
+  onNavigateActivityLog,
+  onNavigateUserManagement,
   onApproveReport,
   userRole,
   clients,
@@ -139,128 +148,180 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   });
 
   return (
-    <div className="max-w-7xl mx-auto py-6 px-3 sm:px-6 space-y-6">
-      {/* MULTI-CLIENT SELECTION TABS */}
-      <div className="bg-white rounded-2xl p-4 shadow-md border border-slate-200">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+    <div className="max-w-7xl mx-auto py-4 sm:py-6 px-3 sm:px-6 space-y-4 sm:space-y-6">
+      {/* PORTOFOLIO PROYEK KLIEN - RESPONSIVE & MINIMALIST */}
+      <section className="bg-white rounded-2xl p-3 sm:p-4 shadow-sm border border-slate-200/90 transition-all duration-200 hover:shadow-md">
+        <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-100">
           <div className="flex items-center gap-2">
-            <Building2 className="w-5 h-5 text-amber-500" />
+            <div className="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
+              <Building2 className="w-4 h-4" />
+            </div>
             <div>
-              <h3 className="text-sm font-black text-slate-900 uppercase tracking-wide">
-                Portofolio Proyek Klien (Multi-Client)
-              </h3>
-              <p className="text-xs text-slate-500">
-                Pilih klien untuk memfilter analisis dan progres kerja secara independen:
-              </p>
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs sm:text-sm font-black text-slate-900 tracking-tight">
+                  Portofolio Klien
+                </h3>
+                <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                  {clients.length} Proyek Aktif
+                </span>
+              </div>
             </div>
           </div>
           {onNavigateMaster && (
             <button
               onClick={onNavigateMaster}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg border border-slate-300 transition"
+              className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-slate-600 hover:text-amber-600 hover:bg-amber-50 rounded-lg border border-slate-200 hover:border-amber-200 transition-all duration-200 cursor-pointer"
             >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Kelola & Tambah Klien</span>
+              <Plus className="w-3.5 h-3.5 text-amber-600" />
+              <span className="hidden sm:inline">Kelola & Tambah</span>
+              <span className="sm:hidden">Kelola</span>
             </button>
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 pt-3">
+        {/* Clean, Horizontal Responsive Scroll without native scrollbars */}
+        <div className="flex items-center gap-2 pt-2.5 overflow-x-auto scrollbar-none no-scrollbar pb-1">
           {/* All Clients Tab */}
           <button
+            type="button"
             onClick={() => setSelectedClientId('ALL')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border cursor-pointer ${
+            className={`px-3 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-2 shrink-0 border cursor-pointer ${
               selectedClientId === 'ALL'
-                ? 'bg-slate-900 text-amber-400 border-slate-900 shadow-md ring-2 ring-amber-400/30 font-black'
-                : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                ? 'bg-slate-900 text-amber-400 border-slate-900 shadow-sm font-black scale-[1.02]'
+                : 'bg-slate-50 text-slate-700 border-slate-200/80 hover:bg-slate-100 hover:border-slate-300'
             }`}
           >
-            <span>Semua Klien (Konsolidasi {clients.length} PT)</span>
+            <span>Konsolidasi ({clients.length} PT)</span>
           </button>
 
-          {/* Client Specific Tabs */}
+          {/* Individual Client Tabs */}
           {clients.map((c) => {
             const isSelected = selectedClientId === c.id;
             const pct = c.totalAreaHa > 0 ? ((c.clearedAreaHa / c.totalAreaHa) * 100).toFixed(0) : 0;
             return (
               <button
                 key={c.id}
+                type="button"
                 onClick={() => setSelectedClientId(c.id)}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border cursor-pointer ${
+                className={`px-3 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-2 shrink-0 border cursor-pointer ${
                   isSelected
-                    ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-md ring-2 ring-amber-300 font-black'
-                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-sm font-black scale-[1.02]'
+                    : 'bg-slate-50 text-slate-700 border-slate-200/80 hover:bg-slate-100 hover:border-slate-300'
                 }`}
               >
                 <span>{c.name}</span>
-                <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${isSelected ? 'bg-slate-950 text-amber-300' : 'bg-slate-200 text-slate-700'}`}>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+                  isSelected ? 'bg-slate-950 text-amber-300' : 'bg-slate-200 text-slate-600'
+                }`}>
                   {c.clearedAreaHa}/{c.totalAreaHa} Ha ({pct}%)
                 </span>
               </button>
             );
           })}
         </div>
-      </div>
+      </section>
 
       {/* Top Banner Executive Header */}
       <div className="bg-slate-900 text-white rounded-2xl p-4 sm:p-6 shadow-xl border border-slate-800">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="px-2.5 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-amber-500 text-slate-950">
-                Dashboard Eksekutif Direktur & Klien
+            <div className="flex flex-wrap items-center gap-2 mb-1.5">
+              <span className="px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-bold uppercase tracking-wider bg-amber-500 text-slate-950">
+                Dashboard Eksekutif
               </span>
-              <span className="text-xs text-slate-400 font-medium">
-                Metode Zero Burning (Rabas, Cincang, Rumpuk Mekanis)
+              <span className="text-[11px] text-slate-400 font-medium">
+                Metode Zero Burning (Tanpa Bakar)
               </span>
             </div>
-            <h2 className="text-xl sm:text-2xl font-black text-slate-100 tracking-tight">
+            <h2 className="text-lg sm:text-2xl font-black text-slate-100 tracking-tight">
               {isFiltered && activeClient 
                 ? `PROYEK LAND CLEARING ${activeClient.fullCompanyName}`
-                : `KONSOLIDASI SELURUH PROYEK LAND CLEARING (${clients.length} KLIEN AKTIF)`
+                : `KONSOLIDASI SELURUH PROYEK LAND CLEARING (${clients.length} KLIEN)`
               }
             </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
+            <div className="text-xs text-slate-400 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
               {isFiltered && activeClient ? (
                 <>
-                  No. Kontrak: <span className="font-mono text-amber-300 font-bold">{activeClient.contractNumber}</span> • Lokasi: <strong className="text-slate-200">{activeClient.location}</strong> • Pelaksana: <strong className="text-slate-200">PT. SURYALAND GROUP</strong>
+                  <span>No. Kontrak: <strong className="font-mono text-amber-300">{activeClient.contractNumber}</strong></span>
+                  <span className="text-slate-600">·</span>
+                  <span>Lokasi: <strong className="text-slate-200">{activeClient.location}</strong></span>
+                  <span className="text-slate-600">·</span>
+                  <span>Pelaksana: <strong className="text-slate-200">PT. SURYALAND GROUP</strong></span>
                 </>
               ) : (
                 <>
-                  Konsolidasi Total: <strong className="text-amber-300">{metrics.targetAreaTotal} Ha</strong> di berbagai perkebunan Riau • Pelaksana Utama: <strong className="text-slate-200">PT. SURYALAND GROUP</strong>
+                  <span>Konsolidasi: <strong className="text-amber-300">{metrics.targetAreaTotal} Ha</strong> di berbagai perkebunan</span>
+                  <span className="text-slate-600">·</span>
+                  <span>Pelaksana Utama: <strong className="text-slate-200">PT. SURYALAND GROUP</strong></span>
                 </>
               )}
-            </p>
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2">
             {latestReport && (
               <button
+                type="button"
                 onClick={() => onOpenPdfReport(latestReport.id)}
-                className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs shadow-md transition cursor-pointer"
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black rounded-xl text-xs shadow-md transition-all duration-200 cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
-                <span>Cetak Laporan PDF Resmi</span>
+                <span>Cetak Laporan PDF</span>
               </button>
             )}
 
             {onNavigateReports && (
               <button
+                type="button"
                 onClick={onNavigateReports}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-xl text-xs border border-slate-700 transition cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 font-semibold rounded-xl text-xs border border-slate-700 transition-all duration-200 cursor-pointer"
               >
-                <FileText className="w-4 h-4 text-amber-400" />
-                <span>Rekap Laporan & Otorisasi</span>
+                <FileText className="w-3.5 h-3.5 text-amber-400" />
+                <span>Rekap Laporan</span>
               </button>
             )}
 
             {onNavigateLogistics && (
               <button
+                type="button"
                 onClick={onNavigateLogistics}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-xl text-xs border border-slate-700 transition cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 font-semibold rounded-xl text-xs border border-slate-700 transition-all duration-200 cursor-pointer"
               >
-                <Fuel className="w-4 h-4 text-amber-400" />
-                <span>Inventaris Logistik & Stok</span>
+                <Fuel className="w-3.5 h-3.5 text-amber-400" />
+                <span>Logistik BBM</span>
+              </button>
+            )}
+
+            {onNavigateFieldMonitor && (
+              <button
+                type="button"
+                onClick={onNavigateFieldMonitor}
+                className="flex items-center gap-1.5 px-3 py-2 bg-amber-500/20 hover:bg-amber-500/30 active:scale-95 text-amber-300 font-bold rounded-xl text-xs border border-amber-500/40 transition-all duration-200 cursor-pointer"
+              >
+                <ClipboardCheck className="w-3.5 h-3.5 text-amber-400" />
+                <span>Audit Hasil Pengawas</span>
+              </button>
+            )}
+
+            {onNavigateActivityLog && (
+              <button
+                type="button"
+                onClick={onNavigateActivityLog}
+                className="flex items-center gap-1.5 px-3 py-2 bg-sky-500/20 hover:bg-sky-500/30 active:scale-95 text-sky-300 font-bold rounded-xl text-xs border border-sky-500/40 transition-all duration-200 cursor-pointer"
+              >
+                <Activity className="w-3.5 h-3.5 text-sky-400" />
+                <span>Log Aktivitas & GPS</span>
+              </button>
+            )}
+
+            {onNavigateUserManagement && (
+              <button
+                type="button"
+                onClick={onNavigateUserManagement}
+                className="flex items-center gap-1.5 px-3 py-2 bg-indigo-500/20 hover:bg-indigo-500/30 active:scale-95 text-indigo-300 font-bold rounded-xl text-xs border border-indigo-500/40 transition-all duration-200 cursor-pointer"
+              >
+                <Users className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Manajemen User</span>
               </button>
             )}
           </div>

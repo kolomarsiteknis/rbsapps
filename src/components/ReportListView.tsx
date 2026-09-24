@@ -280,9 +280,146 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
         </div>
       </div>
 
-      {/* Reports Table Card */}
-      <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
-        <div className="overflow-x-auto">
+      {/* Reports Table Card (Desktop) & Cards List (Mobile) */}
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        
+        {/* MOBILE VIEW: Responsive Cards (md:hidden) */}
+        <div className="md:hidden divide-y divide-slate-100">
+          {filteredReports.map((report) => {
+            const totalEffHm = report.equipmentWorkLogs.reduce((acc, l) => acc + l.effectiveWorkHours, 0);
+            const totalDwWeather = report.equipmentWorkLogs.reduce((acc, l) => acc + l.downtimeWeatherHours, 0);
+            const totalDwBreakdown = report.equipmentWorkLogs.reduce((acc, l) => acc + l.downtimeBreakdownHours, 0);
+            const hasAlert = report.equipmentWorkLogs.some((l) => l.isFuelAlert);
+            const isApproved = report.status === 'Disetujui Direktur';
+
+            return (
+              <div key={report.id} className="p-4 space-y-2.5 hover:bg-slate-50/70 transition-colors duration-200">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="font-mono font-bold text-xs text-slate-900 block">
+                      {report.reportNumber}
+                    </span>
+                    <div className="text-[11px] text-slate-500 flex items-center gap-1.5 mt-0.5">
+                      <span>{report.date}</span>
+                      <span>·</span>
+                      <span className="font-semibold text-amber-600">{report.clientName || 'PT. A'}</span>
+                      <span>·</span>
+                      <span>{report.blockCode}</span>
+                    </div>
+                  </div>
+                  {/* Status Badge */}
+                  <div>
+                    {isApproved ? (
+                      <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full font-bold text-[10px]">
+                        <Check className="w-3 h-3 text-emerald-600" />
+                        Disetujui
+                      </span>
+                    ) : report.status === 'Ditolak Direktur' ? (
+                      <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-full font-bold text-[10px]">
+                        Ditolak
+                      </span>
+                    ) : report.status === 'Diajukan' ? (
+                      <span className="bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-full font-bold text-[10px]">
+                        Diajukan
+                      </span>
+                    ) : (
+                      <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-bold text-[10px]">
+                        Draft
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Key Metrics Grid */}
+                <div className="grid grid-cols-3 gap-2 py-2 px-3 bg-slate-50/80 rounded-xl border border-slate-100 text-center">
+                  <div>
+                    <div className="text-[10px] text-slate-400 font-medium">Realisasi</div>
+                    <div className="text-xs font-bold font-mono text-emerald-700">
+                      {report.physicalProgress.realizedAreaHa.toFixed(2)} Ha
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-slate-400 font-medium">Jam Kerja</div>
+                    <div className="text-xs font-bold font-mono text-slate-800">
+                      {totalEffHm.toFixed(1)} HM
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-slate-400 font-medium">Downtime</div>
+                    <div className="text-xs font-bold font-mono text-rose-600">
+                      {(totalDwWeather + totalDwBreakdown).toFixed(1)}h
+                    </div>
+                  </div>
+                </div>
+
+                {/* Actions & Alerts */}
+                <div className="flex items-center justify-between pt-1">
+                  <div>
+                    {hasAlert ? (
+                      <span className="bg-rose-100 text-rose-800 px-2 py-0.5 rounded font-black text-[10px] flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3 text-rose-600" />
+                        Alert BBM
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-slate-400 font-medium">Cuaca: {report.weather}</span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    {/* 1. LIHAT */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setViewingReport(report);
+                        setIsRejectInputOpen(false);
+                        setRejectionReason('');
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-bold rounded-lg text-xs shadow-xs transition-all duration-200 cursor-pointer"
+                      title="Lihat Detail Laporan"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Detail</span>
+                    </button>
+
+                    {/* 2. CETAK */}
+                    <button
+                      type="button"
+                      onClick={() => onOpenPdf(report.id)}
+                      className="p-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 text-amber-400 rounded-lg shadow-xs transition-all duration-200 cursor-pointer"
+                      title="Cetak PDF Resmi"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                    </button>
+
+                    {/* 3. HAPUS */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm(`Hapus dokumen laporan ${report.reportNumber}?`)) {
+                          onDeleteReport(report.id);
+                        }
+                      }}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all duration-200 cursor-pointer"
+                      title="Hapus Laporan"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          {filteredReports.length === 0 && (
+            <div className="p-8 text-center text-slate-400 space-y-2">
+              <FileText className="w-8 h-8 text-slate-300 mx-auto" />
+              <p className="font-semibold text-slate-600 text-xs">Tidak ada laporan yang sesuai filter.</p>
+            </div>
+          )}
+        </div>
+
+        {/* DESKTOP VIEW: Full Data Table (hidden on mobile, block on md+) */}
+        <div className="hidden md:block overflow-x-auto scrollbar-none">
           <table className="w-full border-collapse text-xs">
             <thead>
               <tr className="bg-slate-900 text-white font-bold text-left">
@@ -308,7 +445,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                 const isApproved = report.status === 'Disetujui Direktur';
 
                 return (
-                  <tr key={report.id} className="hover:bg-amber-50/30 transition">
+                  <tr key={report.id} className="hover:bg-amber-50/30 transition-colors duration-150">
                     <td className="p-3 font-mono font-bold text-slate-900 whitespace-nowrap">
                       {report.reportNumber}
                     </td>
@@ -387,7 +524,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                             setIsRejectInputOpen(false);
                             setRejectionReason('');
                           }}
-                          className="p-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg shadow-xs transition cursor-pointer"
+                          className="p-1.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 rounded-lg shadow-xs transition-all duration-200 cursor-pointer"
                           title="1. Lihat Detail Laporan (Verifikasi / Approval)"
                         >
                           <Eye className="w-3.5 h-3.5" />
@@ -396,7 +533,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                         {/* 2. CETAK (Ikon Print) */}
                         <button
                           onClick={() => onOpenPdf(report.id)}
-                          className="p-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-lg shadow-xs transition cursor-pointer"
+                          className="p-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 text-amber-400 rounded-lg shadow-xs transition-all duration-200 cursor-pointer"
                           title="2. Cetak Format PDF Resmi"
                         >
                           <Printer className="w-3.5 h-3.5" />
@@ -409,7 +546,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                               onDeleteReport(report.id);
                             }
                           }}
-                          className="p-1.5 hover:bg-rose-100 text-slate-400 hover:text-rose-600 rounded-lg transition cursor-pointer"
+                          className="p-1.5 hover:bg-rose-100 text-slate-400 hover:text-rose-600 active:scale-95 rounded-lg transition-all duration-200 cursor-pointer"
                           title="3. Hapus Laporan"
                         >
                           <Trash2 className="w-3.5 h-3.5" />

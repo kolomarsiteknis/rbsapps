@@ -1,4 +1,4 @@
-import { Client, Project, Block, Equipment, Worker, InventoryItem, DailyReport, LogisticsTransaction, DailyLocationTarget } from '../types';
+import { Client, Project, Block, Equipment, Worker, InventoryItem, DailyReport, LogisticsTransaction, DailyLocationTarget, ManagedUser } from '../types';
 
 // Helper to generate simulated SVG photographic base64 for initial seed photos
 function createSimulatedFieldPhoto(title: string, subtitle: string, color: string, lat: string, lng: string, time: string, clientName: string = 'PT. A'): string {
@@ -119,6 +119,16 @@ export const initialProjects: Project[] = [
 
 export const initialBlocks: Block[] = [
   // PT. A Blocks
+  {
+    id: 'blk-0',
+    projectId: 'proj-1',
+    clientId: 'client-1',
+    code: 'Blok AA',
+    targetAreaHa: 80,
+    dailyTargetAreaHa: 4.0,
+    clearedAreaHa: 80.0,
+    status: 'Selesai',
+  },
   {
     id: 'blk-1',
     projectId: 'proj-1',
@@ -1229,5 +1239,83 @@ export const initialSoilIncidents = [
     createdAt: '2026-09-21 11:00 WIB',
   }
 ];
+
+export const initialJobTitles: string[] = [
+  'Direktur',
+  'Manager',
+  'Pengawas'
+];
+
+export const initialManagedUsers: ManagedUser[] = [
+  {
+    id: 'user-usr-01',
+    fullName: 'Ir. Hendra Wijaya, M.Si',
+    address: 'Jl. Jenderal Sudirman No. 18, Pekanbaru, Riau',
+    whatsappNumber: '081175218899',
+    email: 'hendra.wijaya@suryaland.co.id',
+    jobTitle: 'Direktur',
+    userLevel: 'Superadmin',
+    username: 'DIREKTUR',
+    password: 'bos12345',
+    assignedClientId: 'all',
+    assignedClientName: 'Semua Proyek (Owner)',
+    assignedBlockCodes: ['Akses Semua Blok (Tanpa Batas)'],
+    status: 'Aktif',
+    createdAt: '2026-07-01T08:00:00.000Z',
+    notes: 'Owner & Superadmin Utama Direksi PT. SURYALAND GROUP (Akses Pemilik Tanpa Batasan)',
+  },
+  {
+    id: 'user-usr-02',
+    fullName: 'Ahmad Rizky Pratama, S.T.',
+    address: 'Mess Karyawan Camp 1, Perkebunan PT. A, Kampar, Riau',
+    whatsappNumber: '081276543210',
+    email: 'ahmad.rizky@suryaland.co.id',
+    jobTitle: 'Pengawas',
+    userLevel: 'Pengawas',
+    username: 'PENGAWAS',
+    password: 'satu2345',
+    assignedClientId: 'client-1',
+    assignedClientName: 'PT. A',
+    assignedBlockCodes: ['Blok AB', 'Blok AA'],
+    status: 'Aktif',
+    createdAt: '2026-07-15T08:00:00.000Z',
+    notes: 'Pengawas Lapangan Senior Land Clearing Estate Kampar PT. A',
+  },
+  {
+    id: 'user-usr-03',
+    fullName: 'Bambang Sugiarto, S.P.',
+    address: 'Kompleks Perumahan Sawit Mandiri Blok C-12, Siak, Riau',
+    whatsappNumber: '081388776655',
+    email: 'bambang.sugiarto@suryaland.co.id',
+    jobTitle: 'Manager',
+    userLevel: 'Superadmin',
+    username: 'bambang_manager',
+    password: 'manager123',
+    assignedClientId: 'all',
+    assignedClientName: 'Semua Proyek (Owner)',
+    assignedBlockCodes: ['Akses Semua Blok (Tanpa Batas)'],
+    status: 'Aktif',
+    createdAt: '2026-08-01T08:00:00.000Z',
+    notes: 'Manager Operasional Wilayah Siak & Riau Timur (Akses Superadmin)',
+  },
+  {
+    id: 'user-usr-04',
+    fullName: 'Dedi Kurniawan',
+    address: 'Jl. Lintas Timur KM 42, Pangkalan Kerinci, Pelalawan, Riau',
+    whatsappNumber: '085265438901',
+    email: 'dedi.kurniawan@suryaland.co.id',
+    jobTitle: 'Pengawas',
+    userLevel: 'Pengawas',
+    username: 'dedi_pengawas',
+    password: 'lapangan2026',
+    assignedClientId: 'client-3',
+    assignedClientName: 'PT. D',
+    assignedBlockCodes: ['Blok D-01 (Inhu)', 'Blok D-02 (Inhu)'],
+    status: 'Aktif',
+    createdAt: '2026-08-20T08:00:00.000Z',
+    notes: 'Pengawas Lapangan Proyek PT. D Indragiri Hulu',
+  },
+];
+
 
 

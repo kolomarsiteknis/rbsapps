@@ -41,7 +41,8 @@ import {
   Block, 
   BreakdownCategory,
   Client,
-  UserRole
+  UserRole,
+  AuthUser
 } from '../types';
 import { storageService } from '../services/storageService';
 import { applyWatermark, getCurrentGpsLocation } from '../utils/watermark';
@@ -52,7 +53,9 @@ interface ReportWizardProps {
   isOnline: boolean;
   initialClientId?: string;
   userRole?: UserRole;
+  authUser?: AuthUser | null;
   onNavigateToReports?: () => void;
+  onNavigateToTools?: () => void;
 }
 
 const STEPS = [
@@ -70,21 +73,34 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
   isOnline,
   initialClientId,
   userRole,
+  authUser,
   onNavigateToReports,
+  onNavigateToTools,
 }) => {
   const [currentStep, setCurrentStep] = useState(1);
   const [clients, setClients] = useState<Client[]>(() => storageService.getClients());
-  const [selectedClientId, setSelectedClientId] = useState<string>(() => {
-    if (initialClientId && initialClientId !== 'ALL') return initialClientId;
-    return storageService.getClients()[0]?.id || 'client-1';
-  });
+
+  const isSupervisor = userRole === 'supervisor' || authUser?.role === 'supervisor';
+  const effectiveClientId = (isSupervisor && authUser?.assignedClientId && authUser.assignedClientId !== 'all')
+    ? authUser.assignedClientId
+    : (initialClientId && initialClientId !== 'ALL' ? initialClientId : (storageService.getClients()[0]?.id || 'client-1'));
+
+  const assignedBlockCodes = (isSupervisor && authUser?.assignedBlockCodes && authUser.assignedBlockCodes.length > 0 && !authUser.assignedBlockCodes[0].includes('Semua Blok'))
+    ? authUser.assignedBlockCodes
+    : null;
+
+  const [selectedClientId, setSelectedClientId] = useState<string>(effectiveClientId);
 
   const [allBlocks, setAllBlocks] = useState<Block[]>(() => storageService.getBlocks());
   const [equipments] = useState<Equipment[]>(() => storageService.getEquipments());
   const [allWorkers, setAllWorkers] = useState<Worker[]>(() => storageService.getWorkers());
 
-  // Filter blocks for selected client
-  const clientBlocks = allBlocks.filter((b) => b.clientId === selectedClientId);
+  // Filter blocks for selected client and supervisor assigned blocks
+  const clientBlocks = allBlocks.filter((b) => {
+    if (b.clientId !== selectedClientId) return false;
+    if (isSupervisor && assignedBlockCodes && !assignedBlockCodes.includes(b.code)) return false;
+    return true;
+  });
 
   // Form State
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -92,12 +108,23 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
     `LC-RPT/${new Date().toISOString().slice(0, 10).replace(/-/g, '/')}-00${Math.floor(Math.random() * 80 + 10)}`
   );
   const [selectedBlockId, setSelectedBlockId] = useState<string>(() => {
-    const initBlocks = storageService.getBlocks().filter((b) => b.clientId === (initialClientId !== 'ALL' ? initialClientId : 'client-1'));
+    const initBlocks = storageService.getBlocks().filter((b) => {
+      if (b.clientId !== effectiveClientId) return false;
+      if (isSupervisor && assignedBlockCodes && !assignedBlockCodes.includes(b.code)) return false;
+      return true;
+    });
     return initBlocks[0]?.id || 'blk-1';
   });
   const [weather, setWeather] = useState<WeatherCondition>('Cerah');
   const [workShift, setWorkShift] = useState<string>('07.00 - 17.00 WIB');
-  const [supervisorName, setSupervisorName] = useState<string>('Budi Santoso');
+  const [supervisorName, setSupervisorName] = useState<string>(() => authUser?.displayName || 'Budi Santoso');
+
+  // Keep selectedBlockId aligned with clientBlocks
+  useEffect(() => {
+    if (clientBlocks.length > 0 && !clientBlocks.some((b) => b.id === selectedBlockId)) {
+      setSelectedBlockId(clientBlocks[0].id);
+    }
+  }, [clientBlocks, selectedBlockId]);
 
   // Quick modal to add new client or block on-site
   const [showQuickAddClient, setShowQuickAddClient] = useState<boolean>(false);
@@ -559,6 +586,22 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
 
   // Submit Handler
   const handleSubmitReport = (asDraft: boolean = false) => {
+    // Strict RBAC check for Pengawas: can only report for assigned client & assigned blocks
+    if (isSupervisor) {
+      if (selectedClient && authUser?.assignedClientId && authUser.assignedClientId !== 'all') {
+        if (selectedClient.id !== authUser.assignedClientId) {
+          alert('Akses Ditolak: Anda tidak memiliki wewenang untuk membuat laporan di luar penugasan proyek PT Anda!');
+          return;
+        }
+      }
+      if (assignedBlockCodes && assignedBlockCodes.length > 0) {
+        if (activeBlock && !assignedBlockCodes.includes(activeBlock.code)) {
+          alert('Akses Ditolak: Anda tidak memiliki wewenang untuk membuat laporan pada blok di luar penugasan Anda!');
+          return;
+        }
+      }
+    }
+
     const newReport: DailyReport = {
       id: reportNumber,
       reportNumber,
@@ -668,6 +711,17 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {onNavigateToTools && userRole === 'supervisor' && (
+              <button
+                type="button"
+                onClick={onNavigateToTools}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 rounded-lg shadow-sm transition-all duration-200 cursor-pointer"
+                title="Buka Fitur Cepat Pengawas: P2H, Geotag Foto, Kalkulator HM, Solar Keliling & Log K3"
+              >
+                <HardHat className="w-3.5 h-3.5" />
+                <span>Fitur Cepat</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => handleSubmitReport(true)}
@@ -745,34 +799,59 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-black text-amber-950 uppercase tracking-wider flex items-center gap-1.5">
                     <Building2 className="w-4 h-4 text-amber-600" />
-                    Pilih Klien (Perusahaan Pemilik Lahan)
+                    {isSupervisor ? 'Penempatan Proyek Klien (Terkunci Sesuai Tugas)' : 'Pilih Klien (Perusahaan Pemilik Lahan)'}
                   </label>
-                  <button
-                    type="button"
-                    onClick={() => setShowQuickAddClient(true)}
-                    className="text-xs font-bold text-amber-800 hover:text-amber-950 underline flex items-center gap-1 cursor-pointer"
-                  >
-                    + Tambah PT Klien Baru
-                  </button>
+                  {!isSupervisor && (
+                    <button
+                      type="button"
+                      onClick={() => setShowQuickAddClient(true)}
+                      className="text-xs font-bold text-amber-800 hover:text-amber-950 underline flex items-center gap-1 cursor-pointer"
+                    >
+                      + Tambah PT Klien Baru
+                    </button>
+                  )}
                 </div>
-                <select
-                  value={selectedClientId}
-                  onChange={(e) => {
-                    const newClientId = e.target.value;
-                    setSelectedClientId(newClientId);
-                    const matchingBlocks = allBlocks.filter((b) => b.clientId === newClientId);
-                    if (matchingBlocks.length > 0) {
-                      setSelectedBlockId(matchingBlocks[0].id);
-                    }
-                  }}
-                  className="w-full px-3 py-2 bg-white border border-amber-400 rounded-lg text-sm font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                >
-                  {clients.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} - {c.fullCompanyName} (SPK: {c.contractNumber})
-                    </option>
-                  ))}
-                </select>
+
+                {isSupervisor ? (
+                  <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-amber-400">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-800 flex items-center justify-center shrink-0">
+                        <Lock className="w-4 h-4 text-amber-600" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-black text-slate-900">
+                          {selectedClient?.name} — {selectedClient?.fullCompanyName}
+                        </div>
+                        <div className="text-[11px] text-slate-500 font-medium">
+                          Terkunci otomatis: Pengawas hanya bertugas mengawasi 1 Klien PT ini.
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                      Penugasan Superadmin
+                    </span>
+                  </div>
+                ) : (
+                  <select
+                    value={selectedClientId}
+                    onChange={(e) => {
+                      const newClientId = e.target.value;
+                      setSelectedClientId(newClientId);
+                      const matchingBlocks = allBlocks.filter((b) => b.clientId === newClientId);
+                      if (matchingBlocks.length > 0) {
+                        setSelectedBlockId(matchingBlocks[0].id);
+                      }
+                    }}
+                    className="w-full px-3 py-2 bg-white border border-amber-400 rounded-lg text-sm font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  >
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} - {c.fullCompanyName} (SPK: {c.contractNumber})
+                      </option>
+                    ))}
+                  </select>
+                )}
+
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-700 pt-1">
                   <div>Proyek: <strong className="text-slate-900">{selectedClient?.projectName}</strong></div>
                   <div>No. SPK: <strong className="font-mono text-slate-900">{selectedClient?.contractNumber}</strong></div>
@@ -809,13 +888,15 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                   <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                     Lokasi Kerja (Pilih Blok {selectedClient?.name})
                   </label>
-                  <button
-                    type="button"
-                    onClick={() => setShowQuickAddBlock(true)}
-                    className="text-[11px] font-bold text-blue-600 hover:text-blue-800 underline cursor-pointer"
-                  >
-                    + Tambah Blok
-                  </button>
+                  {!isSupervisor && (
+                    <button
+                      type="button"
+                      onClick={() => setShowQuickAddBlock(true)}
+                      className="text-[11px] font-bold text-blue-600 hover:text-blue-800 underline cursor-pointer"
+                    >
+                      + Tambah Blok
+                    </button>
+                  )}
                 </div>
                 <select
                   value={selectedBlockId}
@@ -831,6 +912,12 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                     <option value="" disabled>Belum ada blok terdaftar untuk {selectedClient?.name}</option>
                   )}
                 </select>
+                {isSupervisor && assignedBlockCodes && (
+                  <div className="text-[10px] text-amber-800 font-bold mt-1 flex items-center gap-1">
+                    <span>📍 Blok Penugasan Resmi:</span>
+                    <span className="font-mono bg-amber-100 px-1.5 py-0.2 rounded">{assignedBlockCodes.join(', ')}</span>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -841,7 +928,10 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                   type="text"
                   value={supervisorName}
                   onChange={(e) => setSupervisorName(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  readOnly={isSupervisor}
+                  className={`w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-medium focus:outline-none ${
+                    isSupervisor ? 'bg-slate-100 text-slate-800 font-bold cursor-not-allowed' : 'focus:ring-2 focus:ring-amber-500'
+                  }`}
                 />
               </div>
 

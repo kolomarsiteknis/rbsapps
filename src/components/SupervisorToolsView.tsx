@@ -26,7 +26,9 @@ import {
   ExternalLink,
   Flame,
   Check,
-  X
+  X,
+  Lock,
+  ShieldCheck
 } from 'lucide-react';
 import {
   Equipment,
@@ -42,6 +44,7 @@ import {
 } from '../types';
 import { storageService } from '../services/storageService';
 import { applyWatermark, applyBatchWatermarks, getCurrentGpsLocation, GpsLocationResult } from '../utils/watermark';
+import { recordUserActivity } from '../utils/activityLogger';
 
 interface SupervisorToolsViewProps {
   authUser: AuthUser | null;
@@ -60,6 +63,19 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
   showToast,
   onNavigateToWizard,
 }) => {
+  // STRICT ROLE ACCESS CONTROL: Pengawas Lapangan Only
+  if (authUser?.role === 'director') {
+    return (
+      <div className="max-w-xl mx-auto my-12 p-6 bg-white rounded-2xl border border-rose-200 text-center space-y-3 shadow-lg">
+        <ShieldAlert className="w-12 h-12 text-rose-500 mx-auto" />
+        <h3 className="font-black text-slate-900 text-base">Akses Khusus Pengawas Lapangan</h3>
+        <p className="text-xs text-slate-600">
+          Halaman Fitur Cepat (P2H Pra-Operasi, Smart Geotag Camera, Kalkulator HM Discrepancy, Penerimaan Solar Bowser, dan Log Insiden Lahan) hanya tersedia bagi Pengawas Lapangan.
+        </p>
+      </div>
+    );
+  }
+
   // Active sub-tab
   const [activeSubTab, setActiveSubTab] = useState<'p2h' | 'camera' | 'hm_calc' | 'fuel_bowser' | 'soil_incidents'>('p2h');
 
@@ -67,9 +83,22 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
   const [equipments, setEquipments] = useState<Equipment[]>(() => storageService.getEquipments());
   const [blocks, setBlocks] = useState<Block[]>(() => storageService.getBlocks());
 
-  // Filtered blocks
-  const activeClientId = selectedClientId === 'ALL' ? (clients[0]?.id || 'client-1') : selectedClientId;
-  const clientBlocks = blocks.filter((b) => b.clientId === activeClientId);
+  // Strict Assignment Enforcement for Pengawas: exactly 1 assigned client PT, multiple designated blocks
+  const isSupervisorRole = authUser?.role === 'supervisor';
+  const activeClientId = (isSupervisorRole && authUser?.assignedClientId && authUser.assignedClientId !== 'all')
+    ? authUser.assignedClientId
+    : (selectedClientId === 'ALL' ? (clients[0]?.id || 'client-1') : selectedClientId);
+
+  const assignedBlockCodes = (isSupervisorRole && authUser?.assignedBlockCodes && authUser.assignedBlockCodes.length > 0 && !authUser.assignedBlockCodes[0].includes('Semua Blok'))
+    ? authUser.assignedBlockCodes
+    : null;
+
+  // Filter blocks strictly belonging to this client and assigned blocks
+  const clientBlocks = blocks.filter((b) => {
+    if (b.clientId !== activeClientId) return false;
+    if (assignedBlockCodes && !assignedBlockCodes.includes(b.code)) return false;
+    return true;
+  });
 
   // Current GPS Info
   const [currentGps, setCurrentGps] = useState<GpsLocationResult>({ lat: -0.51234, lng: 101.45678, accuracy: 4 });
@@ -96,7 +125,16 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
   // =========================================================================
   // 1. P2H INSPEKSI HARIAN ALAT BERAT STATE
   // =========================================================================
-  const [p2hList, setP2hList] = useState<DailyP2HChecklist[]>(() => storageService.getP2HChecklists(selectedClientId));
+  const loadFilteredP2H = () => {
+    const raw = storageService.getP2HChecklists(activeClientId);
+    return raw.filter((item) => {
+      if (item.clientId !== activeClientId) return false;
+      if (assignedBlockCodes && !assignedBlockCodes.includes(item.blockCode)) return false;
+      return true;
+    });
+  };
+
+  const [p2hList, setP2hList] = useState<DailyP2HChecklist[]>(() => loadFilteredP2H());
   const [showP2hModal, setShowP2hModal] = useState<boolean>(false);
   const [selectedP2hView, setSelectedP2hView] = useState<DailyP2HChecklist | null>(null);
 
@@ -106,6 +144,12 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
   const [p2hTime, setP2hTime] = useState<string>('06:45');
   const [p2hBlockCode, setP2hBlockCode] = useState<string>(() => clientBlocks[0]?.code || 'Blok AB');
   const [p2hHmStart, setP2hHmStart] = useState<number>(() => equipments[0]?.currentHm || 2840.5);
+
+  useEffect(() => {
+    if (clientBlocks.length > 0 && !clientBlocks.some((b) => b.code === p2hBlockCode)) {
+      setP2hBlockCode(clientBlocks[0].code);
+    }
+  }, [clientBlocks, p2hBlockCode]);
 
   const [p2hEngineOil, setP2hEngineOil] = useState<P2HItemCondition>('Baik / Normal');
   const [p2hRadiator, setP2hRadiator] = useState<P2HItemCondition>('Baik / Normal');
@@ -172,6 +216,26 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
     };
 
     storageService.saveP2HChecklist(newP2H);
+    recordUserActivity({
+      userId: authUser?.id,
+      userName: authUser?.displayName || 'Pengawas Lapangan',
+      userRole: 'supervisor',
+      userEmail: authUser?.email,
+      actionCategory: 'P2H',
+      actionTitle: `Simpan Checklist P2H: ${newP2H.equipmentId}`,
+      actionDescription: `Inspeksi kelayakan harian alat berat ${newP2H.equipmentName} di ${newP2H.blockCode}. Status: ${status}. HM: ${newP2H.hmStart}.`,
+      targetEntity: `${newP2H.equipmentId} (${status})`,
+      clientId: newP2H.clientId,
+      clientName: newP2H.clientName,
+      blockCode: newP2H.blockCode,
+      customCoordinates: {
+        lat: currentGps.lat,
+        lng: currentGps.lng,
+        accuracy: currentGps.accuracy,
+        locationName: `${newP2H.blockCode}, ${newP2H.clientName}`,
+      },
+    });
+
     setP2hList(storageService.getP2HChecklists(selectedClientId));
     setShowP2hModal(false);
     showToast(`Checklist P2H ${newP2H.equipmentId} berhasil disimpan! Status: ${status}`, status === 'Stop Operasi (Butuh Mekanik)' ? 'warning' : 'success');
@@ -209,37 +273,30 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
     clientName: string;
   }
 
-  const [capturedPhotos, setCapturedPhotos] = useState<ProcessedWatermarkedPhoto[]>(() => {
-    // Seed sample photo
-    return [
-      {
-        id: 'photo-seed-1',
-        fileName: 'Stacking_SubBlok_12.jpg',
-        dataUrl: 'https://images.unsplash.com/photo-1578328819058-b69f3a3b0f6b?auto=format&fit=crop&w=800&q=80',
-        lat: -0.51234,
-        lng: 101.45678,
-        accuracy: 4,
-        timestamp: `${new Date().toLocaleDateString('id-ID')} 09:15:20 WIB`,
-        category: 'Progres Tumbang-Cincang (Stacking)',
-        blockCode: 'Blok AB',
-        equipmentId: 'EX-01',
-        clientName: 'PT. A',
-      },
-      {
-        id: 'photo-seed-2',
-        fileName: 'Parit_Batas_Air.jpg',
-        dataUrl: 'https://images.unsplash.com/photo-1581094288338-2314dddb7ece?auto=format&fit=crop&w=800&q=80',
-        lat: -0.51345,
-        lng: 101.45789,
-        accuracy: 3,
-        timestamp: `${new Date().toLocaleDateString('id-ID')} 10:45:10 WIB`,
-        category: 'Pembuatan Parit Batas (Trenching)',
-        blockCode: 'Blok AB',
-        equipmentId: 'EX-01',
-        clientName: 'PT. A',
-      }
-    ];
-  });
+  const loadFilteredPhotos = (): ProcessedWatermarkedPhoto[] => {
+    const list = storageService.getGeotagPhotos(activeClientId);
+    return list
+      .filter((p) => {
+        if (p.clientId && p.clientId !== activeClientId) return false;
+        if (assignedBlockCodes && p.blockCode && !assignedBlockCodes.includes(p.blockCode)) return false;
+        return true;
+      })
+      .map((p) => ({
+        id: p.id,
+        fileName: p.fileName,
+        dataUrl: p.dataUrl,
+        lat: p.lat,
+        lng: p.lng,
+        accuracy: p.accuracy,
+        timestamp: p.timestamp,
+        category: p.category,
+        blockCode: p.blockCode,
+        equipmentId: p.equipmentId || 'EX-01',
+        clientName: p.clientName,
+      }));
+  };
+
+  const [capturedPhotos, setCapturedPhotos] = useState<ProcessedWatermarkedPhoto[]>(() => loadFilteredPhotos());
 
   const fileInputBatchRef = useRef<HTMLInputElement>(null);
   const fileInputCameraRef = useRef<HTMLInputElement>(null);
@@ -283,7 +340,48 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
         clientName: activeClient?.name || 'PT. A',
       }));
 
+      // Save each to persistent storage
+      newItems.forEach((it) => {
+        storageService.saveGeotagPhoto({
+          id: it.id,
+          fileName: it.fileName,
+          dataUrl: it.dataUrl,
+          lat: it.lat,
+          lng: it.lng,
+          accuracy: it.accuracy,
+          timestamp: it.timestamp,
+          category: it.category,
+          blockCode: it.blockCode,
+          equipmentId: it.equipmentId,
+          clientId: activeClient?.id,
+          clientName: it.clientName,
+          supervisorName: authUser?.displayName || 'Pengawas Lapangan',
+        });
+      });
+
       setCapturedPhotos((prev) => [...newItems, ...prev]);
+
+      // Record activity
+      recordUserActivity({
+        userId: authUser?.id,
+        userName: authUser?.displayName || 'Pengawas Lapangan',
+        userRole: 'supervisor',
+        userEmail: authUser?.email,
+        actionCategory: 'CAMERA_GEOTAG',
+        actionTitle: `Ambil ${watermarkedList.length} Foto Geotagging GPS`,
+        actionDescription: `Mengambil foto ber-watermark satelit GPS kategori ${cameraCategory} di ${cameraBlockCode}.`,
+        targetEntity: `${watermarkedList.length} Foto (${cameraBlockCode})`,
+        clientId: activeClient?.id,
+        clientName: activeClient?.name,
+        blockCode: cameraBlockCode,
+        customCoordinates: {
+          lat: currentGps.lat,
+          lng: currentGps.lng,
+          accuracy: currentGps.accuracy,
+          locationName: `${cameraBlockCode}, ${activeClient?.name || 'Estate Riau'}`,
+        },
+      });
+
       showToast(`Sukses memproses ${watermarkedList.length} foto dengan Geotag GPS & Watermark permanen!`, 'success');
     } catch (err) {
       console.error(err);
@@ -303,8 +401,9 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
   };
 
   const handleDeletePhoto = (id: string) => {
+    storageService.deleteGeotagPhoto(id);
     setCapturedPhotos((prev) => prev.filter((p) => p.id !== id));
-    showToast('Foto dihapus dari galeri sesi', 'info');
+    showToast('Foto dihapus dari galeri', 'info');
   };
 
   // =========================================================================
@@ -339,7 +438,16 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
   // =========================================================================
   // 4. FORM CEPAT PENERIMAAN SOLAR KELILING (FUEL BOWSER) STATE
   // =========================================================================
-  const [bowserReceipts, setBowserReceipts] = useState<FuelBowserReceipt[]>(() => storageService.getFuelBowserReceipts(selectedClientId));
+  const loadFilteredBowser = () => {
+    const raw = storageService.getFuelBowserReceipts(activeClientId);
+    return raw.filter((r) => {
+      if (r.clientId !== activeClientId) return false;
+      if (assignedBlockCodes && !assignedBlockCodes.includes(r.blockCode)) return false;
+      return true;
+    });
+  };
+
+  const [bowserReceipts, setBowserReceipts] = useState<FuelBowserReceipt[]>(() => loadFilteredBowser());
   const [showBowserModal, setShowBowserModal] = useState<boolean>(false);
 
   const [bowserTruckId, setBowserTruckId] = useState<string>('BM 8421 AU (Tangki 5.000 L)');
@@ -347,11 +455,18 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
   const [bowserDocNumber, setBowserDocNumber] = useState<string>(`SJ-BBM/SL/${new Date().toISOString().slice(0, 10).replace(/-/g, '/')}-01`);
   const [bowserEqId, setBowserEqId] = useState<string>(() => equipments[0]?.id || 'EX-01');
   const [bowserHmAtRefuel, setBowserHmAtRefuel] = useState<number>(2845.0);
+  const [bowserBlockCode, setBowserBlockCode] = useState<string>(() => clientBlocks[0]?.code || 'Blok AB');
   const [bowserFlowmeterStart, setBowserFlowmeterStart] = useState<number>(42240);
   const [bowserFlowmeterEnd, setBowserFlowmeterEnd] = useState<number>(42380);
   const [bowserFuelQuality, setBowserFuelQuality] = useState<'Jernih (B35 Standar)' | 'Keruh / Ada Air' | 'Kotor'>('Jernih (B35 Standar)');
   const [bowserDriverName, setBowserDriverName] = useState<string>('Bambang Irawan');
   const [bowserNotes, setBowserNotes] = useState<string>('Pengisian solar rintis blok lahan. Segel utuh, flowmeter normal.');
+
+  useEffect(() => {
+    if (clientBlocks.length > 0 && !clientBlocks.some((b) => b.code === bowserBlockCode)) {
+      setBowserBlockCode(clientBlocks[0].code);
+    }
+  }, [clientBlocks, bowserBlockCode]);
 
   const selectedBowserEq = equipments.find((e) => e.id === bowserEqId);
   const calculatedBowserLiters = Math.max(0, bowserFlowmeterEnd - bowserFlowmeterStart);
@@ -369,7 +484,7 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
       time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
       clientId: activeClient?.id || 'client-1',
       clientName: activeClient?.name || 'PT. A',
-      blockCode: clientBlocks[0]?.code || 'Blok AB',
+      blockCode: bowserBlockCode,
       bowserTruckId,
       sealNumber: bowserSealNumber,
       deliveryDocNumber: bowserDocNumber,
@@ -388,15 +503,42 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
     };
 
     storageService.saveFuelBowserReceipt(newReceipt);
-    setBowserReceipts(storageService.getFuelBowserReceipts(selectedClientId));
+
+    recordUserActivity({
+      userId: authUser?.id,
+      userName: authUser?.displayName || 'Pengawas Lapangan',
+      userRole: 'supervisor',
+      userEmail: authUser?.email,
+      actionCategory: 'FUEL_BOWSER',
+      actionTitle: `Penerimaan Solar Bowser: ${newReceipt.totalLitersFilled} L`,
+      actionDescription: `Penerimaan BBM solar dari Truk ${newReceipt.bowserTruckId} (Segel: ${newReceipt.sealNumber}) untuk unit ${newReceipt.equipmentId}. Uji Fisik: ${newReceipt.fuelQualityCheck}.`,
+      targetEntity: `${newReceipt.bowserTruckId} (${newReceipt.totalLitersFilled} L)`,
+      clientId: newReceipt.clientId,
+      clientName: newReceipt.clientName,
+      blockCode: newReceipt.blockCode,
+      customCoordinates: {
+        lat: currentGps.lat,
+        lng: currentGps.lng,
+        accuracy: currentGps.accuracy,
+        locationName: `${newReceipt.blockCode}, ${newReceipt.clientName}`,
+      },
+    });
+
+    setBowserReceipts(loadFilteredBowser());
     setShowBowserModal(false);
     showToast(`Penerimaan solar keliling ${newReceipt.totalLitersFilled} L untuk ${newReceipt.equipmentId} berhasil dicatat & masuk riwayat logistik!`, 'success');
   };
 
   const handleDeleteBowser = (id: string) => {
+    const target = bowserReceipts.find((r) => r.id === id);
+    if (!target) return;
+    if (target.clientId !== activeClientId || (assignedBlockCodes && !assignedBlockCodes.includes(target.blockCode))) {
+      showToast('Akses Ditolak: Anda tidak berhak menghapus data di luar penempatan tugas Anda!', 'warning');
+      return;
+    }
     if (confirm('Hapus bukti penerimaan solar keliling ini?')) {
       storageService.deleteFuelBowserReceipt(id);
-      setBowserReceipts(storageService.getFuelBowserReceipts(selectedClientId));
+      setBowserReceipts(loadFilteredBowser());
       showToast('Data penerimaan solar dihapus', 'info');
     }
   };
@@ -404,12 +546,22 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
   // =========================================================================
   // 5. LOG INSIDEN LAPANGAN & KONDISI TANAH (SAFETY & SOIL HAZARD LOG) STATE
   // =========================================================================
-  const [soilIncidents, setSoilIncidents] = useState<SoilHazardIncident[]>(() => storageService.getSoilIncidents(selectedClientId));
+  const loadFilteredIncidents = () => {
+    const raw = storageService.getSoilIncidents(activeClientId);
+    return raw.filter((i) => {
+      if (i.clientId !== activeClientId) return false;
+      if (assignedBlockCodes && !assignedBlockCodes.includes(i.blockCode)) return false;
+      return true;
+    });
+  };
+
+  const [soilIncidents, setSoilIncidents] = useState<SoilHazardIncident[]>(() => loadFilteredIncidents());
   const [showIncidentModal, setShowIncidentModal] = useState<boolean>(false);
 
   const [incType, setIncType] = useState<SoilIncidentType>('Alat Amblas di Tanah Gambut Dalam');
   const [incSeverity, setIncSeverity] = useState<IncidentSeverity>('Sedang (Butuh Bantuan Winching)');
   const [incEqId, setIncEqId] = useState<string>(() => equipments[0]?.id || 'EX-01');
+  const [incBlockCode, setIncBlockCode] = useState<string>(() => clientBlocks[0]?.code || 'Blok AB');
   const [incRescueEq, setIncRescueEq] = useState<string>('DZ-01 (CAT D6R XL)');
   const [incDuration, setIncDuration] = useState<number>(1.5);
   const [incSoilCondition, setIncSoilCondition] = useState<'Tanah Gambut Kedalaman > 2m' | 'Gambut Dangkal / Basah' | 'Tanah Mineral Licin / Berlumpur' | 'Rawa Rendahan'>('Tanah Gambut Kedalaman > 2m');
@@ -417,6 +569,12 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
   const [incAction, setIncAction] = useState<string>('Evakuasi menggunakan sling baja 32mm dibantu tarikan bulldozer dan tumpuan bucket excavator.');
   const [incPrevention, setIncPrevention] = useState<string>('Wajib pasang bantalan kayu ralas (matting) sebelum melintasi kantung gambut lunak.');
   const [incStatus, setIncStatus] = useState<'Selesai Dievakuasi' | 'Dalam Penanganan' | 'Menunggu Bantuan Unit Tambahan'>('Selesai Dievakuasi');
+
+  useEffect(() => {
+    if (clientBlocks.length > 0 && !clientBlocks.some((b) => b.code === incBlockCode)) {
+      setIncBlockCode(clientBlocks[0].code);
+    }
+  }, [clientBlocks, incBlockCode]);
 
   const selectedIncEq = equipments.find((e) => e.id === incEqId);
 
@@ -428,7 +586,7 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
       time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
       clientId: activeClient?.id || 'client-1',
       clientName: activeClient?.name || 'PT. A',
-      blockCode: clientBlocks[0]?.code || 'Blok AB',
+      blockCode: incBlockCode,
       incidentType: incType,
       severity: incSeverity,
       affectedEquipmentId: incEqId,
@@ -446,15 +604,42 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
     };
 
     storageService.saveSoilIncident(newInc);
-    setSoilIncidents(storageService.getSoilIncidents(selectedClientId));
+
+    recordUserActivity({
+      userId: authUser?.id,
+      userName: authUser?.displayName || 'Pengawas Lapangan',
+      userRole: 'supervisor',
+      userEmail: authUser?.email,
+      actionCategory: 'INCIDENT_K3',
+      actionTitle: `Lapor Insiden K3 / Tanah: ${newInc.affectedEquipmentId}`,
+      actionDescription: `${newInc.incidentType} (${newInc.severity}) pada unit ${newInc.affectedEquipmentName}. Tindakan: ${newInc.actionTaken}`,
+      targetEntity: `${newInc.affectedEquipmentId} (${newInc.incidentType})`,
+      clientId: newInc.clientId,
+      clientName: newInc.clientName,
+      blockCode: newInc.blockCode,
+      customCoordinates: {
+        lat: currentGps.lat,
+        lng: currentGps.lng,
+        accuracy: currentGps.accuracy,
+        locationName: `${newInc.blockCode}, ${newInc.clientName}`,
+      },
+    });
+
+    setSoilIncidents(loadFilteredIncidents());
     setShowIncidentModal(false);
     showToast(`Log Insiden & Kondisi Tanah ${newInc.incidentType} berhasil dicatat (Durasi Evakuasi: ${newInc.evacuationDurationHours} Jam)!`, 'success');
   };
 
   const handleDeleteIncident = (id: string) => {
+    const target = soilIncidents.find((i) => i.id === id);
+    if (!target) return;
+    if (target.clientId !== activeClientId || (assignedBlockCodes && !assignedBlockCodes.includes(target.blockCode))) {
+      showToast('Akses Ditolak: Anda tidak berhak menghapus data di luar penempatan tugas Anda!', 'warning');
+      return;
+    }
     if (confirm('Hapus log insiden ini?')) {
       storageService.deleteSoilIncident(id);
-      setSoilIncidents(storageService.getSoilIncidents(selectedClientId));
+      setSoilIncidents(loadFilteredIncidents());
       showToast('Log insiden dihapus', 'info');
     }
   };

@@ -1,11 +1,41 @@
 export type UserRole = 'supervisor' | 'director' | 'client';
 
+export type ManagedUserLevel = 'Superadmin' | 'Pengawas';
+
+export interface ManagedUser {
+  id: string;
+  fullName: string;          // nama lengkap
+  address: string;           // alamat
+  whatsappNumber: string;    // no WA aktif
+  email: string;             // Email aktif
+  jobTitle: string;          // Jabatan: Direktur, Manager, Pengawas, atau custom jabatan baru
+  userLevel: ManagedUserLevel; // Level User: Superadmin, Pengawas
+  username: string;          // Username untuk login
+  password: string;          // Password
+  assignedClientId: string;  // Penempatan Proyek (hanya boleh satu klien)
+  assignedClientName: string;
+  assignedBlockCodes: string[]; // Penempatan Lokasi Kerja (bisa lebih dari satu blok / bisa nambah blok)
+  status: 'Aktif' | 'Nonaktif';
+  createdAt: string;
+  updatedAt?: string;
+  notes?: string;
+}
+
 export interface AuthUser {
+  id?: string;
   username: string;
   displayName: string;
   role: 'supervisor' | 'director';
   roleTitle: string;
+  email?: string;
   loginTime: string;
+  phoneNumber?: string;
+  address?: string;
+  jobTitle?: string;
+  userLevel?: ManagedUserLevel;
+  assignedClientId?: string;
+  assignedClientName?: string;
+  assignedBlockCodes?: string[];
 }
 
 export type WeatherCondition = 
@@ -402,4 +432,97 @@ export interface SoilHazardIncident {
   supervisorName: string;
   createdAt: string;
 }
+
+// 2. Foto Geotagging Progres Lapangan
+export interface FieldGeotagPhoto {
+  id: string;
+  fileName: string;
+  dataUrl: string;
+  lat: number;
+  lng: number;
+  accuracy: number;
+  timestamp: string;
+  category: string;
+  blockCode: string;
+  equipmentId?: string;
+  clientId?: string;
+  clientName: string;
+  supervisorName?: string;
+  notes?: string;
+}
+
+// 3. Log Discrepancy & Perhitungan HM Alat Berat
+export interface HmDiscrepancyLog {
+  id: string;
+  date: string;
+  reportId?: string;
+  reportNumber?: string;
+  clientId: string;
+  clientName: string;
+  blockCode: string;
+  equipmentId: string;
+  equipmentName: string;
+  hmStart: number;
+  hmEnd: number;
+  totalHm: number;
+  effectiveWorkHours: number;
+  downtimeWeatherHours: number;
+  downtimeBreakdownHours: number;
+  downtimeOtherHours: number;
+  totalLoggedHours: number;
+  discrepancyHours: number; // totalHm - totalLoggedHours
+  isDiscrepancy: boolean;
+  fuelAddedLiters: number;
+  fuelRatio: number;
+  fuelStandardLimit: number;
+  isFuelAlert: boolean;
+  notes?: string;
+  supervisorName: string;
+}
+
+// 4. Log Riwayat Aktivitas Pengguna & Geotag Lokasi GPS
+export type ActivityActionCategory = 
+  | 'AUTH'          // Login, Logout, Ganti Sesi
+  | 'USER_MANAGEMENT' // CRUD User, Ganti Password, Hak Akses, Penempatan Proyek
+  | 'REPORT'        // Input Laporan Baru, Edit Laporan, Approval Laporan
+  | 'P2H'           // Simpan Checklist Inspeksi P2H
+  | 'CAMERA_GEOTAG' // Ambil / Upload Foto Geotagging
+  | 'HM_CALCULATOR' // Hitung / Verifikasi Discrepancy HM
+  | 'FUEL_BOWSER'   // Catat Penerimaan Solar Bowser
+  | 'SOIL_INCIDENT' // Catat Insiden Lahan Gambut
+  | 'INCIDENT_K3'   // Insiden Keselamatan Kerja & Lahan Gambut
+  | 'LOGISTICS'     // Update Stok Solar, Transaksi BBM
+  | 'MASTER_DATA'   // Tambah / Ubah Klien, Alat Berat, Operator
+  | 'NAVIGATION'    // Akses Halaman / Fitur
+  | 'EXPORT';       // Cetak PDF / Export Data
+
+export interface UserActivityLog {
+  id: string;
+  timestamp: string;          // ISO string
+  formattedTime: string;      // Formatted "24/09/2026 14:20:15 WIB"
+  userId: string;
+  userName: string;
+  userRole: UserRole;
+  userEmail?: string;
+  actionCategory: ActivityActionCategory;
+  actionTitle: string;
+  actionDescription: string;
+  targetEntity?: string;
+  clientId?: string;
+  clientName?: string;
+  blockCode?: string;
+  gpsTag?: {
+    lat: number;
+    lng: number;
+    accuracy: number;         // meter
+    locationName: string;     // e.g. "Blok AB, Estate Siak (Riau)"
+    mapsUrl: string;
+  };
+  deviceInfo: {
+    deviceType: 'Mobile' | 'Tablet' | 'Desktop';
+    browser: string;
+    isOnline: boolean;
+  };
+}
+
 

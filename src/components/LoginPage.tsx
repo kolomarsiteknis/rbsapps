@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Lock, 
   UserCheck, 
@@ -7,21 +7,44 @@ import {
   AlertCircle,
   Truck,
   HardHat,
-  ShieldCheck
+  ShieldCheck,
+  Building2,
+  Layers,
+  Sparkles,
+  KeyRound,
+  Users,
+  Crown
 } from 'lucide-react';
-import { AuthUser } from '../types';
+import { AuthUser, ManagedUser } from '../types';
+import { storageService } from '../services/storageService';
 
 interface LoginPageProps {
   onLoginSuccess: (user: AuthUser) => void;
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
-  // Dropdown options for selecting user
-  const [selectedUser, setSelectedUser] = useState<'PENGAWAS' | 'DIREKTUR'>('PENGAWAS');
+  // Load registered users from storage
+  const [managedUsers, setManagedUsers] = useState<ManagedUser[]>([]);
+  const [selectedUsername, setSelectedUsername] = useState<string>('PENGAWAS');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    const list = storageService.getManagedUsers();
+    setManagedUsers(list);
+    if (list.length > 0) {
+      // Default to PENGAWAS or first user
+      const defaultUser = list.find((u) => u.username === 'PENGAWAS') || list[0];
+      setSelectedUsername(defaultUser.username);
+    }
+  }, []);
+
+  // Currently selected managed user object
+  const currentSelectedUser = managedUsers.find(
+    (u) => u.username.toLowerCase() === selectedUsername.toLowerCase()
+  );
 
   // Validate credentials on submit
   const handleSubmit = (e: React.FormEvent) => {
@@ -32,14 +55,64 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     const trimmedPass = password.trim();
 
     setTimeout(() => {
-      // 1. Akun PENGAWAS -> Password: satu2345
-      if (selectedUser === 'PENGAWAS') {
+      // Find matching user from managed users
+      const user = storageService.getManagedUserByUsername(selectedUsername);
+
+      if (user) {
+        // Check if user is disabled
+        if (user.status === 'Nonaktif') {
+          setErrorMsg(`Akun "${user.username}" (${user.fullName}) sedang dinonaktifkan oleh Superadmin.`);
+          setIsLoading(false);
+          return;
+        }
+
+        // Validate password
+        if (user.password === trimmedPass) {
+          const isSuper = user.userLevel === 'Superadmin';
+          const authUserObj: AuthUser = {
+            id: user.id,
+            username: user.username,
+            displayName: user.fullName,
+            role: isSuper ? 'director' : 'supervisor',
+            roleTitle: isSuper
+              ? `${user.jobTitle} • Owner (Semua Proyek & Blok)`
+              : `${user.jobTitle} • ${user.assignedClientName} (${user.assignedBlockCodes.join(', ')})`,
+            email: user.email,
+            phoneNumber: user.whatsappNumber,
+            address: user.address,
+            jobTitle: user.jobTitle,
+            userLevel: user.userLevel,
+            assignedClientId: isSuper ? 'all' : user.assignedClientId,
+            assignedClientName: isSuper ? 'Semua Proyek (Owner)' : user.assignedClientName,
+            assignedBlockCodes: isSuper ? ['Akses Semua Blok (Tanpa Batas)'] : user.assignedBlockCodes,
+            loginTime: new Date().toISOString(),
+          };
+
+          onLoginSuccess(authUserObj);
+          setIsLoading(false);
+          return;
+        } else {
+          setErrorMsg(`Password salah untuk akun ${user.username}!`);
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      // Hardcoded fallback checks for PENGAWAS and DIREKTUR
+      if (selectedUsername === 'PENGAWAS') {
         if (trimmedPass === 'satu2345') {
           const userObj: AuthUser = {
+            id: 'user-usr-02',
             username: 'PENGAWAS',
-            displayName: 'Pengawas Lapangan',
+            displayName: 'Ahmad Rizky Pratama, S.T.',
             role: 'supervisor',
-            roleTitle: 'Pengawas Lapangan (PT. SURYALAND GROUP)',
+            roleTitle: 'Pengawas Lapangan • PT. A (Blok AB, Blok AA)',
+            email: 'pengawas@suryaland.co.id',
+            phoneNumber: '081276543210',
+            userLevel: 'Pengawas',
+            assignedClientId: 'client-1',
+            assignedClientName: 'PT. A',
+            assignedBlockCodes: ['Blok AB', 'Blok AA'],
             loginTime: new Date().toISOString(),
           };
           onLoginSuccess(userObj);
@@ -52,14 +125,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         }
       }
 
-      // 2. Akun Direktur (Superadmin) -> Password: bos12345
-      if (selectedUser === 'DIREKTUR') {
+      if (selectedUsername === 'DIREKTUR') {
         if (trimmedPass === 'bos12345') {
           const userObj: AuthUser = {
             username: 'Direktur (Superadmin)',
             displayName: 'Ir. Hendra Wijaya, M.Si',
             role: 'director',
             roleTitle: 'Direktur Utama (Superadmin)',
+            email: 'hendra.wijaya@suryaland.co.id',
             loginTime: new Date().toISOString(),
           };
           onLoginSuccess(userObj);
@@ -72,7 +145,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         }
       }
 
-      setErrorMsg('Autentikasi gagal. Silakan coba kembali.');
+      setErrorMsg('Pengguna tidak ditemukan atau kata sandi tidak cocok.');
       setIsLoading(false);
     }, 200);
   };
@@ -136,44 +209,92 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
             {/* Form Login: Dropdown User + Password Input */}
             <form onSubmit={handleSubmit} className="space-y-4">
-              {/* DROPDOWN PILIH USER (Tanpa kolom username ketik) */}
+              {/* DROPDOWN PILIH USER */}
               <div>
-                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
-                  PILIH USER
+                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                  <span>PILIH USER TERDAFTAR</span>
+                  <span className="text-[10px] text-amber-400 font-bold lowercase">
+                    {managedUsers.length} pengguna aktif
+                  </span>
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-amber-400">
-                    {selectedUser === 'PENGAWAS' ? (
-                      <HardHat className="w-4 h-4" />
-                    ) : (
+                    {currentSelectedUser?.userLevel === 'Superadmin' || selectedUsername === 'DIREKTUR' ? (
                       <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                    ) : (
+                      <HardHat className="w-4 h-4 text-amber-400" />
                     )}
                   </div>
                   <select
-                    value={selectedUser}
+                    value={selectedUsername}
                     onChange={(e) => {
-                      setSelectedUser(e.target.value as 'PENGAWAS' | 'DIREKTUR');
+                      setSelectedUsername(e.target.value);
                       setErrorMsg(null);
                       setPassword('');
                     }}
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-950/90 border border-slate-700 rounded-xl text-sm font-bold text-white focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition cursor-pointer"
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-950/90 border border-slate-700 rounded-xl text-xs sm:text-sm font-bold text-white focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition cursor-pointer"
                   >
-                    <option value="PENGAWAS" className="bg-slate-900 text-white font-bold py-1">
-                      USER : PENGAWAS
-                    </option>
-                    <option value="DIREKTUR" className="bg-slate-900 text-white font-bold py-1">
-                      USER : Direktur (Superadmin)
-                    </option>
+                    {managedUsers.length > 0 ? (
+                      managedUsers.map((u) => {
+                        const isSuper = u.userLevel === 'Superadmin';
+                        return (
+                          <option key={u.id} value={u.username} className="bg-slate-900 text-white font-bold py-1">
+                            {isSuper
+                              ? `👑 [Superadmin / Owner] ${u.fullName} — ${u.jobTitle} (Semua Proyek)`
+                              : `🚜 [Pengawas] ${u.fullName} — ${u.assignedClientName}`}
+                          </option>
+                        );
+                      })
+                    ) : (
+                      <>
+                        <option value="PENGAWAS" className="bg-slate-900 text-white font-bold py-1">
+                          USER : PENGAWAS
+                        </option>
+                        <option value="DIREKTUR" className="bg-slate-900 text-white font-bold py-1">
+                          USER : Direktur (Superadmin)
+                        </option>
+                      </>
+                    )}
                   </select>
                 </div>
-                <div className="mt-1.5 text-[11px] text-slate-400 flex items-center justify-between">
-                  <span>
-                    Hak Akses:{' '}
-                    <strong className="text-amber-300">
-                      {selectedUser === 'PENGAWAS' ? 'Form Lapangan & Rekap' : 'Penuh / Superadmin'}
-                    </strong>
-                  </span>
-                </div>
+
+                {/* User Detail pill info */}
+                {currentSelectedUser && (
+                  <div className="mt-2 p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/90 text-[11px] text-slate-300 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">Tingkat Hak Akses:</span>
+                      <strong className={currentSelectedUser.userLevel === 'Superadmin' ? 'text-amber-400 font-black flex items-center gap-1' : 'text-sky-300 font-bold'}>
+                        {currentSelectedUser.userLevel === 'Superadmin' && <Crown className="w-3 h-3 text-amber-400" />}
+                        {currentSelectedUser.userLevel} ({currentSelectedUser.jobTitle})
+                      </strong>
+                    </div>
+
+                    {currentSelectedUser.userLevel === 'Superadmin' ? (
+                      <div className="pt-1.5 border-t border-slate-800/80 flex items-center justify-between">
+                        <span className="text-slate-400">Cakupan Wilayah Proyek:</span>
+                        <span className="text-amber-300 font-bold flex items-center gap-1">
+                          <Sparkles className="w-3 h-3 text-amber-400" />
+                          Semua Proyek &amp; Blok (Owner Tanpa Batas)
+                        </span>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Penempatan Proyek:</span>
+                          <strong className="text-white">
+                            {currentSelectedUser.assignedClientName}
+                          </strong>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Lokasi Blok Kerja:</span>
+                          <span className="text-indigo-300 font-semibold">
+                            {currentSelectedUser.assignedBlockCodes.join(', ')}
+                          </span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* INPUT PASSWORD */}
@@ -191,11 +312,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                     autoFocus
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder={
-                      selectedUser === 'PENGAWAS'
-                        ? 'Ketik password (satu2345)'
-                        : 'Ketik password (bos12345)'
-                    }
+                    placeholder="Ketik password akun Anda..."
                     className="w-full pl-10 pr-10 py-2.5 bg-slate-950/90 border border-slate-700 rounded-xl text-sm font-semibold text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition"
                   />
                   <button
@@ -218,44 +335,45 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 {isLoading ? (
                   <div className="w-5 h-5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></div>
                 ) : (
-                  <span>LOGIN</span>
+                  <span>MASUK KE SISTEM</span>
                 )}
               </button>
             </form>
 
             {/* Quick Reference Box */}
             <div className="mt-6 p-3.5 rounded-xl border border-slate-800 bg-slate-950/50 space-y-2 text-xs">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-800 pb-1">
-                Kredensial Password Sistem:
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-800 pb-1 flex items-center justify-between">
+                <span>Klik Cepat Kredensial Demo:</span>
+                <span className="text-amber-400">Autofill</span>
               </div>
               <div className="flex items-center justify-between text-[11px]">
-                <span className="text-slate-300 font-medium">USER : PENGAWAS</span>
+                <span className="text-slate-300 font-medium">PENGAWAS (Ahmad Rizky)</span>
                 <button
                   type="button"
                   onClick={() => {
-                    setSelectedUser('PENGAWAS');
+                    setSelectedUsername('PENGAWAS');
                     setPassword('satu2345');
                     setErrorMsg(null);
                   }}
                   className="font-mono text-amber-400 hover:underline cursor-pointer font-bold"
                   title="Klik untuk mengisi otomatis"
                 >
-                  Password: satu2345
+                  satu2345
                 </button>
               </div>
               <div className="flex items-center justify-between text-[11px]">
-                <span className="text-slate-300 font-medium">USER : Direktur (Superadmin)</span>
+                <span className="text-slate-300 font-medium">SUPERADMIN (Ir. Hendra)</span>
                 <button
                   type="button"
                   onClick={() => {
-                    setSelectedUser('DIREKTUR');
+                    setSelectedUsername('DIREKTUR');
                     setPassword('bos12345');
                     setErrorMsg(null);
                   }}
                   className="font-mono text-emerald-400 hover:underline cursor-pointer font-bold"
                   title="Klik untuk mengisi otomatis"
                 >
-                  Password: bos12345
+                  bos12345
                 </button>
               </div>
             </div>
