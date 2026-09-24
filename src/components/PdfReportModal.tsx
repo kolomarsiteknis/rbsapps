@@ -55,8 +55,7 @@ I. HASIL KERJA HARIAN (CAPAIAN FISIK)
   Item Pekerjaan          Target Harian       Realisasi Hari Ini      Total Kumulatif    Status Progres
   ----------------------  ------------------  ----------------------  -----------------  --------------
   Land Clearing (Rabas,   ${report.physicalProgress.targetAreaHa.toFixed(2)} Ha             ${report.physicalProgress.realizedAreaHa.toFixed(2)} Ha                 ${report.physicalProgress.cumulativeAreaHa.toFixed(2)} Ha           ${report.physicalProgress.progressPercentage.toFixed(2)} %
-  Cincang, Rumpuk)
-  Drainase / Parit        ${report.physicalProgress.targetDrainageM} Meter            ${report.physicalProgress.realizedDrainageM} Meter               ${report.physicalProgress.cumulativeDrainageM} Meter        -
+  Cincang & Rumpuk)
 ----------------------------------------------------------------------------------------------------
   Catatan Pengawas: ${report.physicalProgress.notes || '-'}
 
@@ -273,21 +272,6 @@ ${report.equipmentWorkLogs
                   <td className="border border-slate-300 px-2 py-1.5 text-center font-bold text-amber-700">
                     {report.physicalProgress.progressPercentage.toFixed(2)} %
                   </td>
-                </tr>
-                <tr>
-                  <td className="border border-slate-300 px-2 py-1.5 font-medium">
-                    Pebatan / Parit Drainase & Akses Jalan
-                  </td>
-                  <td className="border border-slate-300 px-2 py-1.5 text-center font-mono">
-                    {report.physicalProgress.targetDrainageM > 0 ? `${report.physicalProgress.targetDrainageM} Meter` : '-'}
-                  </td>
-                  <td className="border border-slate-300 px-2 py-1.5 text-center font-mono font-bold">
-                    {report.physicalProgress.realizedDrainageM} Meter
-                  </td>
-                  <td className="border border-slate-300 px-2 py-1.5 text-center font-mono font-bold">
-                    {report.physicalProgress.cumulativeDrainageM} Meter
-                  </td>
-                  <td className="border border-slate-300 px-2 py-1.5 text-center text-slate-500">-</td>
                 </tr>
               </tbody>
             </table>

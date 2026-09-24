@@ -26,7 +26,8 @@ import {
   ShieldCheck,
   UserPlus,
   Info,
-  Search
+  Search,
+  Lock
 } from 'lucide-react';
 import { 
   DailyReport, 
@@ -39,7 +40,8 @@ import {
   Worker, 
   Block, 
   BreakdownCategory,
-  Client
+  Client,
+  UserRole
 } from '../types';
 import { storageService } from '../services/storageService';
 import { applyWatermark, getCurrentGpsLocation } from '../utils/watermark';
@@ -49,13 +51,15 @@ interface ReportWizardProps {
   onCancel?: () => void;
   isOnline: boolean;
   initialClientId?: string;
+  userRole?: UserRole;
+  onNavigateToReports?: () => void;
 }
 
 const STEPS = [
   { id: 1, title: 'Info & Cuaca', icon: Calendar, desc: 'Proyek, Blok, Cuaca' },
   { id: 2, title: 'Presensi Tim', icon: Users, desc: 'Operator & Mekanik' },
   { id: 3, title: 'Alat & Downtime', icon: Clock, desc: 'HM & Jam Mati' },
-  { id: 4, title: 'Hasil Kerja', icon: Layers, desc: 'Luas Ha & Parit M' },
+  { id: 4, title: 'Hasil Kerja', icon: Layers, desc: 'Luas Lahan (Ha)' },
   { id: 5, title: 'Logistik & BBM', icon: Fuel, desc: 'Solar, Oli & Part' },
   { id: 6, title: 'Foto & Submit', icon: Camera, desc: 'Watermark GPS' },
 ];
@@ -65,6 +69,8 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
   onCancel,
   isOnline,
   initialClientId,
+  userRole,
+  onNavigateToReports,
 }) => {
   const [currentStep, setCurrentStep] = useState(1);
   const [clients, setClients] = useState<Client[]>(() => storageService.getClients());
@@ -104,7 +110,6 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
   const [showQuickAddBlock, setShowQuickAddBlock] = useState<boolean>(false);
   const [newBlockCode, setNewBlockCode] = useState<string>('');
   const [newBlockTargetHa, setNewBlockTargetHa] = useState<number>(50);
-  const [newBlockDrainageM, setNewBlockDrainageM] = useState<number>(1500);
 
   // Step 2: Presensi Tim & Penugasan Lokasi (Ditentukan Superadmin)
   const [laborFilterScope, setLaborFilterScope] = useState<'assigned_only' | 'all'>('assigned_only');
@@ -218,11 +223,20 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
   });
 
   // Step 4: Simple Physical Progress
-  const [targetAreaHa, setTargetAreaHa] = useState<number>(4.0);
+  const [targetAreaHa, setTargetAreaHa] = useState<number>(() => {
+    const initBlk = allBlocks.find((b) => b.id === selectedBlockId);
+    return initBlk?.dailyTargetAreaHa || 4.0;
+  });
   const [realizedAreaHa, setRealizedAreaHa] = useState<number>(3.9);
-  const [targetDrainageM, setTargetDrainageM] = useState<number>(200);
-  const [realizedDrainageM, setRealizedDrainageM] = useState<number>(160);
   const [progressNotes, setProgressNotes] = useState<string>('Pekerjaan perumpukan jalur tanam Blok AB berjalan baik.');
+
+  // Sinkronisasi Target Harian (Ha) yang telah ditentukan Direktur untuk blok kerja ini
+  useEffect(() => {
+    const currentBlock = allBlocks.find((b) => b.id === selectedBlockId);
+    if (currentBlock && currentBlock.dailyTargetAreaHa !== undefined) {
+      setTargetAreaHa(currentBlock.dailyTargetAreaHa);
+    }
+  }, [selectedBlockId, allBlocks]);
 
   // Step 5: Logistics & Parts
   const [tankInitial, setTankInitial] = useState<number>(4734);
@@ -255,7 +269,6 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
   const selectedClient = clients.find((c) => c.id === selectedClientId) || clients[0];
   const activeBlock = allBlocks.find((b) => b.id === selectedBlockId) || clientBlocks[0] || allBlocks[0];
   const cumulativeAreaCalc = (activeBlock ? activeBlock.clearedAreaHa : 48.8) + (realizedAreaHa || 0);
-  const cumulativeDrainageCalc = (activeBlock ? activeBlock.drainageDoneM : 1250) + (realizedDrainageM || 0);
 
   // Personil yang ditugaskan di lokasi kerja ini (berdasarkan Klien & Blok yang dipilih di Langkah 1)
   const locationWorkers = laborList.filter((item) => {
@@ -316,8 +329,6 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
       targetAreaHa: newClientAreaHa,
       clearedAreaHa: 0,
       status: 'Dalam Pengerjaan',
-      drainageTargetM: newClientAreaHa * 25,
-      drainageDoneM: 0,
     };
     storageService.saveBlock(newBlock);
     const updatedBlocks = storageService.getBlocks();
@@ -342,8 +353,6 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
       targetAreaHa: newBlockTargetHa,
       clearedAreaHa: 0,
       status: 'Dalam Pengerjaan',
-      drainageTargetM: newBlockDrainageM,
-      drainageDoneM: 0,
     };
     storageService.saveBlock(newBlock);
     const updated = storageService.getBlocks();
@@ -564,9 +573,6 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
         realizedAreaHa,
         cumulativeAreaHa: Number(cumulativeAreaCalc.toFixed(2)),
         progressPercentage: Number(((cumulativeAreaCalc / (activeBlock?.targetAreaHa || 100)) * 100).toFixed(2)),
-        targetDrainageM,
-        realizedDrainageM,
-        cumulativeDrainageM: cumulativeDrainageCalc,
         notes: progressNotes,
       },
       equipmentWorkLogs: equipmentLogs,
@@ -602,6 +608,39 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
     storageService.saveReport(newReport);
     onReportSaved(newReport);
   };
+
+  if (userRole === 'director') {
+    return (
+      <div className="max-w-3xl mx-auto py-12 px-4">
+        <div className="bg-white rounded-2xl p-8 border border-slate-200 shadow-xl text-center space-y-4">
+          <div className="w-16 h-16 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center mx-auto">
+            <ShieldCheck className="w-8 h-8" />
+          </div>
+          <h2 className="text-2xl font-black text-slate-900">
+            Akses Input Khusus Pengawas Lapangan
+          </h2>
+          <p className="text-sm text-slate-600 max-w-lg mx-auto leading-relaxed">
+            Sesuai Standard Operating Procedure (SOP) PT. SURYALAND GROUP, Direktur tidak melakukan penginputan Laporan Harian Operasional Proyek. Penginputan dilakukan secara langsung di lapangan oleh Pengawas Lapangan.
+          </p>
+          <p className="text-xs text-slate-500 max-w-md mx-auto">
+            Sebagai Direktur, Anda berwenang melakukan pengawasan, verifikasi, serta menyetujui atau menolak laporan melalui menu <strong>Rekap Laporan</strong>.
+          </p>
+          <div className="pt-4 flex justify-center gap-3">
+            {onNavigateToReports && (
+              <button
+                type="button"
+                onClick={onNavigateToReports}
+                className="px-6 py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs shadow-md transition cursor-pointer flex items-center gap-2"
+              >
+                <ChevronRight className="w-4 h-4" />
+                <span>Buka Menu Rekapitulasi Laporan</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-5xl mx-auto py-6 px-3 sm:px-6">
@@ -922,25 +961,14 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                         className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-bold"
                       />
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block font-bold text-slate-700 mb-0.5">Target Luas (Ha)</label>
-                        <input
-                          type="number"
-                          value={newBlockTargetHa}
-                          onChange={(e) => setNewBlockTargetHa(parseFloat(e.target.value) || 0)}
-                          className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-mono font-bold"
-                        />
-                      </div>
-                      <div>
-                        <label className="block font-bold text-slate-700 mb-0.5">Target Saluran / Parit (M)</label>
-                        <input
-                          type="number"
-                          value={newBlockDrainageM}
-                          onChange={(e) => setNewBlockDrainageM(parseFloat(e.target.value) || 0)}
-                          className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-mono font-bold"
-                        />
-                      </div>
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-0.5">Target Luas Blok (Ha)</label>
+                      <input
+                        type="number"
+                        value={newBlockTargetHa}
+                        onChange={(e) => setNewBlockTargetHa(parseFloat(e.target.value) || 0)}
+                        className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-mono font-bold"
+                      />
                     </div>
                   </div>
                   <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
@@ -1130,7 +1158,6 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                   <option value="Tim Operator Alat Berat">Tim Operator Alat Berat</option>
                   <option value="Tim Rintis & Imas Kayu">Tim Rintis & Imas Kayu</option>
                   <option value="Tim Mekanik Maintenance">Tim Mekanik Maintenance</option>
-                  <option value="Tim Drainase & Parit">Tim Drainase & Parit</option>
                   <option value="Tim Pengawas & K3">Tim Pengawas & K3</option>
                 </select>
 
@@ -1205,8 +1232,6 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                 ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
                 : teamName.includes('Mekanik')
                 ? 'bg-cyan-50 text-cyan-900 border-cyan-200'
-                : teamName.includes('Drainase') || teamName.includes('Parit')
-                ? 'bg-blue-50 text-blue-900 border-blue-200'
                 : 'bg-purple-50 text-purple-900 border-purple-200';
 
               return (
@@ -1324,7 +1349,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
 
                               {/* Quick Task Preset Chips */}
                               <div className="flex flex-wrap gap-1">
-                                {['🚜 Operator Unit', '🔧 Mekanik Servis', '🌲 Rintis Batas', '⛏️ Gali Parit', '🏥 Izin/Sakit'].map((tag) => (
+                                {['🚜 Operator Unit', '🔧 Mekanik Servis', '🌲 Rintis Batas', '🪵 Cincang Rumpuk', '🏥 Izin/Sakit'].map((tag) => (
                                   <button
                                     key={tag}
                                     type="button"
@@ -1574,26 +1599,26 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
         )}
 
         {/* ========================================================================= */}
-        {/* LANGKAH 4: HASIL KERJA HARIAN (SIMPEL: HA & M) */}
+        {/* LANGKAH 4: HASIL KERJA HARIAN (LAND CLEARING HA) */}
         {/* ========================================================================= */}
         {currentStep === 4 && (
           <div className="p-6 space-y-6">
             <div className="border-b border-slate-200 pb-3">
               <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
                 <Layers className="w-5 h-5 text-amber-500" />
-                Langkah 4: Hasil Kerja Harian (Capaian Fisik Simpel)
+                Langkah 4: Hasil Kerja Harian (Capaian Fisik Land Clearing)
               </h3>
               <p className="text-xs text-slate-500">
-                Cukup masukkan total luas lahan selesai (Hektar) dan panjang parit/drainase (Meter) tanpa tahapan rumit.
+                Input capaian realisasi luas lahan (Hektar) yang telah selesai dibersihkan (rabas, cincang, & rumpuk mekanis).
               </p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              {/* Land Clearing Ha */}
+              {/* Land Clearing Ha Input Card */}
               <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-bold text-emerald-950">
-                    1. Luas Pembersihan Lahan (Land Clearing)
+                    Input Luas Pembersihan Lahan (Land Clearing)
                   </span>
                   <span className="text-xs bg-emerald-200 text-emerald-900 font-bold px-2 py-0.5 rounded">
                     Rabas, Cincang, Rumpuk
@@ -1602,16 +1627,25 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
-                      Target Harian (Ha)
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase">
+                        Target Harian (Ha)
+                      </label>
+                      <span className="flex items-center gap-1 text-[10px] text-amber-900 font-bold bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300">
+                        <Lock className="w-3 h-3 text-amber-700" /> Terkunci
+                      </span>
+                    </div>
                     <input
                       type="number"
                       step="0.1"
+                      readOnly
+                      disabled
                       value={targetAreaHa}
-                      onChange={(e) => setTargetAreaHa(parseFloat(e.target.value) || 0)}
-                      className="w-full px-3 py-2 bg-white border border-emerald-300 rounded-lg text-sm font-mono font-bold"
+                      className="w-full px-3 py-2 bg-slate-100 border border-slate-300 rounded-lg text-sm font-mono font-black text-slate-800 cursor-not-allowed select-none shadow-inner"
                     />
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Ditentukan Direktur untuk {activeBlock?.code || 'blok ini'}.
+                    </p>
                   </div>
                   <div>
                     <label className="block text-[11px] font-bold text-emerald-900 uppercase mb-1">
@@ -1624,79 +1658,59 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                       onChange={(e) => setRealizedAreaHa(parseFloat(e.target.value) || 0)}
                       className="w-full px-3 py-2 bg-white border border-emerald-500 rounded-lg text-base font-mono font-black text-emerald-900 ring-2 ring-emerald-400"
                     />
+                    <p className="text-[10px] text-emerald-700 mt-1">
+                      Realisasi lapangan hari ini.
+                    </p>
                   </div>
                 </div>
 
                 <div className="pt-2 border-t border-emerald-200 text-xs flex justify-between font-medium text-emerald-900">
                   <span>Ketercapaian Target Harian:</span>
-                  <strong className="text-sm">
+                  <strong className="text-sm font-mono font-black">
                     {targetAreaHa > 0 ? ((realizedAreaHa / targetAreaHa) * 100).toFixed(1) : 0}%
                   </strong>
                 </div>
-
-                <div className="bg-white p-2.5 rounded-lg border border-emerald-200 text-xs space-y-1">
-                  <div className="flex justify-between text-slate-600">
-                    <span>Luas Kumulatif Sebelumnya:</span>
-                    <span className="font-mono font-bold">{activeBlock?.clearedAreaHa || 45.0} Ha</span>
-                  </div>
-                  <div className="flex justify-between text-emerald-900 font-bold border-t border-slate-100 pt-1">
-                    <span>Total Kumulatif Baru:</span>
-                    <span className="font-mono text-sm">{cumulativeAreaCalc.toFixed(2)} Ha / {activeBlock?.targetAreaHa || 100} Ha</span>
-                  </div>
-                </div>
               </div>
 
-              {/* Drainase & Parit Meter */}
-              <div className="p-4 bg-blue-50/70 border border-blue-200 rounded-xl space-y-3">
+              {/* Cumulative & Block Overview Card */}
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-bold text-blue-950">
-                    2. Panjang Parit Drainase / Akses Jalan
+                  <span className="text-sm font-bold text-slate-900">
+                    Akumulasi Progres Blok: {activeBlock?.code || 'Blok Utama'}
                   </span>
-                  <span className="text-xs bg-blue-200 text-blue-900 font-bold px-2 py-0.5 rounded">
-                    Meter (M)
+                  <span className="text-xs bg-slate-200 text-slate-800 font-bold px-2 py-0.5 rounded">
+                    Total Target: {activeBlock?.targetAreaHa || 100} Ha
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
-                      Target Drainase (M)
-                    </label>
-                    <input
-                      type="number"
-                      step="10"
-                      value={targetDrainageM}
-                      onChange={(e) => setTargetDrainageM(parseFloat(e.target.value) || 0)}
-                      className="w-full px-3 py-2 bg-white border border-blue-300 rounded-lg text-sm font-mono font-bold"
-                    />
+                <div className="space-y-2 pt-1">
+                  <div className="flex justify-between text-xs text-slate-600">
+                    <span>Luas Kumulatif Sebelumnya:</span>
+                    <span className="font-mono font-bold text-slate-800">{activeBlock?.clearedAreaHa || 0} Ha</span>
                   </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-blue-900 uppercase mb-1">
-                      Realisasi Hari Ini (M)
-                    </label>
-                    <input
-                      type="number"
-                      step="10"
-                      value={realizedDrainageM}
-                      onChange={(e) => setRealizedDrainageM(parseFloat(e.target.value) || 0)}
-                      className="w-full px-3 py-2 bg-white border border-blue-500 rounded-lg text-base font-mono font-black text-blue-900 ring-2 ring-blue-400"
-                    />
+                  <div className="flex justify-between text-xs text-emerald-800 font-bold">
+                    <span>Tambahan Realisasi Hari Ini:</span>
+                    <span className="font-mono">+{realizedAreaHa.toFixed(2)} Ha</span>
                   </div>
-                </div>
+                  <div className="flex justify-between text-sm text-slate-900 font-black border-t border-slate-200 pt-1.5">
+                    <span>Total Kumulatif Baru:</span>
+                    <span className="font-mono text-emerald-700">{cumulativeAreaCalc.toFixed(2)} Ha / {activeBlock?.targetAreaHa || 100} Ha</span>
+                  </div>
 
-                <div className="pt-2 border-t border-blue-200 text-xs flex justify-between font-medium text-blue-900">
-                  <span>Realisasi Drainase Harian:</span>
-                  <strong className="text-sm">{realizedDrainageM} Meter</strong>
-                </div>
-
-                <div className="bg-white p-2.5 rounded-lg border border-blue-200 text-xs space-y-1">
-                  <div className="flex justify-between text-slate-600">
-                    <span>Kumulatif Drainase Sebelumnya:</span>
-                    <span className="font-mono font-bold">{activeBlock?.drainageDoneM || 1100} M</span>
-                  </div>
-                  <div className="flex justify-between text-blue-900 font-bold border-t border-slate-100 pt-1">
-                    <span>Total Kumulatif Drainase:</span>
-                    <span className="font-mono text-sm">{cumulativeDrainageCalc} Meter</span>
+                  {/* Progress bar */}
+                  <div className="mt-2 space-y-1">
+                    <div className="flex justify-between text-[11px] font-bold text-slate-600">
+                      <span>Progres Keseluruhan Blok</span>
+                      <span className="font-mono text-emerald-700">
+                        {(((cumulativeAreaCalc / (activeBlock?.targetAreaHa || 100)) * 100)).toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
+                      <div
+                        className="bg-emerald-600 h-2.5 rounded-full transition-all duration-300"
+                        style={{ width: `${Math.min(100, Math.max(0, (cumulativeAreaCalc / (activeBlock?.targetAreaHa || 100)) * 100))}%` }}
+                      ></div>
+                    </div>
                   </div>
                 </div>
               </div>

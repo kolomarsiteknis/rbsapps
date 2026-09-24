@@ -20,12 +20,14 @@ import {
 } from 'lucide-react';
 import { DailyReport, Equipment, UserRole, Client } from '../types';
 import { storageService } from '../services/storageService';
+import { WeeklyFuelRatioChart } from './WeeklyFuelRatioChart';
 
 interface DashboardViewProps {
   reports: DailyReport[];
   equipments: Equipment[];
   onOpenPdfReport: (reportId: string) => void;
-  onOpenWizard: () => void;
+  onOpenWizard?: () => void;
+  onNavigateReports?: () => void;
   onApproveReport: (reportId: string) => void;
   userRole: UserRole;
   clients: Client[];
@@ -39,6 +41,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   equipments,
   onOpenPdfReport,
   onOpenWizard,
+  onNavigateReports,
   onApproveReport,
   userRole,
   clients,
@@ -49,6 +52,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const metrics = storageService.getExecutiveDashboardMetrics(selectedClientId);
   const isFiltered = selectedClientId !== 'ALL';
   const activeClient = clients.find((c) => c.id === selectedClientId);
+  const fuelTrends = storageService.getWeeklyFuelTrends(selectedClientId);
 
   // Filter reports to match client selection
   const displayedReports = isFiltered 
@@ -200,12 +204,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </button>
             )}
 
-            <button
-              onClick={onOpenWizard}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-xl text-xs border border-slate-700 transition cursor-pointer"
-            >
-              <span>+ Buat Laporan Harian</span>
-            </button>
+            {onNavigateReports && (
+              <button
+                onClick={onNavigateReports}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-xl text-xs border border-slate-700 transition cursor-pointer"
+              >
+                <FileText className="w-4 h-4 text-amber-400" />
+                <span>Rekap Laporan & Otorisasi</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -356,6 +363,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* GRAFIK TREN RASIO KONSUMSI BBM (LITER/HA) MINGGUAN DENGAN RECHARTS */}
+      <WeeklyFuelRatioChart
+        trends={fuelTrends}
+        selectedClientId={selectedClientId}
+        clientName={activeClient?.name}
+      />
 
       {/* PROMINENT FUEL EFFICIENCY ALERT */}
       {alertEquipments.length > 0 && (

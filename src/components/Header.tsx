@@ -192,18 +192,20 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
-            {/* 2. Form Laporan Harian (Wizard) - Accessible to both, primary for Pengawas */}
-            <button
-              onClick={() => setActiveTab('wizard')}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-                activeTab === 'wizard'
-                  ? 'bg-amber-500 text-slate-950 shadow-md font-black'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
-              }`}
-            >
-              <PlusCircle className="w-3.5 h-3.5 text-amber-400" />
-              <span>Input Laporan Harian</span>
-            </button>
+            {/* 2. Form Laporan Harian (Wizard) - HANYA UNTUK PENGAWAS LAPANGAN (Dihapus dari akses Superadmin) */}
+            {isSupervisor && (
+              <button
+                onClick={() => setActiveTab('wizard')}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                  activeTab === 'wizard'
+                    ? 'bg-amber-500 text-slate-950 shadow-md font-black'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                <PlusCircle className="w-3.5 h-3.5 text-amber-400" />
+                <span>Input Laporan Harian</span>
+              </button>
+            )}
 
             {/* 3. Rekapitulasi Laporan - Accessible to both */}
             <button

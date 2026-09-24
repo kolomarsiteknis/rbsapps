@@ -145,6 +145,14 @@ export default function App() {
       }
     }
 
+    if (authUser?.role === 'director') {
+      if (tab === 'wizard') {
+        showToast('Akses Ditolak: Penginputan Laporan Harian adalah wewenang khusus Pengawas Lapangan.', 'warning');
+        setActiveTab('reports');
+        return;
+      }
+    }
+
     setActiveTab(tab);
   };
 
@@ -207,7 +215,7 @@ export default function App() {
               reports={reports}
               equipments={equipments}
               onOpenPdfReport={handleOpenPdfModal}
-              onOpenWizard={() => setActiveTab('wizard')}
+              onNavigateReports={() => setActiveTab('reports')}
               onApproveReport={handleApproveReport}
               userRole={effectiveRole}
               clients={clients}
@@ -239,6 +247,8 @@ export default function App() {
             onCancel={() => setActiveTab('reports')}
             isOnline={isOnline}
             initialClientId={selectedClientId !== 'ALL' ? selectedClientId : undefined}
+            userRole={authUser.role}
+            onNavigateToReports={() => setActiveTab('reports')}
           />
         )}
 
