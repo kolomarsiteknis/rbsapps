@@ -24,21 +24,23 @@ import {
   ClipboardCheck,
   Activity,
   Users,
-  Lock
+  Lock,
+  BookOpen
 } from 'lucide-react';
 import { UserRole, Client, AuthUser } from '../types';
 
 export type TabKey = 
   | 'dashboard' 
-  | 'wizard' 
-  | 'reports' 
-  | 'master' 
-  | 'official-pdf' 
-  | 'logistics' 
-  | 'supervisor-tools'
+  | 'master'
   | 'director-field-monitor'
+  | 'logistics'
+  | 'reports' 
+  | 'official-pdf' 
+  | 'user-management'
   | 'user-activity-log'
-  | 'user-management';
+  | 'tutorial'
+  | 'wizard' 
+  | 'supervisor-tools';
 
 interface HeaderProps {
   activeTab: TabKey;
@@ -113,79 +115,110 @@ export const Header: React.FC<HeaderProps> = ({
     setIsSidebarOpen(false);
   };
 
-  // Nav item list configurations with role guards
-  const navItems = [
-    {
-      key: 'dashboard' as TabKey,
-      label: 'Dashboard',
-      subtitle: 'Analisis & KPI Eksekutif',
-      icon: LayoutDashboard,
-      visible: isDirector,
-    },
-    {
-      key: 'director-field-monitor' as TabKey,
-      label: 'Audit Hasil Pengawas',
-      subtitle: 'P2H, Geotag, HM, Solar & K3',
-      icon: ClipboardCheck,
-      visible: isDirector, // HANYA ADA DI FRONTEND AKSES DIREKTUR!
-    },
-    {
-      key: 'user-activity-log' as TabKey,
-      label: 'Log Aktivitas & GPS',
-      subtitle: 'Audit Pengguna, Lokasi & Sesi',
-      icon: Activity,
-      visible: isDirector, // HANYA ADA DI FRONTEND AKSES DIREKTUR!
-    },
-    {
-      key: 'user-management' as TabKey,
-      label: 'Manajemen User',
-      subtitle: 'CRUD Pengguna, Proyek & Blok',
-      icon: Users,
-      visible: isDirector, // HANYA ADA DI FRONTEND AKSES SUPERADMIN!
-    },
-    {
-      key: 'wizard' as TabKey,
-      label: 'Input Laporan',
-      subtitle: 'Form 6-Langkah Lapangan',
-      icon: PlusCircle,
-      visible: isSupervisor,
-    },
-    {
-      key: 'supervisor-tools' as TabKey,
-      label: 'Fitur Cepat',
-      subtitle: 'P2H, Geotag, K3 & Kalkulator',
-      icon: HardHat,
-      visible: isSupervisor,
-    },
-    {
-      key: 'reports' as TabKey,
-      label: 'Rekap Laporan',
-      subtitle: 'Arsip & Otorisasi Direktur',
-      icon: FileText,
-      visible: true,
-    },
-    {
-      key: 'logistics' as TabKey,
-      label: 'Logistik & BBM',
-      subtitle: 'Stok Tangki Solar & Spare Part',
-      icon: Fuel,
-      visible: true,
-    },
-    {
-      key: 'official-pdf' as TabKey,
-      label: 'Cetak PDF',
-      subtitle: 'Format Resmi Direktur & Klien',
-      icon: Printer,
-      visible: true,
-    },
-    {
-      key: 'master' as TabKey,
-      label: 'Master Data',
-      subtitle: 'Data Klien, Blok, Unit & Tim',
-      icon: Database,
-      visible: isDirector,
-    },
-  ];
+  // Nav item list configurations with exact user-requested sequence for Superadmin
+  const navItems = isDirector
+    ? [
+        {
+          key: 'dashboard' as TabKey,
+          label: 'Dashboard',
+          subtitle: 'Analisis & KPI Eksekutif',
+          icon: LayoutDashboard,
+          visible: true,
+        },
+        {
+          key: 'master' as TabKey,
+          label: 'Master Data',
+          subtitle: 'Data Klien, Blok, Unit & Tim',
+          icon: Database,
+          visible: true,
+        },
+        {
+          key: 'director-field-monitor' as TabKey,
+          label: 'Audit Hasil Pengawas',
+          subtitle: 'P2H, Geotag, HM, Solar & K3',
+          icon: ClipboardCheck,
+          visible: true,
+        },
+        {
+          key: 'logistics' as TabKey,
+          label: 'Logistik & BBM',
+          subtitle: 'Stok Tangki Solar & Spare Part',
+          icon: Fuel,
+          visible: true,
+        },
+        {
+          key: 'reports' as TabKey,
+          label: 'Rekap Laporan',
+          subtitle: 'Arsip & Otorisasi Direktur',
+          icon: FileText,
+          visible: true,
+        },
+        {
+          key: 'official-pdf' as TabKey,
+          label: 'Cetak PDF',
+          subtitle: 'Format Resmi Direktur & Klien',
+          icon: Printer,
+          visible: true,
+        },
+        {
+          key: 'user-management' as TabKey,
+          label: 'Manajemen User',
+          subtitle: 'CRUD Pengguna, Proyek & Blok',
+          icon: Users,
+          visible: true,
+        },
+        {
+          key: 'user-activity-log' as TabKey,
+          label: 'Log Aktivitas & GPS',
+          subtitle: 'Audit Pengguna, Lokasi & Sesi',
+          icon: Activity,
+          visible: true,
+        },
+        {
+          key: 'tutorial' as TabKey,
+          label: 'Tutorial',
+          subtitle: 'Panduan Fitur & SOP Superadmin',
+          icon: BookOpen,
+          visible: true,
+        },
+      ]
+    : [
+        {
+          key: 'wizard' as TabKey,
+          label: 'Input Laporan',
+          subtitle: 'Form 6-Langkah Lapangan',
+          icon: PlusCircle,
+          visible: true,
+        },
+        {
+          key: 'supervisor-tools' as TabKey,
+          label: 'Fitur Cepat',
+          subtitle: 'P2H, Geotag, K3 & Kalkulator',
+          icon: HardHat,
+          visible: true,
+        },
+        {
+          key: 'logistics' as TabKey,
+          label: 'Logistik & BBM',
+          subtitle: 'Stok Tangki Solar & Spare Part',
+          icon: Fuel,
+          visible: true,
+        },
+        {
+          key: 'reports' as TabKey,
+          label: 'Rekap Laporan',
+          subtitle: 'Arsip & Status Laporan',
+          icon: FileText,
+          visible: true,
+        },
+        {
+          key: 'official-pdf' as TabKey,
+          label: 'Cetak PDF',
+          subtitle: 'Format Resmi Direktur & Klien',
+          icon: Printer,
+          visible: true,
+        },
+      ];
 
   return (
     <>
@@ -272,13 +305,20 @@ export const Header: React.FC<HeaderProps> = ({
                 onClick={() => setIsOnline(!isOnline)}
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 border cursor-pointer ${
                   isOnline
-                    ? 'bg-emerald-950/60 border-emerald-800/80 text-emerald-300 hover:bg-emerald-900/60'
-                    : 'bg-amber-950/60 border-amber-800/80 text-amber-300 hover:bg-amber-900/60'
+                    ? 'bg-emerald-950/70 border-emerald-700/80 text-emerald-300 hover:bg-emerald-900/80 shadow-xs'
+                    : 'bg-amber-950/70 border-amber-700/80 text-amber-300 hover:bg-amber-900/80'
                 }`}
-                title={isOnline ? 'Terhubung. Klik untuk beralih ke Mode Offline Lahan' : 'Offline Lahan. Klik untuk beralih ke Online'}
+                title={
+                  isOnline 
+                    ? 'Cloud Firestore Terhubung (Real-Time). Klik untuk simulasi Mode Offline Lahan.' 
+                    : 'Mode Offline Lahan (IndexedDB Cache Aktif). Data tetap bisa di-CRUD dan otomatis disinkronkan ke Cloud saat online.'
+                }
               >
                 <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
-                <span className="hidden sm:inline">{isOnline ? 'Online' : 'Offline'}</span>
+                {isOnline ? <Wifi className="w-3.5 h-3.5 text-emerald-400" /> : <WifiOff className="w-3.5 h-3.5 text-amber-400" />}
+                <span className="hidden sm:inline font-bold">
+                  {isOnline ? 'Cloud Synced' : 'Offline Lahan'}
+                </span>
                 {pendingSyncCount > 0 && (
                   <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-1.5 rounded-full">
                     {pendingSyncCount}
@@ -402,85 +442,6 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
             )}
 
-            {/* Client Filter Selector Inside Drawer */}
-            <div className="px-4 py-2">
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                {isSupervisor ? 'Penempatan Proyek Resmi (Pengawas)' : 'Pilih Portofolio Klien'}
-              </label>
-
-              {isSupervisor ? (
-                <div className="p-3 bg-gradient-to-br from-amber-950/40 to-slate-900 border border-amber-500/40 rounded-xl space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-xs font-black text-amber-400">
-                      <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                      <span>{authUser?.assignedClientName || activeClientObj?.name || 'PT. A'}</span>
-                    </div>
-                    <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/40">
-                      1 Klien Saja
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-300">
-                    Lokasi Blok Ditugaskan:{' '}
-                    <span className="text-amber-300 font-bold font-mono">
-                      {authUser?.assignedBlockCodes && authUser.assignedBlockCodes.length > 0
-                        ? authUser.assignedBlockCodes.join(', ')
-                        : 'Blok AB, Blok AA'}
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-slate-400 leading-relaxed border-t border-slate-800/80 pt-1.5">
-                    Sesuai ketetapan Superadmin di Manajemen User, akses data dan pelaporan Anda dikunci khusus untuk proyek PT ini. Pengawas tidak dapat beralih ke proyek lain.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedClientId('ALL');
-                      setIsSidebarOpen(false);
-                    }}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer ${
-                      selectedClientId === 'ALL'
-                        ? 'bg-amber-500 text-slate-950 font-bold'
-                        : 'text-slate-300 hover:bg-slate-800/70 hover:text-white'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Building2 className="w-3.5 h-3.5" />
-                      <span>Konsolidasi ({clients.length} Klien)</span>
-                    </div>
-                    {selectedClientId === 'ALL' && <Check className="w-3.5 h-3.5" />}
-                  </button>
-
-                  {clients.map((c) => {
-                    const isSel = selectedClientId === c.id;
-                    const pct = c.totalAreaHa > 0 ? ((c.clearedAreaHa / c.totalAreaHa) * 100).toFixed(0) : 0;
-                    return (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedClientId(c.id);
-                          setIsSidebarOpen(false);
-                        }}
-                        className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer ${
-                          isSel
-                            ? 'bg-amber-500 text-slate-950 font-bold'
-                            : 'text-slate-300 hover:bg-slate-800/70 hover:text-white'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold">{c.name}</span>
-                          <span className="text-[10px] opacity-80">({pct}%)</span>
-                        </div>
-                        {isSel && <Check className="w-3.5 h-3.5" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
             {/* Navigation Menu List */}
             <div className="px-3 py-3 border-t border-slate-800/80">
               <div className="px-3 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
@@ -542,18 +503,20 @@ export const Header: React.FC<HeaderProps> = ({
               <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
             </button>
 
-            {/* Reset Data Button */}
-            <button
-              type="button"
-              onClick={() => {
-                setIsSidebarOpen(false);
-                setShowResetConfirm(true);
-              }}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-all duration-200 cursor-pointer"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Reset Data ke Standar Default</span>
-            </button>
+            {/* Reset Data Button: Khusus Direktur / Superadmin */}
+            {isDirector && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSidebarOpen(false);
+                  setShowResetConfirm(true);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-all duration-200 cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset Data ke Standar Default</span>
+              </button>
+            )}
 
             {/* Logout Button */}
             <button

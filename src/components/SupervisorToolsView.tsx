@@ -215,7 +215,7 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
       createdAt: `${p2hDate} ${p2hTime} WIB`,
     };
 
-    storageService.saveP2HChecklist(newP2H);
+    storageService.saveP2HChecklist(newP2H, authUser);
     recordUserActivity({
       userId: authUser?.id,
       userName: authUser?.displayName || 'Pengawas Lapangan',
@@ -236,15 +236,15 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
       },
     });
 
-    setP2hList(storageService.getP2HChecklists(selectedClientId));
+    setP2hList(loadFilteredP2H());
     setShowP2hModal(false);
     showToast(`Checklist P2H ${newP2H.equipmentId} berhasil disimpan! Status: ${status}`, status === 'Stop Operasi (Butuh Mekanik)' ? 'warning' : 'success');
   };
 
   const handleDeleteP2H = (id: string) => {
     if (confirm('Hapus lembar checklist P2H ini?')) {
-      storageService.deleteP2HChecklist(id);
-      setP2hList(storageService.getP2HChecklists(selectedClientId));
+      storageService.deleteP2HChecklist(id, authUser);
+      setP2hList(loadFilteredP2H());
       showToast('Data P2H berhasil dihapus', 'info');
     }
   };
@@ -356,7 +356,7 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
           clientId: activeClient?.id,
           clientName: it.clientName,
           supervisorName: authUser?.displayName || 'Pengawas Lapangan',
-        });
+        }, authUser);
       });
 
       setCapturedPhotos((prev) => [...newItems, ...prev]);
@@ -401,7 +401,7 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
   };
 
   const handleDeletePhoto = (id: string) => {
-    storageService.deleteGeotagPhoto(id);
+    storageService.deleteGeotagPhoto(id, authUser);
     setCapturedPhotos((prev) => prev.filter((p) => p.id !== id));
     showToast('Foto dihapus dari galeri', 'info');
   };
@@ -502,7 +502,7 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
       createdAt: `${new Date().toISOString().split('T')[0]} ${new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB`,
     };
 
-    storageService.saveFuelBowserReceipt(newReceipt);
+    storageService.saveFuelBowserReceipt(newReceipt, authUser);
 
     recordUserActivity({
       userId: authUser?.id,
@@ -537,7 +537,7 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
       return;
     }
     if (confirm('Hapus bukti penerimaan solar keliling ini?')) {
-      storageService.deleteFuelBowserReceipt(id);
+      storageService.deleteFuelBowserReceipt(id, authUser);
       setBowserReceipts(loadFilteredBowser());
       showToast('Data penerimaan solar dihapus', 'info');
     }
@@ -603,7 +603,7 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
       createdAt: `${new Date().toISOString().split('T')[0]} ${new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB`,
     };
 
-    storageService.saveSoilIncident(newInc);
+    storageService.saveSoilIncident(newInc, authUser);
 
     recordUserActivity({
       userId: authUser?.id,
@@ -638,7 +638,7 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
       return;
     }
     if (confirm('Hapus log insiden ini?')) {
-      storageService.deleteSoilIncident(id);
+      storageService.deleteSoilIncident(id, authUser);
       setSoilIncidents(loadFilteredIncidents());
       showToast('Log insiden dihapus', 'info');
     }

@@ -16,7 +16,8 @@ import {
   HmDiscrepancyLog,
   UserActivityLog,
   ActivityActionCategory,
-  ManagedUser
+  ManagedUser,
+  AuthUser
 } from '../types';
 import { 
   initialDailyReports, 
@@ -34,6 +35,12 @@ import {
   initialJobTitles,
   initialManagedUsers
 } from '../data/mockData';
+import { 
+  syncDocWrite, 
+  syncDocDelete, 
+  FIRESTORE_COLLECTIONS,
+  initFirestoreSync
+} from './firestoreSync';
 
 const STORAGE_KEYS = {
   REPORTS: 'suryaland_reports_v1',
@@ -76,9 +83,76 @@ function saveToStorage<T>(key: string, value: T): void {
 }
 
 export const storageService = {
+  // Helper: Validasi kewenangan pengawas lapangan terhadap Klien & Blok
+  canSupervisorAccess(
+    clientId?: string, 
+    blockCodeOrId?: string, 
+    authUser?: AuthUser | null
+  ): boolean {
+    if (!authUser) return true;
+    // Superadmin / Direktur = Owner dengan akses tanpa batas
+    if (authUser.role === 'director' || authUser.userLevel === 'Superadmin') return true;
+
+    // Untuk Pengawas:
+    // 1. Validasi Klien: Pengawas HANYA bertugas mengawasi 1 Klien PT yang ditugaskan
+    if (authUser.assignedClientId && authUser.assignedClientId !== 'all') {
+      if (clientId && clientId !== 'ALL' && clientId !== authUser.assignedClientId) {
+        return false;
+      }
+    }
+
+    // 2. Validasi Blok: Pengawas BISA ditugaskan di lebih dari 1 lokasi kerja (blok-blok tugasnya)
+    if (
+      blockCodeOrId && 
+      blockCodeOrId !== 'ALL' && 
+      authUser.assignedBlockCodes && 
+      authUser.assignedBlockCodes.length > 0 && 
+      !authUser.assignedBlockCodes[0].includes('Semua Blok')
+    ) {
+      const target = blockCodeOrId.trim().toLowerCase();
+      const isBlockAllowed = authUser.assignedBlockCodes.some((assignedBlock) => {
+        const b = assignedBlock.trim().toLowerCase();
+        return target.includes(b) || b.includes(target);
+      });
+      if (!isBlockAllowed) {
+        return false;
+      }
+    }
+
+    return true;
+  },
+
   // Reports
-  getReports(selectedClientId?: string): DailyReport[] {
+  getReports(selectedClientId?: string, authUser?: AuthUser | null): DailyReport[] {
     const all = loadFromStorage<DailyReport[]>(STORAGE_KEYS.REPORTS, initialDailyReports);
+
+    // Filter jika pengguna adalah Pengawas
+    if (authUser && authUser.role === 'supervisor') {
+      const allowedClientId = authUser.assignedClientId && authUser.assignedClientId !== 'all'
+        ? authUser.assignedClientId
+        : selectedClientId;
+
+      return all.filter((r) => {
+        // Harus sesuai dengan 1 klien PT yang ditugaskan
+        if (allowedClientId && allowedClientId !== 'ALL' && r.clientId !== allowedClientId) {
+          return false;
+        }
+        // Harus sesuai salah satu blok penugasan kerja
+        if (
+          authUser.assignedBlockCodes &&
+          authUser.assignedBlockCodes.length > 0 &&
+          !authUser.assignedBlockCodes[0].includes('Semua Blok')
+        ) {
+          const isAllowedBlock = authUser.assignedBlockCodes.some((b) => {
+            const bClean = b.trim().toLowerCase();
+            return r.blockCode.toLowerCase().includes(bClean) || (r.blockId && r.blockId.toLowerCase() === bClean);
+          });
+          if (!isAllowedBlock) return false;
+        }
+        return true;
+      });
+    }
+
     if (!selectedClientId || selectedClientId === 'ALL') {
       return all;
     }
@@ -90,39 +164,63 @@ export const storageService = {
     return reports.find((r) => r.id === id);
   },
 
-  saveReport(report: DailyReport): DailyReport {
+  saveReport(report: DailyReport, authUser?: AuthUser | null): DailyReport {
+    // Isolasi ketat: Pengawas tidak bisa CRUD data di luar penugasan proyek dan blok
+    if (authUser && authUser.role === 'supervisor') {
+      if (!this.canSupervisorAccess(report.clientId, report.blockCode, authUser)) {
+        throw new Error(
+          `Akses Ditolak: Anda hanya berwenang membuat/mengubah laporan untuk ${authUser.assignedClientName || authUser.assignedClientId} pada lokasi (${authUser.assignedBlockCodes?.join(', ')}). Tidak diizinkan CRUD di luar tugas!`
+        );
+      }
+    }
+
     const reports = loadFromStorage<DailyReport[]>(STORAGE_KEYS.REPORTS, initialDailyReports);
     const existingIndex = reports.findIndex((r) => r.id === report.id);
+    let savedReport: DailyReport;
 
     if (existingIndex >= 0) {
-      reports[existingIndex] = {
+      savedReport = {
         ...report,
         updatedAt: new Date().toISOString(),
       };
+      reports[existingIndex] = savedReport;
     } else {
-      reports.unshift({
+      savedReport = {
         ...report,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-      });
+      };
+      reports.unshift(savedReport);
     }
 
     saveToStorage(STORAGE_KEYS.REPORTS, reports);
+    syncDocWrite(FIRESTORE_COLLECTIONS.REPORTS, savedReport);
 
     // Update block cleared area & equipments current HM
-    this.syncBlockAndEquipments(report);
+    this.syncBlockAndEquipments(savedReport);
 
     // Clear saved wizard draft
     this.clearDraft();
 
-    return report;
+    return savedReport;
   },
 
-  deleteReport(id: string): boolean {
+  deleteReport(id: string, authUser?: AuthUser | null): boolean {
     const reports = loadFromStorage<DailyReport[]>(STORAGE_KEYS.REPORTS, initialDailyReports);
+    const target = reports.find((r) => r.id === id);
+    if (!target) return false;
+
+    // Isolasi ketat: Pengawas tidak dapat menghapus laporan di luar proyek & blok tugasnya
+    if (authUser && authUser.role === 'supervisor') {
+      if (!this.canSupervisorAccess(target.clientId, target.blockCode, authUser)) {
+        return false;
+      }
+    }
+
     const filtered = reports.filter((r) => r.id !== id);
     if (filtered.length !== reports.length) {
       saveToStorage(STORAGE_KEYS.REPORTS, filtered);
+      syncDocDelete(FIRESTORE_COLLECTIONS.REPORTS, id);
       return true;
     }
     return false;
@@ -145,6 +243,7 @@ export const storageService = {
     report.updatedAt = new Date().toISOString();
 
     saveToStorage(STORAGE_KEYS.REPORTS, reports);
+    syncDocWrite(FIRESTORE_COLLECTIONS.REPORTS, report);
     return report;
   },
 
@@ -168,6 +267,7 @@ export const storageService = {
     report.updatedAt = new Date().toISOString();
 
     saveToStorage(STORAGE_KEYS.REPORTS, reports);
+    syncDocWrite(FIRESTORE_COLLECTIONS.REPORTS, report);
     return report;
   },
 
@@ -184,6 +284,7 @@ export const storageService = {
         block.status = 'Dalam Pengerjaan';
       }
       saveToStorage(STORAGE_KEYS.BLOCKS, blocks);
+      syncDocWrite(FIRESTORE_COLLECTIONS.BLOCKS, block);
     }
 
     // 2. Update Client progress
@@ -192,6 +293,7 @@ export const storageService = {
     if (client) {
       client.clearedAreaHa = report.physicalProgress.cumulativeAreaHa;
       saveToStorage(STORAGE_KEYS.CLIENTS, clients);
+      syncDocWrite(FIRESTORE_COLLECTIONS.CLIENTS, client);
     }
 
     // 3. Update Equipments HM
@@ -209,6 +311,7 @@ export const storageService = {
         } else {
           eq.status = 'Operasional';
         }
+        syncDocWrite(FIRESTORE_COLLECTIONS.EQUIPMENTS, eq);
       }
     });
     if (hasEquipUpdate) {
@@ -221,6 +324,7 @@ export const storageService = {
     if (fuelItem && report.logistics.fuelTankUsedLiters > 0) {
       fuelItem.stockQuantity = report.logistics.fuelTankRemainingLiters;
       saveToStorage(STORAGE_KEYS.INVENTORY, inventory);
+      syncDocWrite(FIRESTORE_COLLECTIONS.INVENTORY, fuelItem);
     }
   },
 
@@ -235,6 +339,7 @@ export const storageService = {
     if (idx >= 0) list[idx] = equip;
     else list.push(equip);
     saveToStorage(STORAGE_KEYS.EQUIPMENTS, list);
+    syncDocWrite(FIRESTORE_COLLECTIONS.EQUIPMENTS, equip);
   },
 
   deleteEquipment(equipmentId: string): boolean {
@@ -242,6 +347,7 @@ export const storageService = {
     const filtered = list.filter((e) => e.id !== equipmentId);
     if (filtered.length !== list.length) {
       saveToStorage(STORAGE_KEYS.EQUIPMENTS, filtered);
+      syncDocDelete(FIRESTORE_COLLECTIONS.EQUIPMENTS, equipmentId);
       return true;
     }
     return false;
@@ -258,6 +364,7 @@ export const storageService = {
     if (idx >= 0) list[idx] = worker;
     else list.push(worker);
     saveToStorage(STORAGE_KEYS.WORKERS, list);
+    syncDocWrite(FIRESTORE_COLLECTIONS.WORKERS, worker);
   },
 
   deleteWorker(workerId: string): boolean {
@@ -265,14 +372,40 @@ export const storageService = {
     const filtered = list.filter((w) => w.id !== workerId);
     if (filtered.length !== list.length) {
       saveToStorage(STORAGE_KEYS.WORKERS, filtered);
+      syncDocDelete(FIRESTORE_COLLECTIONS.WORKERS, workerId);
       return true;
     }
     return false;
   },
 
   // Blocks
-  getBlocks(clientId?: string): Block[] {
+  getBlocks(clientId?: string, authUser?: AuthUser | null): Block[] {
     const all = loadFromStorage<Block[]>(STORAGE_KEYS.BLOCKS, initialBlocks);
+
+    // Pengawas: Hanya blok untuk 1 klien tugasnya dan terbatas pada lokasi kerja (blok-blok) tugasnya
+    if (authUser && authUser.role === 'supervisor') {
+      const allowedClientId = authUser.assignedClientId && authUser.assignedClientId !== 'all'
+        ? authUser.assignedClientId
+        : clientId;
+
+      return all.filter((b) => {
+        if (allowedClientId && allowedClientId !== 'ALL' && b.clientId !== allowedClientId) {
+          return false;
+        }
+        if (
+          authUser.assignedBlockCodes &&
+          authUser.assignedBlockCodes.length > 0 &&
+          !authUser.assignedBlockCodes[0].includes('Semua Blok')
+        ) {
+          return authUser.assignedBlockCodes.some((code) => {
+            const clean = code.trim().toLowerCase();
+            return b.code.toLowerCase().includes(clean) || clean.includes(b.code.toLowerCase());
+          });
+        }
+        return true;
+      });
+    }
+
     if (!clientId || clientId === 'ALL') return all;
     return all.filter((b) => b.clientId === clientId);
   },
@@ -283,6 +416,7 @@ export const storageService = {
     if (idx >= 0) list[idx] = block;
     else list.push(block);
     saveToStorage(STORAGE_KEYS.BLOCKS, list);
+    syncDocWrite(FIRESTORE_COLLECTIONS.BLOCKS, block);
     return block;
   },
 
@@ -291,6 +425,7 @@ export const storageService = {
     const filtered = list.filter((b) => b.id !== blockId);
     if (filtered.length !== list.length) {
       saveToStorage(STORAGE_KEYS.BLOCKS, filtered);
+      syncDocDelete(FIRESTORE_COLLECTIONS.BLOCKS, blockId);
       return true;
     }
     return false;
@@ -333,6 +468,7 @@ export const storageService = {
     if (block) {
       block.dailyTargetAreaHa = target.dailyTargetAreaHa;
       saveToStorage(STORAGE_KEYS.BLOCKS, blocks);
+      syncDocWrite(FIRESTORE_COLLECTIONS.BLOCKS, block);
     }
 
     return target;
@@ -359,6 +495,7 @@ export const storageService = {
     if (idx >= 0) list[idx] = item;
     else list.push(item);
     saveToStorage(STORAGE_KEYS.INVENTORY, list);
+    syncDocWrite(FIRESTORE_COLLECTIONS.INVENTORY, item);
   },
 
   // Clients & Projects CRUD
@@ -379,11 +516,12 @@ export const storageService = {
       list.push(client);
     }
     saveToStorage(STORAGE_KEYS.CLIENTS, list);
+    syncDocWrite(FIRESTORE_COLLECTIONS.CLIENTS, client);
 
     // Also auto-create a project if not existing
     const projects = this.getProjects();
     if (!projects.some((p) => p.clientId === client.id)) {
-      projects.push({
+      const newProj: Project = {
         id: `proj-${Date.now()}`,
         clientId: client.id,
         name: client.projectName || `Land Clearing ${client.name}`,
@@ -392,8 +530,10 @@ export const storageService = {
         totalTargetHa: client.totalAreaHa || 100,
         startDate: new Date().toISOString().slice(0, 10),
         targetCompletionDate: new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10),
-      });
+      };
+      projects.push(newProj);
       saveToStorage(STORAGE_KEYS.PROJECTS, projects);
+      syncDocWrite(FIRESTORE_COLLECTIONS.PROJECTS, newProj);
     }
 
     return client;
@@ -404,6 +544,7 @@ export const storageService = {
     const filtered = list.filter((c) => c.id !== clientId);
     if (filtered.length !== list.length) {
       saveToStorage(STORAGE_KEYS.CLIENTS, filtered);
+      syncDocDelete(FIRESTORE_COLLECTIONS.CLIENTS, clientId);
       return true;
     }
     return false;
@@ -419,6 +560,7 @@ export const storageService = {
     if (idx >= 0) list[idx] = project;
     else list.push(project);
     saveToStorage(STORAGE_KEYS.PROJECTS, list);
+    syncDocWrite(FIRESTORE_COLLECTIONS.PROJECTS, project);
     return project;
   },
 
@@ -733,15 +875,51 @@ export const storageService = {
   },
 
   // Logistics Inventory & Transactions
-  getLogisticsTransactions(selectedClientId?: string): LogisticsTransaction[] {
+  getLogisticsTransactions(selectedClientId?: string, authUser?: AuthUser | null): LogisticsTransaction[] {
     const list = loadFromStorage<LogisticsTransaction[]>(STORAGE_KEYS.LOGISTICS_TRANSACTIONS, initialLogisticsTransactions);
+
+    // Pengawas: Hanya transaksi untuk 1 klien tugasnya dan blok-blok tugasnya
+    if (authUser && authUser.role === 'supervisor') {
+      const allowedClientId = authUser.assignedClientId && authUser.assignedClientId !== 'all'
+        ? authUser.assignedClientId
+        : selectedClientId;
+
+      return list.filter((t) => {
+        if (allowedClientId && allowedClientId !== 'ALL' && t.clientId && t.clientId !== allowedClientId && t.clientId !== 'ALL') {
+          return false;
+        }
+        if (
+          t.blockCode &&
+          authUser.assignedBlockCodes &&
+          authUser.assignedBlockCodes.length > 0 &&
+          !authUser.assignedBlockCodes[0].includes('Semua Blok')
+        ) {
+          const isAllowedBlock = authUser.assignedBlockCodes.some((b) => {
+            const bClean = b.trim().toLowerCase();
+            return t.blockCode?.toLowerCase().includes(bClean);
+          });
+          if (!isAllowedBlock) return false;
+        }
+        return true;
+      });
+    }
+
     if (!selectedClientId || selectedClientId === 'ALL') {
       return list;
     }
     return list.filter((t) => !t.clientId || t.clientId === selectedClientId || t.clientId === 'ALL');
   },
 
-  saveLogisticsTransaction(tx: LogisticsTransaction): LogisticsTransaction {
+  saveLogisticsTransaction(tx: LogisticsTransaction, authUser?: AuthUser | null): LogisticsTransaction {
+    // Isolasi ketat: Pengawas tidak dapat CRUD logistik di luar penugasan proyek
+    if (authUser && authUser.role === 'supervisor') {
+      if (!this.canSupervisorAccess(tx.clientId, tx.blockCode, authUser)) {
+        throw new Error(
+          `Akses Ditolak: Transaksi logistik hanya dapat dicatat untuk proyek ${authUser.assignedClientName || authUser.assignedClientId} di lokasi (${authUser.assignedBlockCodes?.join(', ')})!`
+        );
+      }
+    }
+
     const list = this.getLogisticsTransactions();
     const idx = list.findIndex((t) => t.id === tx.id);
     if (idx >= 0) {
@@ -750,6 +928,7 @@ export const storageService = {
       list.unshift(tx);
     }
     saveToStorage(STORAGE_KEYS.LOGISTICS_TRANSACTIONS, list);
+    syncDocWrite(FIRESTORE_COLLECTIONS.LOGISTICS, tx);
 
     // If it is an outflow (pemakaian langsung diinput oleh pengawas), update inventory stock
     if (tx.type === 'out') {
@@ -777,6 +956,7 @@ export const storageService = {
     tx.approvedAt = formatted;
 
     saveToStorage(STORAGE_KEYS.LOGISTICS_TRANSACTIONS, list);
+    syncDocWrite(FIRESTORE_COLLECTIONS.LOGISTICS, tx);
 
     // Add to actual inventory stock once Director approves
     const invList = this.getInventory();
@@ -803,29 +983,73 @@ export const storageService = {
     tx.rejectionReason = rejectionReason;
 
     saveToStorage(STORAGE_KEYS.LOGISTICS_TRANSACTIONS, list);
+    syncDocWrite(FIRESTORE_COLLECTIONS.LOGISTICS, tx);
     return tx;
   },
 
-  deleteLogisticsTransaction(txId: string): boolean {
+  deleteLogisticsTransaction(txId: string, authUser?: AuthUser | null): boolean {
     const list = this.getLogisticsTransactions();
+    const target = list.find((t) => t.id === txId);
+    if (!target) return false;
+
+    if (authUser && authUser.role === 'supervisor') {
+      if (!this.canSupervisorAccess(target.clientId, target.blockCode, authUser)) {
+        return false;
+      }
+    }
+
     const filtered = list.filter((t) => t.id !== txId);
     if (filtered.length !== list.length) {
       saveToStorage(STORAGE_KEYS.LOGISTICS_TRANSACTIONS, filtered);
+      syncDocDelete(FIRESTORE_COLLECTIONS.LOGISTICS, txId);
       return true;
     }
     return false;
   },
 
   // 1. P2H Checklists (Pemeriksaan Pra-Operasi)
-  getP2HChecklists(selectedClientId?: string): DailyP2HChecklist[] {
+  getP2HChecklists(selectedClientId?: string, authUser?: AuthUser | null): DailyP2HChecklist[] {
     const list = loadFromStorage<DailyP2HChecklist[]>(STORAGE_KEYS.P2H_CHECKLISTS, initialP2HChecklists as unknown as DailyP2HChecklist[]);
+
+    if (authUser && authUser.role === 'supervisor') {
+      const allowedClientId = authUser.assignedClientId && authUser.assignedClientId !== 'all'
+        ? authUser.assignedClientId
+        : selectedClientId;
+
+      return list.filter((item) => {
+        if (allowedClientId && allowedClientId !== 'ALL' && item.clientId !== allowedClientId) {
+          return false;
+        }
+        if (
+          authUser.assignedBlockCodes &&
+          authUser.assignedBlockCodes.length > 0 &&
+          !authUser.assignedBlockCodes[0].includes('Semua Blok')
+        ) {
+          const isAllowedBlock = authUser.assignedBlockCodes.some((b) => {
+            const bClean = b.trim().toLowerCase();
+            return item.blockCode.toLowerCase().includes(bClean);
+          });
+          if (!isAllowedBlock) return false;
+        }
+        return true;
+      });
+    }
+
     if (!selectedClientId || selectedClientId === 'ALL') {
       return list;
     }
     return list.filter((item) => item.clientId === selectedClientId);
   },
 
-  saveP2HChecklist(item: DailyP2HChecklist): DailyP2HChecklist {
+  saveP2HChecklist(item: DailyP2HChecklist, authUser?: AuthUser | null): DailyP2HChecklist {
+    if (authUser && authUser.role === 'supervisor') {
+      if (!this.canSupervisorAccess(item.clientId, item.blockCode, authUser)) {
+        throw new Error(
+          `Akses Ditolak: P2H hanya dapat dicatat untuk penugasan ${authUser.assignedClientName || item.clientId} di lokasi tugas Anda!`
+        );
+      }
+    }
+
     const list = this.getP2HChecklists();
     const idx = list.findIndex((i) => i.id === item.id);
     if (idx >= 0) {
@@ -834,29 +1058,73 @@ export const storageService = {
       list.unshift(item);
     }
     saveToStorage(STORAGE_KEYS.P2H_CHECKLISTS, list);
+    syncDocWrite(FIRESTORE_COLLECTIONS.P2H, item);
     return item;
   },
 
-  deleteP2HChecklist(id: string): boolean {
+  deleteP2HChecklist(id: string, authUser?: AuthUser | null): boolean {
     const list = this.getP2HChecklists();
+    const target = list.find((i) => i.id === id);
+    if (!target) return false;
+
+    if (authUser && authUser.role === 'supervisor') {
+      if (!this.canSupervisorAccess(target.clientId, target.blockCode, authUser)) {
+        return false;
+      }
+    }
+
     const filtered = list.filter((i) => i.id !== id);
     if (filtered.length !== list.length) {
       saveToStorage(STORAGE_KEYS.P2H_CHECKLISTS, filtered);
+      syncDocDelete(FIRESTORE_COLLECTIONS.P2H, id);
       return true;
     }
     return false;
   },
 
   // 4. Fuel Bowser Field Receipts
-  getFuelBowserReceipts(selectedClientId?: string): FuelBowserReceipt[] {
+  getFuelBowserReceipts(selectedClientId?: string, authUser?: AuthUser | null): FuelBowserReceipt[] {
     const list = loadFromStorage<FuelBowserReceipt[]>(STORAGE_KEYS.FUEL_BOWSER, initialFuelBowserReceipts as unknown as FuelBowserReceipt[]);
+
+    if (authUser && authUser.role === 'supervisor') {
+      const allowedClientId = authUser.assignedClientId && authUser.assignedClientId !== 'all'
+        ? authUser.assignedClientId
+        : selectedClientId;
+
+      return list.filter((item) => {
+        if (allowedClientId && allowedClientId !== 'ALL' && item.clientId !== allowedClientId) {
+          return false;
+        }
+        if (
+          authUser.assignedBlockCodes &&
+          authUser.assignedBlockCodes.length > 0 &&
+          !authUser.assignedBlockCodes[0].includes('Semua Blok')
+        ) {
+          const isAllowedBlock = authUser.assignedBlockCodes.some((b) => {
+            const bClean = b.trim().toLowerCase();
+            return item.blockCode.toLowerCase().includes(bClean);
+          });
+          if (!isAllowedBlock) return false;
+        }
+        return true;
+      });
+    }
+
     if (!selectedClientId || selectedClientId === 'ALL') {
       return list;
     }
     return list.filter((item) => item.clientId === selectedClientId);
   },
 
-  saveFuelBowserReceipt(receipt: FuelBowserReceipt): FuelBowserReceipt {
+  saveFuelBowserReceipt(receipt: FuelBowserReceipt, authUser?: AuthUser | null): FuelBowserReceipt {
+    if (authUser && authUser.role === 'supervisor') {
+      if (!this.canSupervisorAccess(receipt.clientId, receipt.blockCode, authUser)) {
+        throw new Error(
+          `Akses Ditolak: Penerimaan solar bowser hanya untuk penugasan ${authUser.assignedClientName || receipt.clientId} di lokasi tugas Anda!`
+        );
+      }
+    }
+
     const list = this.getFuelBowserReceipts();
     const idx = list.findIndex((r) => r.id === receipt.id);
     if (idx >= 0) {
@@ -865,6 +1133,7 @@ export const storageService = {
       list.unshift(receipt);
     }
     saveToStorage(STORAGE_KEYS.FUEL_BOWSER, list);
+    syncDocWrite(FIRESTORE_COLLECTIONS.BOWSER, receipt);
 
     // Also auto-record into Logistics Transaction Outflow so fuel tracking is unified
     const logisticsTx: LogisticsTransaction = {
@@ -888,31 +1157,74 @@ export const storageService = {
       approvalStatus: 'approved',
       notes: `Pengisian dari Truk Bowser ${receipt.bowserTruckId}. Segel: ${receipt.sealNumber}. Flowmeter: ${receipt.flowmeterStart} - ${receipt.flowmeterEnd}. Supir: ${receipt.bowserDriverName}`,
     };
-    this.saveLogisticsTransaction(logisticsTx);
+    this.saveLogisticsTransaction(logisticsTx, authUser);
 
     return receipt;
   },
 
-  deleteFuelBowserReceipt(id: string): boolean {
+  deleteFuelBowserReceipt(id: string, authUser?: AuthUser | null): boolean {
     const list = this.getFuelBowserReceipts();
+    const target = list.find((r) => r.id === id);
+    if (!target) return false;
+
+    if (authUser && authUser.role === 'supervisor') {
+      if (!this.canSupervisorAccess(target.clientId, target.blockCode, authUser)) {
+        return false;
+      }
+    }
+
     const filtered = list.filter((r) => r.id !== id);
     if (filtered.length !== list.length) {
       saveToStorage(STORAGE_KEYS.FUEL_BOWSER, filtered);
+      syncDocDelete(FIRESTORE_COLLECTIONS.BOWSER, id);
       return true;
     }
     return false;
   },
 
   // 5. Soil & Safety Hazard Incidents
-  getSoilIncidents(selectedClientId?: string): SoilHazardIncident[] {
+  getSoilIncidents(selectedClientId?: string, authUser?: AuthUser | null): SoilHazardIncident[] {
     const list = loadFromStorage<SoilHazardIncident[]>(STORAGE_KEYS.SOIL_INCIDENTS, initialSoilIncidents as unknown as SoilHazardIncident[]);
+
+    if (authUser && authUser.role === 'supervisor') {
+      const allowedClientId = authUser.assignedClientId && authUser.assignedClientId !== 'all'
+        ? authUser.assignedClientId
+        : selectedClientId;
+
+      return list.filter((item) => {
+        if (allowedClientId && allowedClientId !== 'ALL' && item.clientId !== allowedClientId) {
+          return false;
+        }
+        if (
+          authUser.assignedBlockCodes &&
+          authUser.assignedBlockCodes.length > 0 &&
+          !authUser.assignedBlockCodes[0].includes('Semua Blok')
+        ) {
+          const isAllowedBlock = authUser.assignedBlockCodes.some((b) => {
+            const bClean = b.trim().toLowerCase();
+            return item.blockCode.toLowerCase().includes(bClean);
+          });
+          if (!isAllowedBlock) return false;
+        }
+        return true;
+      });
+    }
+
     if (!selectedClientId || selectedClientId === 'ALL') {
       return list;
     }
     return list.filter((item) => item.clientId === selectedClientId);
   },
 
-  saveSoilIncident(incident: SoilHazardIncident): SoilHazardIncident {
+  saveSoilIncident(incident: SoilHazardIncident, authUser?: AuthUser | null): SoilHazardIncident {
+    if (authUser && authUser.role === 'supervisor') {
+      if (!this.canSupervisorAccess(incident.clientId, incident.blockCode, authUser)) {
+        throw new Error(
+          `Akses Ditolak: Insiden lahan hanya untuk penugasan ${authUser.assignedClientName || incident.clientId} di lokasi tugas Anda!`
+        );
+      }
+    }
+
     const list = this.getSoilIncidents();
     const idx = list.findIndex((i) => i.id === incident.id);
     if (idx >= 0) {
@@ -921,21 +1233,32 @@ export const storageService = {
       list.unshift(incident);
     }
     saveToStorage(STORAGE_KEYS.SOIL_INCIDENTS, list);
+    syncDocWrite(FIRESTORE_COLLECTIONS.SOIL, incident);
     return incident;
   },
 
-  deleteSoilIncident(id: string): boolean {
+  deleteSoilIncident(id: string, authUser?: AuthUser | null): boolean {
     const list = this.getSoilIncidents();
+    const target = list.find((i) => i.id === id);
+    if (!target) return false;
+
+    if (authUser && authUser.role === 'supervisor') {
+      if (!this.canSupervisorAccess(target.clientId, target.blockCode, authUser)) {
+        return false;
+      }
+    }
+
     const filtered = list.filter((i) => i.id !== id);
     if (filtered.length !== list.length) {
       saveToStorage(STORAGE_KEYS.SOIL_INCIDENTS, filtered);
+      syncDocDelete(FIRESTORE_COLLECTIONS.SOIL, id);
       return true;
     }
     return false;
   },
 
   // 2. Geotag Photos Management
-  getGeotagPhotos(selectedClientId?: string): FieldGeotagPhoto[] {
+  getGeotagPhotos(selectedClientId?: string, authUser?: AuthUser | null): FieldGeotagPhoto[] {
     const defaultSeed: FieldGeotagPhoto[] = [
       {
         id: 'seed-geo-1',
@@ -990,7 +1313,7 @@ export const storageService = {
     const stored = loadFromStorage<FieldGeotagPhoto[]>(STORAGE_KEYS.GEOTAG_PHOTOS, defaultSeed);
 
     // Also include photos from daily reports that have GPS coordinates
-    const reports = this.getReports(selectedClientId);
+    const reports = this.getReports(selectedClientId, authUser);
     const reportPhotos: FieldGeotagPhoto[] = [];
     reports.forEach((rep) => {
       rep.photos?.forEach((p, idx) => {
@@ -1020,13 +1343,45 @@ export const storageService = {
       }
     });
 
+    if (authUser && authUser.role === 'supervisor') {
+      const allowedClientId = authUser.assignedClientId && authUser.assignedClientId !== 'all'
+        ? authUser.assignedClientId
+        : selectedClientId;
+
+      return combined.filter((p) => {
+        if (allowedClientId && allowedClientId !== 'ALL' && p.clientId !== allowedClientId) {
+          return false;
+        }
+        if (
+          authUser.assignedBlockCodes &&
+          authUser.assignedBlockCodes.length > 0 &&
+          !authUser.assignedBlockCodes[0].includes('Semua Blok')
+        ) {
+          const isAllowedBlock = authUser.assignedBlockCodes.some((b) => {
+            const bClean = b.trim().toLowerCase();
+            return p.blockCode.toLowerCase().includes(bClean);
+          });
+          if (!isAllowedBlock) return false;
+        }
+        return true;
+      });
+    }
+
     if (!selectedClientId || selectedClientId === 'ALL') {
       return combined;
     }
     return combined.filter((p) => p.clientId === selectedClientId);
   },
 
-  saveGeotagPhoto(photo: FieldGeotagPhoto): FieldGeotagPhoto {
+  saveGeotagPhoto(photo: FieldGeotagPhoto, authUser?: AuthUser | null): FieldGeotagPhoto {
+    if (authUser && authUser.role === 'supervisor') {
+      if (!this.canSupervisorAccess(photo.clientId, photo.blockCode, authUser)) {
+        throw new Error(
+          `Akses Ditolak: Foto geotag hanya dapat disimpan untuk proyek ${authUser.assignedClientName || photo.clientId} di lokasi tugas Anda!`
+        );
+      }
+    }
+
     const list = loadFromStorage<FieldGeotagPhoto[]>(STORAGE_KEYS.GEOTAG_PHOTOS, []);
     const idx = list.findIndex((p) => p.id === photo.id);
     if (idx >= 0) {
@@ -1035,14 +1390,25 @@ export const storageService = {
       list.unshift(photo);
     }
     saveToStorage(STORAGE_KEYS.GEOTAG_PHOTOS, list);
+    syncDocWrite(FIRESTORE_COLLECTIONS.GEOTAG, photo);
     return photo;
   },
 
-  deleteGeotagPhoto(id: string): boolean {
+  deleteGeotagPhoto(id: string, authUser?: AuthUser | null): boolean {
     const list = loadFromStorage<FieldGeotagPhoto[]>(STORAGE_KEYS.GEOTAG_PHOTOS, []);
+    const target = list.find((p) => p.id === id);
+    if (!target) return false;
+
+    if (authUser && authUser.role === 'supervisor') {
+      if (!this.canSupervisorAccess(target.clientId, target.blockCode, authUser)) {
+        return false;
+      }
+    }
+
     const filtered = list.filter((p) => p.id !== id);
     if (filtered.length !== list.length) {
       saveToStorage(STORAGE_KEYS.GEOTAG_PHOTOS, filtered);
+      syncDocDelete(FIRESTORE_COLLECTIONS.GEOTAG, id);
       return true;
     }
     return false;
@@ -1380,6 +1746,7 @@ export const storageService = {
     // Keep last 300 logs
     const trimmed = list.slice(0, 300);
     saveToStorage(STORAGE_KEYS.USER_ACTIVITIES, trimmed);
+    syncDocWrite(FIRESTORE_COLLECTIONS.ACTIVITIES, fullEntry);
     return fullEntry;
   },
 
@@ -1445,6 +1812,7 @@ export const storageService = {
     }
 
     saveToStorage(STORAGE_KEYS.MANAGED_USERS, list);
+    syncDocWrite(FIRESTORE_COLLECTIONS.USERS, normalizedUser);
 
     // Sync any new block codes to client's block list if not Superadmin
     if (
@@ -1467,6 +1835,7 @@ export const storageService = {
     const filtered = list.filter((u) => u.id !== userId);
     if (filtered.length !== list.length) {
       saveToStorage(STORAGE_KEYS.MANAGED_USERS, filtered);
+      syncDocDelete(FIRESTORE_COLLECTIONS.USERS, userId);
       return true;
     }
     return false;
@@ -1486,6 +1855,10 @@ export const storageService = {
     if (!current.some((t) => t.toLowerCase() === trimmed.toLowerCase())) {
       const updated = [...current, trimmed];
       saveToStorage(STORAGE_KEYS.JOB_TITLES, updated);
+      syncDocWrite(FIRESTORE_COLLECTIONS.JOB_TITLES, { 
+        id: `job-${encodeURIComponent(trimmed.toLowerCase().replace(/\s+/g, '-'))}`, 
+        title: trimmed 
+      });
       return updated;
     }
     return current;
@@ -1519,6 +1892,7 @@ export const storageService = {
 
     allBlocks.push(newBlock);
     saveToStorage(STORAGE_KEYS.BLOCKS, allBlocks);
+    syncDocWrite(FIRESTORE_COLLECTIONS.BLOCKS, newBlock);
     return newBlock;
   },
 

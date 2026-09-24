@@ -17,8 +17,10 @@ import { SupervisorToolsView } from './components/SupervisorToolsView';
 import { DirectorFieldMonitorView } from './components/DirectorFieldMonitorView';
 import { UserActivityAuditLogView } from './components/UserActivityAuditLogView';
 import { UserManagementView } from './components/UserManagementView';
+import { TutorialView } from './components/TutorialView';
 import { LoginPage } from './components/LoginPage';
 import { storageService } from './services/storageService';
+import { initFirestoreSync, onSyncStatusChange, toggleFirestoreNetwork, SyncStatus } from './services/firestoreSync';
 import { recordUserActivity } from './utils/activityLogger';
 import { DailyReport, Equipment, UserRole, Client, AuthUser } from './types';
 import { CheckCircle2, AlertCircle, ShieldAlert } from 'lucide-react';
@@ -41,7 +43,18 @@ export default function App() {
   const [isOnline, setIsOnline] = useState<boolean>(true);
   
   const [clients, setClients] = useState<Client[]>([]);
-  const [selectedClientId, setSelectedClientId] = useState<string>('ALL');
+  const [selectedClientId, setSelectedClientId] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem(AUTH_STORAGE_KEY);
+      if (saved) {
+        const u = JSON.parse(saved);
+        if (u.role === 'supervisor' && u.assignedClientId && u.assignedClientId !== 'all') {
+          return u.assignedClientId;
+        }
+      }
+    } catch {}
+    return 'ALL';
+  });
 
   const [reports, setReports] = useState<DailyReport[]>([]);
   const [equipments, setEquipments] = useState<Equipment[]>([]);
@@ -49,23 +62,52 @@ export default function App() {
 
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'info' | 'warning' | 'error' } | null>(null);
 
+  // Initialize Firestore dynamic real-time synchronization & offline persistence
+  useEffect(() => {
+    initFirestoreSync();
+
+    const unsubSyncStatus = onSyncStatusChange((status: SyncStatus) => {
+      setIsOnline(status !== 'offline');
+    });
+
+    const handleFirestoreSync = () => {
+      loadData();
+    };
+
+    window.addEventListener('suryaland_firestore_sync', handleFirestoreSync);
+    return () => {
+      unsubSyncStatus();
+      window.removeEventListener('suryaland_firestore_sync', handleFirestoreSync);
+    };
+  }, [authUser?.username]);
+
   // Load initial data
   useEffect(() => {
-    loadData();
     if (authUser) {
-      // Set initial tab based on role
-      if (authUser.role === 'supervisor') {
+      // Set initial tab and enforce client assignment for supervisor
+      if (authUser.role === 'supervisor' && authUser.assignedClientId && authUser.assignedClientId !== 'all') {
+        setSelectedClientId(authUser.assignedClientId);
         setActiveTab('wizard');
-      } else {
+      } else if (authUser.role === 'director') {
         setActiveTab('dashboard');
       }
     }
-  }, [authUser?.username]);
+    loadData();
+  }, [authUser?.username, authUser?.assignedClientId]);
 
   const loadData = () => {
     setClients(storageService.getClients());
-    setReports(storageService.getReports());
+    setReports(storageService.getReports(undefined, authUser));
     setEquipments(storageService.getEquipments());
+  };
+
+  const handleSetSelectedClientId = (id: string) => {
+    // Pengawas HANYA mengawasi 1 Klien PT yang ditugaskan oleh Superadmin
+    if (authUser?.role === 'supervisor' && authUser.assignedClientId && authUser.assignedClientId !== 'all') {
+      setSelectedClientId(authUser.assignedClientId);
+      return;
+    }
+    setSelectedClientId(id);
   };
 
   const showToast = (text: string, type: 'success' | 'info' | 'warning' | 'error' = 'success') => {
@@ -85,9 +127,12 @@ export default function App() {
     }
 
     if (user.role === 'supervisor') {
+      const assignedId = (user.assignedClientId && user.assignedClientId !== 'all') ? user.assignedClientId : 'client-1';
+      setSelectedClientId(assignedId);
       setActiveTab('wizard');
-      showToast(`Selamat Datang, ${user.displayName}! Anda masuk sebagai Pengawas Lapangan.`);
+      showToast(`Selamat Datang, ${user.displayName}! Anda masuk sebagai Pengawas Lapangan untuk ${user.assignedClientName || 'proyek penugasan'}.`);
     } else {
+      setSelectedClientId('ALL');
       setActiveTab('dashboard');
       showToast(`Selamat Datang, ${user.displayName}! Anda masuk sebagai Direktur (Superadmin).`);
     }
@@ -175,12 +220,30 @@ export default function App() {
   };
 
   const handleDeleteReport = (reportId: string) => {
-    storageService.deleteReport(reportId);
-    loadData();
-    showToast('Laporan berhasil dihapus.', 'info');
+    const report = storageService.getReportById(reportId);
+    if (!report) return;
+
+    if (authUser?.role === 'supervisor') {
+      if (!storageService.canSupervisorAccess(report.clientId, report.blockCode, authUser)) {
+        showToast('Akses Ditolak: Anda tidak dapat menghapus laporan di luar penugasan proyek/blok Anda!', 'error');
+        return;
+      }
+    }
+
+    const success = storageService.deleteReport(reportId, authUser);
+    if (success) {
+      loadData();
+      showToast('Laporan berhasil dihapus.', 'info');
+    } else {
+      showToast('Gagal menghapus laporan: akses tidak diizinkan.', 'error');
+    }
   };
 
   const handleResetData = () => {
+    if (authUser?.role !== 'director') {
+      showToast('Reset data master hanya dapat dilakukan oleh Direktur (Superadmin).', 'warning');
+      return;
+    }
     storageService.resetToDefault();
     loadData();
     setSelectedClientId('ALL');
@@ -188,6 +251,13 @@ export default function App() {
   };
 
   const handleOpenPdfModal = (reportId: string) => {
+    const report = storageService.getReportById(reportId);
+    if (report && authUser?.role === 'supervisor') {
+      if (!storageService.canSupervisorAccess(report.clientId, report.blockCode, authUser)) {
+        showToast('Akses Ditolak: Dokumen ini berada di luar penugasan proyek/blok resmi Anda.', 'warning');
+        return;
+      }
+    }
     setSelectedReportIdForModal(reportId);
   };
 
@@ -237,11 +307,14 @@ export default function App() {
         onLogout={handleLogout}
         userRole={effectiveRole}
         isOnline={isOnline}
-        setIsOnline={setIsOnline}
+        setIsOnline={(online) => {
+          setIsOnline(online);
+          toggleFirestoreNetwork(online);
+        }}
         onResetData={handleResetData}
         clients={clients}
-        selectedClientId={selectedClientId}
-        setSelectedClientId={setSelectedClientId}
+        selectedClientId={authUser.role === 'supervisor' ? (authUser.assignedClientId || 'client-1') : selectedClientId}
+        setSelectedClientId={handleSetSelectedClientId}
         isSidebarOpen={isSidebarOpen}
         setIsSidebarOpen={setIsSidebarOpen}
       />
@@ -320,8 +393,9 @@ export default function App() {
             onReportSaved={handleReportSaved}
             onCancel={() => setActiveTab('reports')}
             isOnline={isOnline}
-            initialClientId={selectedClientId !== 'ALL' ? selectedClientId : undefined}
+            initialClientId={authUser.role === 'supervisor' ? (authUser.assignedClientId || 'client-1') : (selectedClientId !== 'ALL' ? selectedClientId : undefined)}
             userRole={authUser.role}
+            authUser={authUser}
             onNavigateToReports={() => setActiveTab('reports')}
             onNavigateToTools={() => setActiveTab('supervisor-tools')}
           />
@@ -336,16 +410,21 @@ export default function App() {
             onDeleteReport={handleDeleteReport}
             onApproveReport={handleApproveReport}
             userRole={effectiveRole}
+            authUser={authUser}
             clients={clients}
-            selectedClientId={selectedClientId}
-            setSelectedClientId={setSelectedClientId}
+            selectedClientId={authUser.role === 'supervisor' ? (authUser.assignedClientId || 'client-1') : selectedClientId}
+            setSelectedClientId={handleSetSelectedClientId}
           />
         )}
 
         {/* Tab 4: Official PDF Sheet (Standalone Print Layout) */}
         {activeTab === 'official-pdf' && (
           <PdfReportModal
-            reports={selectedClientId === 'ALL' ? reports : reports.filter((r) => r.clientId === selectedClientId)}
+            reports={
+              authUser.role === 'supervisor'
+                ? reports.filter((r) => storageService.canSupervisorAccess(r.clientId, r.blockCode, authUser))
+                : (selectedClientId === 'ALL' ? reports : reports.filter((r) => r.clientId === selectedClientId))
+            }
             isStandaloneView={true}
           />
         )}
@@ -355,8 +434,8 @@ export default function App() {
           <LogisticsInventoryView
             authUser={authUser}
             clients={clients}
-            selectedClientId={selectedClientId}
-            onSelectClientId={setSelectedClientId}
+            selectedClientId={authUser.role === 'supervisor' ? (authUser.assignedClientId || 'client-1') : selectedClientId}
+            onSelectClientId={handleSetSelectedClientId}
             showToast={showToast}
           />
         )}
@@ -367,8 +446,8 @@ export default function App() {
             <SupervisorToolsView
               authUser={authUser}
               clients={clients}
-              selectedClientId={selectedClientId}
-              onSelectClientId={setSelectedClientId}
+              selectedClientId={authUser.role === 'supervisor' ? (authUser.assignedClientId || 'client-1') : selectedClientId}
+              onSelectClientId={handleSetSelectedClientId}
               showToast={showToast}
               onNavigateToWizard={() => setActiveTab('wizard')}
             />
@@ -485,12 +564,39 @@ export default function App() {
             </div>
           )
         )}
+
+        {/* Tab 11: Superadmin Tutorial & Documentation - STRICT: ONLY FOR SUPERADMIN */}
+        {activeTab === 'tutorial' && (
+          authUser.role === 'director' ? (
+            <TutorialView
+              onNavigateTab={(tab) => setActiveTab(tab)}
+            />
+          ) : (
+            <div className="max-w-xl mx-auto my-12 p-6 bg-white rounded-2xl border border-rose-200 text-center space-y-3 shadow-lg">
+              <ShieldAlert className="w-12 h-12 text-rose-500 mx-auto" />
+              <h3 className="font-black text-slate-900 text-base">Akses Khusus Superadmin</h3>
+              <p className="text-xs text-slate-600">
+                Halaman Panduan & Tutorial Penggunaan Fitur Komprehensif ini dikhususkan bagi Akun Superadmin / Direktur.
+              </p>
+              <button
+                onClick={() => setActiveTab('wizard')}
+                className="px-4 py-2 bg-amber-500 text-slate-950 font-bold text-xs rounded-xl shadow cursor-pointer"
+              >
+                Kembali ke Form Laporan
+              </button>
+            </div>
+          )
+        )}
       </main>
 
       {/* Modal Popup for PDF Print View */}
       {selectedReportIdForModal && (
         <PdfReportModal
-          reports={reports}
+          reports={
+            authUser.role === 'supervisor'
+              ? reports.filter((r) => storageService.canSupervisorAccess(r.clientId, r.blockCode, authUser))
+              : reports
+          }
           selectedReportId={selectedReportIdForModal}
           onClose={() => setSelectedReportIdForModal(null)}
           isStandaloneView={false}

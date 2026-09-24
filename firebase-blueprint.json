@@ -1,0 +1,47 @@
+{
+  "entities": {
+    "DailyReport": {
+      "title": "DailyReport",
+      "type": "object",
+      "description": "Laporan harian mandor / pengawas lapangan",
+      "properties": {
+        "id": { "type": "string" },
+        "reportNumber": { "type": "string" },
+        "date": { "type": "string" },
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "blockCode": { "type": "string" },
+        "supervisorName": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "reportNumber", "date", "clientId", "status"]
+    },
+    "ManagedUser": {
+      "title": "ManagedUser",
+      "type": "object",
+      "description": "Akun pengguna sistem",
+      "properties": {
+        "id": { "type": "string" },
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "fullName": { "type": "string" },
+        "userLevel": { "type": "string" },
+        "assignedClientId": { "type": "string" },
+        "assignedBlockCodes": { "type": "array", "items": { "type": "string" } },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "username", "password", "userLevel", "status"]
+    }
+  },
+  "firestore": {
+    "/dailyReports/{reportId}": {
+      "schema": "DailyReport",
+      "description": "Koleksi laporan harian proyek"
+    },
+    "/managedUsers/{userId}": {
+      "schema": "ManagedUser",
+      "description": "Koleksi kredensial dan penugasan user"
+    }
+  }
+}

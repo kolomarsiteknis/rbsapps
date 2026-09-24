@@ -21,8 +21,9 @@ import {
   Info,
   Check,
   X,
-  Printer,
-  Download
+  Printer, 
+  Download,
+  Lock
 } from 'lucide-react';
 import { 
   LogisticsTransaction, 
@@ -42,7 +43,7 @@ interface LogisticsInventoryViewProps {
   clients: Client[];
   selectedClientId: string;
   onSelectClientId?: (id: string) => void;
-  showToast: (text: string, type?: 'success' | 'info' | 'warning') => void;
+  showToast: (text: string, type?: 'success' | 'info' | 'warning' | 'error') => void;
 }
 
 export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
@@ -54,13 +55,17 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
   const isDirector = authUser?.role === 'director';
   const isSupervisor = authUser?.role === 'supervisor';
 
+  const effectiveClientId = (isSupervisor && authUser?.assignedClientId && authUser.assignedClientId !== 'all')
+    ? authUser.assignedClientId
+    : selectedClientId;
+
   // Data states
   const [inventory, setInventory] = useState<InventoryItem[]>(() => storageService.getInventory());
   const [transactions, setTransactions] = useState<LogisticsTransaction[]>(() => 
-    storageService.getLogisticsTransactions(selectedClientId)
+    storageService.getLogisticsTransactions(effectiveClientId, authUser)
   );
   const [equipments] = useState<Equipment[]>(() => storageService.getEquipments());
-  const [blocks] = useState<Block[]>(() => storageService.getBlocks());
+  const [blocks] = useState<Block[]>(() => storageService.getBlocks(undefined, authUser));
 
   // Filters
   const [categoryFilter, setCategoryFilter] = useState<'ALL' | LogisticsCategory>('ALL');
@@ -88,6 +93,18 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
     setIsPrintModalOpen(true);
   };
 
+  const assignedBlockCodes = (isSupervisor && authUser?.assignedBlockCodes && authUser.assignedBlockCodes.length > 0 && !authUser.assignedBlockCodes[0].includes('Semua Blok'))
+    ? authUser.assignedBlockCodes
+    : null;
+
+  const validSupervisorBlocks = blocks.filter((b) => {
+    if (b.clientId !== effectiveClientId) return false;
+    if (assignedBlockCodes && !assignedBlockCodes.includes(b.code)) return false;
+    return true;
+  });
+
+  const initialBlockId = validSupervisorBlocks[0]?.id || blocks.find((b) => b.clientId === effectiveClientId)?.id || blocks[0]?.id || 'blk-1';
+
   // Inflow form state (Penerimaan Stok Masuk - Di-input Pengawas, Disetujui Direktur)
   const [inflowForm, setInflowForm] = useState({
     date: new Date().toISOString().slice(0, 10),
@@ -95,8 +112,8 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
     itemName: 'Solar Industri B35',
     quantity: 5000,
     unit: 'Liter',
-    clientId: clients[0]?.id || 'client-1',
-    blockId: 'blk-1',
+    clientId: effectiveClientId !== 'ALL' ? effectiveClientId : (clients[0]?.id || 'client-1'),
+    blockId: initialBlockId,
     supplierOrPoNumber: '',
     deliveryNoteNumber: '',
     sourceOrStorage: 'Tangki Utama Basecamp (Kapasitas 10.000 L)',
@@ -110,8 +127,8 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
     itemName: 'Solar Industri B35',
     quantity: 100,
     unit: 'Liter',
-    clientId: clients[0]?.id || 'client-1',
-    blockId: 'blk-1',
+    clientId: effectiveClientId !== 'ALL' ? effectiveClientId : (clients[0]?.id || 'client-1'),
+    blockId: initialBlockId,
     equipmentId: equipments[0]?.id || 'EX-01',
     equipmentHmAtUsage: equipments[0]?.currentHm || 2150.0,
     purpose: 'Saat pengisian solar di lapangan (Operasional Rutin)' as LogisticsUsagePurpose,
@@ -120,7 +137,7 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
 
   const reloadData = () => {
     setInventory(storageService.getInventory());
-    setTransactions(storageService.getLogisticsTransactions(selectedClientId));
+    setTransactions(storageService.getLogisticsTransactions(effectiveClientId, authUser));
   };
 
   // Predefined catalog items based on category
@@ -184,7 +201,7 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
       notes: inflowForm.notes,
     };
 
-    storageService.saveLogisticsTransaction(newTx);
+    storageService.saveLogisticsTransaction(newTx, authUser);
     reloadData();
     setIsInflowModalOpen(false);
     showToast(`Penerimaan stok masuk ${newTx.itemName} (${newTx.quantity} ${newTx.unit}) berhasil diajukan! Menunggu verifikasi & persetujuan Direktur.`);
@@ -232,7 +249,7 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
       notes: outflowForm.notes,
     };
 
-    storageService.saveLogisticsTransaction(newTx);
+    storageService.saveLogisticsTransaction(newTx, authUser);
     reloadData();
     setIsOutflowModalOpen(false);
     showToast(`Pemakaian ${newTx.quantity} ${newTx.unit} ${newTx.itemName} untuk ${newTx.equipmentId} berhasil dicatat di lapangan!`);
@@ -484,8 +501,8 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
                   itemName: catalog[0].name,
                   quantity: 5000,
                   unit: catalog[0].unit,
-                  clientId: clients[0]?.id || 'client-1',
-                  blockId: 'blk-1',
+                  clientId: effectiveClientId !== 'ALL' ? effectiveClientId : (clients[0]?.id || 'client-1'),
+                  blockId: initialBlockId,
                   supplierOrPoNumber: '',
                   deliveryNoteNumber: '',
                   sourceOrStorage: 'Tangki Utama Basecamp (Kapasitas 10.000 L)',
@@ -510,8 +527,8 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
                     itemName: catalog[0].name,
                     quantity: 110,
                     unit: catalog[0].unit,
-                    clientId: clients[0]?.id || 'client-1',
-                    blockId: 'blk-1',
+                    clientId: effectiveClientId !== 'ALL' ? effectiveClientId : (clients[0]?.id || 'client-1'),
+                    blockId: initialBlockId,
                     equipmentId: equipments[0]?.id || 'EX-01',
                     equipmentHmAtUsage: equipments[0]?.currentHm || 2150.0,
                     purpose: 'Saat pengisian solar di lapangan (Operasional Rutin)',
@@ -1108,28 +1125,53 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Klien Proyek</label>
-                  <select
-                    value={inflowForm.clientId}
-                    onChange={(e) => setInflowForm({ ...inflowForm, clientId: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-bold bg-white"
-                  >
-                    {clients.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} - {c.fullCompanyName}
-                      </option>
-                    ))}
-                  </select>
+                  <label className="block font-bold text-slate-700 mb-1 flex items-center justify-between">
+                    <span>Klien Proyek</span>
+                    {isSupervisor && (
+                      <span className="text-[10px] text-amber-700 font-bold bg-amber-100 px-1.5 py-0.5 rounded flex items-center gap-1">
+                        <Lock className="w-2.5 h-2.5" /> Terkunci
+                      </span>
+                    )}
+                  </label>
+                  {isSupervisor ? (
+                    <div className="w-full px-3 py-2 border border-amber-300 rounded-lg font-bold bg-amber-50 text-slate-900 text-xs flex items-center gap-1.5">
+                      <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      <span className="truncate">{clients.find((c) => c.id === inflowForm.clientId)?.name || authUser?.assignedClientName || 'PT. A'}</span>
+                    </div>
+                  ) : (
+                    <select
+                      value={inflowForm.clientId}
+                      onChange={(e) => setInflowForm({ ...inflowForm, clientId: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg font-bold bg-white"
+                    >
+                      {clients.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} - {c.fullCompanyName}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Lokasi Kerja / Blok</label>
+                  <label className="block font-bold text-slate-700 mb-1 flex items-center justify-between">
+                    <span>Lokasi Kerja / Blok</span>
+                    {isSupervisor && assignedBlockCodes && (
+                      <span className="text-[10px] text-indigo-700 font-bold bg-indigo-100 px-1.5 py-0.5 rounded">
+                        Tugas Resmi
+                      </span>
+                    )}
+                  </label>
                   <select
                     value={inflowForm.blockId}
                     onChange={(e) => setInflowForm({ ...inflowForm, blockId: e.target.value })}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg font-bold bg-white"
                   >
                     {blocks
-                      .filter((b) => b.clientId === inflowForm.clientId)
+                      .filter((b) => {
+                        if (b.clientId !== inflowForm.clientId) return false;
+                        if (isSupervisor && assignedBlockCodes && !assignedBlockCodes.includes(b.code)) return false;
+                        return true;
+                      })
                       .map((b) => (
                         <option key={b.id} value={b.id}>
                           {b.code}
@@ -1384,28 +1426,53 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Klien Proyek</label>
-                  <select
-                    value={outflowForm.clientId}
-                    onChange={(e) => setOutflowForm({ ...outflowForm, clientId: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-bold bg-white"
-                  >
-                    {clients.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
+                  <label className="block font-bold text-slate-700 mb-1 flex items-center justify-between">
+                    <span>Klien Proyek</span>
+                    {isSupervisor && (
+                      <span className="text-[10px] text-amber-700 font-bold bg-amber-100 px-1.5 py-0.5 rounded flex items-center gap-1">
+                        <Lock className="w-2.5 h-2.5" /> Terkunci
+                      </span>
+                    )}
+                  </label>
+                  {isSupervisor ? (
+                    <div className="w-full px-3 py-2 border border-amber-300 rounded-lg font-bold bg-amber-50 text-slate-900 text-xs flex items-center gap-1.5">
+                      <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      <span className="truncate">{clients.find((c) => c.id === outflowForm.clientId)?.name || authUser?.assignedClientName || 'PT. A'}</span>
+                    </div>
+                  ) : (
+                    <select
+                      value={outflowForm.clientId}
+                      onChange={(e) => setOutflowForm({ ...outflowForm, clientId: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg font-bold bg-white"
+                    >
+                      {clients.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Lokasi Blok Kerja</label>
+                  <label className="block font-bold text-slate-700 mb-1 flex items-center justify-between">
+                    <span>Lokasi Blok Kerja</span>
+                    {isSupervisor && assignedBlockCodes && (
+                      <span className="text-[10px] text-indigo-700 font-bold bg-indigo-100 px-1.5 py-0.5 rounded">
+                        Tugas Resmi
+                      </span>
+                    )}
+                  </label>
                   <select
                     value={outflowForm.blockId}
                     onChange={(e) => setOutflowForm({ ...outflowForm, blockId: e.target.value })}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg font-bold bg-white"
                   >
                     {blocks
-                      .filter((b) => b.clientId === outflowForm.clientId)
+                      .filter((b) => {
+                        if (b.clientId !== outflowForm.clientId) return false;
+                        if (isSupervisor && assignedBlockCodes && !assignedBlockCodes.includes(b.code)) return false;
+                        return true;
+                      })
                       .map((b) => (
                         <option key={b.id} value={b.id}>
                           {b.code}

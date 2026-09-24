@@ -19,9 +19,10 @@ import {
   Clock,
   Truck,
   Fuel,
-  Camera
+  Camera,
+  Lock
 } from 'lucide-react';
-import { DailyReport, UserRole, Client, Block } from '../types';
+import { DailyReport, UserRole, Client, Block, AuthUser } from '../types';
 import { storageService } from '../services/storageService';
 
 interface ReportListViewProps {
@@ -32,6 +33,7 @@ interface ReportListViewProps {
   onApproveReport: (reportId: string) => void;
   onRejectReport?: (reportId: string, reason: string) => void;
   userRole: UserRole;
+  authUser?: AuthUser | null;
   clients: Client[];
   selectedClientId: string;
   setSelectedClientId: (id: string) => void;
@@ -45,6 +47,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
   onApproveReport,
   onRejectReport,
   userRole,
+  authUser,
   clients,
   selectedClientId,
   setSelectedClientId,
@@ -60,16 +63,36 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
   const [rejectionReason, setRejectionReason] = useState('');
 
   const isDirector = userRole === 'director';
-  const isSupervisor = userRole === 'supervisor';
+  const isSupervisor = userRole === 'supervisor' || authUser?.role === 'supervisor';
 
-  const allBlocks = storageService.getBlocks();
-  const availableBlocks = selectedClientId === 'ALL'
-    ? allBlocks
-    : allBlocks.filter((b) => b.clientId === selectedClientId);
+  const allBlocks = storageService.getBlocks(undefined, authUser);
+  const availableBlocks = isSupervisor && authUser?.assignedBlockCodes && authUser.assignedBlockCodes.length > 0 && !authUser.assignedBlockCodes[0].includes('Semua Blok')
+    ? allBlocks.filter((b) => authUser.assignedBlockCodes?.some((code) => b.code.toLowerCase().includes(code.toLowerCase()) || code.toLowerCase().includes(b.code.toLowerCase())))
+    : (selectedClientId === 'ALL' ? allBlocks : allBlocks.filter((b) => b.clientId === selectedClientId));
 
-  // Filter logic
+  // Filter logic: Pengawas HANYA mengawasi 1 Klien PT dan blok kerja yang ditugaskan
   const filteredReports = reports.filter((r) => {
-    const matchesClient = selectedClientId === 'ALL' || r.clientId === selectedClientId;
+    if (isSupervisor) {
+      if (authUser?.assignedClientId && authUser.assignedClientId !== 'all' && r.clientId !== authUser.assignedClientId) {
+        return false;
+      }
+      if (
+        authUser?.assignedBlockCodes &&
+        authUser.assignedBlockCodes.length > 0 &&
+        !authUser.assignedBlockCodes[0].includes('Semua Blok')
+      ) {
+        const matchesAssignedBlock = authUser.assignedBlockCodes.some((b) => {
+          const cleanB = b.trim().toLowerCase();
+          return r.blockCode.toLowerCase().includes(cleanB) || cleanB.includes(r.blockCode.toLowerCase());
+        });
+        if (!matchesAssignedBlock) return false;
+      }
+    } else {
+      if (selectedClientId !== 'ALL' && r.clientId !== selectedClientId) {
+        return false;
+      }
+    }
+
     const matchesSearch =
       r.reportNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
       r.blockCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -81,7 +104,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
     const hasAlert = r.equipmentWorkLogs.some((l) => l.isFuelAlert);
     const matchesAlert = !filterAlertOnly || hasAlert;
 
-    return matchesClient && matchesSearch && matchesBlock && matchesStatus && matchesAlert;
+    return matchesSearch && matchesBlock && matchesStatus && matchesAlert;
   });
 
   // Export to Excel / CSV with BOM
@@ -194,25 +217,37 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mt-4">
           {/* Client Filter */}
           <div className="relative">
-            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Filter Klien</label>
-            <div className="flex items-center bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1.5 gap-1.5">
-              <Building2 className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-              <select
-                value={selectedClientId}
-                onChange={(e) => {
-                  setSelectedClientId(e.target.value);
-                  setFilterBlock('ALL');
-                }}
-                className="w-full bg-transparent text-xs font-bold text-slate-800 focus:outline-none"
-              >
-                <option value="ALL">Semua Klien ({clients.length} PT)</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.totalAreaHa} Ha)
-                  </option>
-                ))}
-              </select>
-            </div>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+              {isSupervisor ? 'Penempatan Proyek (Klien)' : 'Filter Klien'}
+            </label>
+            {isSupervisor ? (
+              <div className="flex items-center bg-amber-50 border border-amber-300 rounded-xl px-2.5 py-1.5 gap-1.5 text-xs font-bold text-amber-950">
+                <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span className="truncate">{authUser?.assignedClientName || 'PT. A'}</span>
+                <span className="ml-auto text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-200 text-amber-900 shrink-0">
+                  Terkunci
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1.5 gap-1.5">
+                <Building2 className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <select
+                  value={selectedClientId}
+                  onChange={(e) => {
+                    setSelectedClientId(e.target.value);
+                    setFilterBlock('ALL');
+                  }}
+                  className="w-full bg-transparent text-xs font-bold text-slate-800 focus:outline-none"
+                >
+                  <option value="ALL">Semua Klien ({clients.length} PT)</option>
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.totalAreaHa} Ha)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
           {/* Search box */}
@@ -232,13 +267,15 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
 
           {/* Block filter */}
           <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Blok Lokasi</label>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+              {isSupervisor ? 'Lokasi Blok Tugas' : 'Blok Lokasi'}
+            </label>
             <select
               value={filterBlock}
               onChange={(e) => setFilterBlock(e.target.value)}
               className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none"
             >
-              <option value="ALL">Semua Blok</option>
+              <option value="ALL">Semua Blok {isSupervisor ? 'Tugas Saya' : ''}</option>
               {availableBlocks.map((b) => (
                 <option key={b.id} value={b.code}>
                   {b.code} ({b.targetAreaHa} Ha)

@@ -107,6 +107,14 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
   const [reportNumber, setReportNumber] = useState<string>(
     `LC-RPT/${new Date().toISOString().slice(0, 10).replace(/-/g, '/')}-00${Math.floor(Math.random() * 80 + 10)}`
   );
+
+  // Sync selectedClientId whenever authUser changes
+  useEffect(() => {
+    if (isSupervisor && authUser?.assignedClientId && authUser.assignedClientId !== 'all') {
+      setSelectedClientId(authUser.assignedClientId);
+    }
+  }, [authUser?.assignedClientId, isSupervisor]);
+
   const [selectedBlockId, setSelectedBlockId] = useState<string>(() => {
     const initBlocks = storageService.getBlocks().filter((b) => {
       if (b.clientId !== effectiveClientId) return false;
@@ -325,6 +333,10 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
   const statsAlpa = baseLaborScopeList.filter((l) => l.status === 'Alpa').length;
 
   const handleQuickAddClient = () => {
+    if (isSupervisor) {
+      alert('Akses Ditolak: Pengawas dilarang menambah klien baru. Penempatan proyek klien ditetapkan oleh Superadmin di Manajemen User.');
+      return;
+    }
     if (!newClientShortName || !newClientFullName) {
       return;
     }
@@ -369,6 +381,10 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
   };
 
   const handleQuickAddBlock = () => {
+    if (isSupervisor) {
+      alert('Akses Ditolak: Pengawas dilarang menambah blok baru. Penambahan blok kerja operasional hanya dapat ditentukan oleh Superadmin.');
+      return;
+    }
     if (!newBlockCode) {
       return;
     }
@@ -595,8 +611,12 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
         }
       }
       if (assignedBlockCodes && assignedBlockCodes.length > 0) {
-        if (activeBlock && !assignedBlockCodes.includes(activeBlock.code)) {
-          alert('Akses Ditolak: Anda tidak memiliki wewenang untuk membuat laporan pada blok di luar penugasan Anda!');
+        const isMatched = activeBlock && assignedBlockCodes.some(b => {
+          const clean = b.trim().toLowerCase();
+          return activeBlock.code.toLowerCase().includes(clean) || clean.includes(activeBlock.code.toLowerCase());
+        });
+        if (!isMatched) {
+          alert(`Akses Ditolak: Anda hanya ditugaskan pada lokasi kerja (${assignedBlockCodes.join(', ')}). Tidak berwenang membuat laporan untuk ${activeBlock?.code || 'blok ini'}!`);
           return;
         }
       }
