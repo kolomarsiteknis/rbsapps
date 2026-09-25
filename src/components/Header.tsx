@@ -28,6 +28,7 @@ import {
   BookOpen
 } from 'lucide-react';
 import { UserRole, Client, AuthUser } from '../types';
+import { ConnectionHealthCheck } from './ConnectionHealthCheck';
 
 export type TabKey = 
   | 'dashboard' 
@@ -163,7 +164,7 @@ export const Header: React.FC<HeaderProps> = ({
         {
           key: 'user-management' as TabKey,
           label: 'Manajemen User',
-          subtitle: 'CRUD Pengguna, Proyek & Blok',
+          subtitle: 'CRUD Pengguna, Kredensial & Level',
           icon: Users,
           visible: true,
         },
@@ -299,6 +300,9 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* RIGHT: Quick Status & User Profile Trigger */}
             <div className="flex items-center gap-1.5 sm:gap-2">
+              {/* Connection Health Check Indicator */}
+              <ConnectionHealthCheck variant="header" />
+
               {/* Online / Offline Status Toggle Button */}
               <button
                 type="button"

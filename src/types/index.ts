@@ -109,16 +109,36 @@ export interface Block {
 }
 
 // Target Harian Land Clearing (Ha) per hari per lokasi kerja
+export interface DailyItemRitmeTarget {
+  id?: string;
+  name: string;
+  unit: string;
+  totalVolume: number;
+  dailyTargetVolume: number;
+  calculatedDays: number;
+}
+
 export interface DailyLocationTarget {
   id: string; // e.g. "DT-2026-09-24-blk-1"
   clientId: string;
   clientName?: string;
+  contractNumber?: string; // e.g. "045/SPK-LC/PTA/VI/2026"
   blockId: string;
   blockCode: string;
   date: string; // YYYY-MM-DD
   dailyTargetAreaHa: number; // Target Luas Harian (Ha) misal: 4.0 Ha
-  soilType?: 'Tanah Mineral' | 'Tanah Gambut Dangkal' | 'Tanah Gambut Dalam' | 'Rawa / Rendahan';
-  vegetationDensity?: 'Rapat / Kayu Besar' | 'Sedang / Semak Belukar' | 'Ringan / Lalang';
+  assignmentNumbers?: string[]; // Daftar No Penugasan terkait SPK & Blok ini
+  itemTargets?: DailyItemRitmeTarget[]; // Target ritme harian untuk masing-masing item pekerjaan
+  assignedPersonnel?: Array<{
+    workerId: string;
+    workerName: string;
+    workerCategory: string;
+    equipmentId?: string;
+    equipmentName?: string;
+    assignmentNumber?: string;
+  }>;
+  soilType?: string;
+  vegetationDensity?: string;
   assignedEquipmentCount?: number; // Estimasi armada alat berat
   assignedWorkerCount?: number; // Estimasi tenaga kerja (manpower)
   shift?: 'Siang (07:00 - 17:00)' | 'Malam' | 'Full Shift';
@@ -156,6 +176,7 @@ export interface Worker {
 
 export interface WorkAssignment {
   id: string; // e.g. "ASG-001"
+  assignmentNumber: string; // e.g. "001/ST-LC/PTA/VI/2026" - Standar penomoran seperti SPK
   workerId: string;
   workerName: string;
   workerCategory: string; // Operator, Mekanik, Logistik, Pendukung, Pengawas, Site Manager, etc.

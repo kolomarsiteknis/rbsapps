@@ -308,28 +308,24 @@ export const TutorialView: React.FC<TutorialViewProps> = ({ onNavigateTab }) => 
     {
       id: 'users',
       tabKey: 'user-management',
-      title: '7. Manajemen User & Penetapan Proyek',
-      badge: 'Akses & Keamanan',
+      title: '7. Manajemen User',
+      badge: 'Akses & Kredensial',
       icon: Users,
-      description: 'Pengelolaan akun login karyawan, penetapan hak akses level, penugasan proyek PT, dan pembatasan blok kerja.',
+      description: 'Pengelolaan akun login karyawan, kredensial password, hak akses level user, jabatan, dan status aktif akun.',
       targetRole: 'Khusus Superadmin',
       steps: [
         {
           title: 'Menambah Pengguna Baru',
-          desc: 'Klik tombol "+ Tambah Pengguna", isi Nama Lengkap, Nomor WhatsApp aktif, Email, Username, Password, dan pilih Level Pengguna (Superadmin atau Pengawas).',
+          desc: 'Klik tombol "+ Tambah Pengguna Baru", isi Nama Lengkap, Alamat, Nomor WhatsApp aktif, Email, Jabatan, Level Pengguna (Superadmin atau Pengawas), serta kredensial Username dan Password.',
         },
         {
-          title: 'Menetapkan Proyek PT (Khusus Pengawas)',
-          desc: 'Bila level yang dipilih adalah Pengawas, sistem mewajibkan Superadmin memilih 1 PT Penempatan (misal: PT. A). Pengawas tersebut HANYA bisa mengakses data PT ini.',
-          tips: 'Pengawas tidak bisa mengakses atau mengubah data milik PT lain yang bukan hak penugasannya.'
-        },
-        {
-          title: 'Menetapkan Blok Kerja Lapangan',
-          desc: 'Pilih satu atau beberapa blok kerja tempat pengawas bertugas (misal: Blok AB, Blok AA). Anda juga dapat menambahkan kode blok baru secara langsung.',
+          title: 'Otomatisasi Password Kuat (Generate)',
+          desc: 'Gunakan tombol "Generate" pada form password untuk membuat kata sandi acak yang aman dan teruji standar keamanannya.',
+          tips: 'Gunakan tombol "Salin" pada kartu pengguna untuk membagikan kredensial akun kepada staf yang bersangkutan.'
         },
         {
           title: 'Kelola Jabatan Kustom (Job Title)',
-          desc: 'Anda dapat memilih jabatan standar (Pengawas Lapangan, Koordinator Mekanik, Manager Lapangan, Direktur) atau mengetikkan nama jabatan baru di kolom yang disediakan.',
+          desc: 'Anda dapat memilih jabatan standar atau mengetikkan nama jabatan baru di kolom Tambah Jabatan Baru untuk dimasukkan ke master opsi.',
         },
         {
           title: 'Nonaktifkan Akun Pengguna',

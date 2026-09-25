@@ -29,6 +29,7 @@ import {
 import { DailyReport, Equipment, UserRole, Client } from '../types';
 import { storageService } from '../services/storageService';
 import { WeeklyFuelRatioChart } from './WeeklyFuelRatioChart';
+import { ConnectionHealthCheck } from './ConnectionHealthCheck';
 
 interface DashboardViewProps {
   reports: DailyReport[];
@@ -151,6 +152,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   return (
     <div className="max-w-7xl mx-auto py-4 sm:py-6 px-3 sm:px-6 space-y-4 sm:space-y-6">
+      {/* 1. CONNECTION HEALTH CHECK BANNER / STATUS */}
+      <ConnectionHealthCheck variant="dashboard" />
+
       {/* PORTOFOLIO PROYEK KLIEN - DROPDOWN SELECTOR (RESPONSIF UNTUK BANYAK PT) */}
       <section className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-200/90 transition-all duration-200 hover:shadow-md space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">

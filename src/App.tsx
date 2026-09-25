@@ -541,7 +541,7 @@ export default function App() {
           )
         )}
 
-        {/* Tab 10: User Management (CRUD Pengguna, Proyek & Blok) - STRICT: ONLY FOR SUPERADMIN */}
+        {/* Tab 10: User Management (CRUD Pengguna & Kredensial) - STRICT: ONLY FOR SUPERADMIN */}
         {activeTab === 'user-management' && (
           authUser.role === 'director' ? (
             <UserManagementView
@@ -553,7 +553,7 @@ export default function App() {
               <ShieldAlert className="w-12 h-12 text-rose-500 mx-auto" />
               <h3 className="font-black text-slate-900 text-base">Akses Khusus Superadmin</h3>
               <p className="text-xs text-slate-600">
-                Fitur Manajemen User (CRUD Data User, Penetapan Proyek & Lokasi Kerja) hanya dapat diakses dan diinput oleh Superadmin.
+                Fitur Manajemen User (CRUD Data User, Kredensial & Level Hak Akses) hanya dapat diakses dan diinput oleh Superadmin.
               </p>
               <button
                 onClick={() => setActiveTab('wizard')}

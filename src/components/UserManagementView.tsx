@@ -3,7 +3,6 @@ import {
   Users, 
   UserPlus, 
   Search, 
-  Filter, 
   ShieldCheck, 
   ShieldAlert, 
   KeyRound, 
@@ -12,29 +11,19 @@ import {
   Edit3, 
   Trash2, 
   CheckCircle2, 
-  XCircle, 
   Phone, 
   Mail, 
   MapPin, 
   Briefcase, 
-  Layers, 
-  Building2, 
   Copy, 
   Check, 
   Sparkles, 
-  AlertCircle, 
-  Plus, 
-  RotateCcw,
-  ExternalLink,
   MessageSquare,
   Lock,
-  UserCheck,
-  UserX,
   Grid,
-  List,
-  Crown
+  List
 } from 'lucide-react';
-import { ManagedUser, ManagedUserLevel, Client, Block, AuthUser } from '../types';
+import { ManagedUser, ManagedUserLevel, AuthUser } from '../types';
 import { storageService } from '../services/storageService';
 import { recordUserActivity } from '../utils/activityLogger';
 
@@ -50,16 +39,13 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
   // Strict Role Check: Superadmin ONLY
   const isSuperadmin = authUser?.role === 'director' || authUser?.userLevel === 'Superadmin';
 
-  // Master Data State
+  // Master Data State (Hanya User dan Master Jabatan)
   const [users, setUsers] = useState<ManagedUser[]>(() => storageService.getManagedUsers());
-  const [clients, setClients] = useState<Client[]>(() => storageService.getClients());
   const [jobTitles, setJobTitles] = useState<string[]>(() => storageService.getJobTitles());
-  const [blocks, setBlocks] = useState<Block[]>(() => storageService.getBlocks());
 
   // Filter & Search State
   const [searchQuery, setSearchQuery] = useState('');
   const [filterLevel, setFilterLevel] = useState<string>('ALL');
-  const [filterClient, setFilterClient] = useState<string>('ALL');
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
 
@@ -71,7 +57,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
 
-  // Form State
+  // Form State (Fokus murni pada data akun dan identitas user)
   const [formData, setFormData] = useState<{
     fullName: string;
     address: string;
@@ -81,8 +67,6 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
     userLevel: ManagedUserLevel;
     username: string;
     password: string;
-    assignedClientId: string;
-    assignedBlockCodes: string[];
     status: 'Aktif' | 'Nonaktif';
     notes: string;
   }>({
@@ -94,8 +78,6 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
     userLevel: 'Pengawas',
     username: '',
     password: '',
-    assignedClientId: clients[0]?.id || 'client-1',
-    assignedBlockCodes: ['Blok AB'],
     status: 'Aktif',
     notes: '',
   });
@@ -104,9 +86,6 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
   const [isAddingNewJobTitle, setIsAddingNewJobTitle] = useState(false);
   const [customJobTitleInput, setCustomJobTitleInput] = useState('');
 
-  // Inline "Tambah Blok Baru" state
-  const [newBlockInput, setNewBlockInput] = useState('');
-
   // Password visibility in modal form
   const [showModalPassword, setShowModalPassword] = useState(false);
   const [formErrors, setFormErrors] = useState<{ [field: string]: string }>({});
@@ -114,9 +93,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
   // Refresh helper
   const reloadData = () => {
     setUsers(storageService.getManagedUsers());
-    setClients(storageService.getClients());
     setJobTitles(storageService.getJobTitles());
-    setBlocks(storageService.getBlocks());
   };
 
   // Guard: If not superadmin, render access denied
@@ -138,12 +115,6 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
     );
   }
 
-  // Available blocks for the currently selected client in form
-  const availableBlocksForSelectedClient = useMemo(() => {
-    if (!formData.assignedClientId) return [];
-    return blocks.filter((b) => b.clientId === formData.assignedClientId);
-  }, [blocks, formData.assignedClientId]);
-
   // Filtered Users List
   const filteredUsers = useMemo(() => {
     return users.filter((user) => {
@@ -155,9 +126,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
         const matchEmail = user.email.toLowerCase().includes(q);
         const matchWa = user.whatsappNumber.toLowerCase().includes(q);
         const matchJob = user.jobTitle.toLowerCase().includes(q);
-        const matchClient = user.assignedClientName.toLowerCase().includes(q);
-        const matchBlocks = user.assignedBlockCodes.some((b) => b.toLowerCase().includes(q));
-        if (!matchName && !matchUser && !matchEmail && !matchWa && !matchJob && !matchClient && !matchBlocks) {
+        if (!matchName && !matchUser && !matchEmail && !matchWa && !matchJob) {
           return false;
         }
       }
@@ -167,13 +136,6 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
         return false;
       }
 
-      // Filter Client (Superadmin adalah Owner tanpa batasan penempatan proyek)
-      if (filterClient !== 'ALL') {
-        if (user.userLevel !== 'Superadmin' && user.assignedClientId !== filterClient) {
-          return false;
-        }
-      }
-
       // Filter Status
       if (filterStatus !== 'ALL' && user.status !== filterStatus) {
         return false;
@@ -181,7 +143,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
 
       return true;
     });
-  }, [users, searchQuery, filterLevel, filterClient, filterStatus]);
+  }, [users, searchQuery, filterLevel, filterStatus]);
 
   // Statistics
   const stats = useMemo(() => {
@@ -210,10 +172,6 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
   // Open Create Modal
   const handleOpenCreateModal = () => {
     setEditingUserId(null);
-    const defaultClient = clients[0] || { id: 'client-1', name: 'PT. A' };
-    const defaultClientBlocks = blocks.filter((b) => b.clientId === defaultClient.id);
-    const defaultBlockCode = defaultClientBlocks.length > 0 ? [defaultClientBlocks[0].code] : ['Blok AB'];
-
     setFormData({
       fullName: '',
       address: '',
@@ -223,14 +181,11 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       userLevel: 'Pengawas',
       username: '',
       password: '',
-      assignedClientId: defaultClient.id,
-      assignedBlockCodes: defaultBlockCode,
       status: 'Aktif',
       notes: '',
     });
     setIsAddingNewJobTitle(false);
     setCustomJobTitleInput('');
-    setNewBlockInput('');
     setShowModalPassword(false);
     setFormErrors({});
     setIsModalOpen(true);
@@ -248,14 +203,11 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       userLevel: user.userLevel,
       username: user.username,
       password: user.password,
-      assignedClientId: user.assignedClientId,
-      assignedBlockCodes: [...user.assignedBlockCodes],
       status: user.status,
       notes: user.notes || '',
     });
     setIsAddingNewJobTitle(false);
     setCustomJobTitleInput('');
-    setNewBlockInput('');
     setShowModalPassword(false);
     setFormErrors({});
     setIsModalOpen(true);
@@ -286,51 +238,6 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
     setIsAddingNewJobTitle(false);
     setCustomJobTitleInput('');
     showToast(`Jabatan "${trimmed}" berhasil ditambahkan ke master opsi!`, 'success');
-  };
-
-  // Add new block to current client & user
-  const handleAddNewBlock = () => {
-    const trimmed = newBlockInput.trim();
-    if (!trimmed) {
-      showToast('Kode / nama blok tidak boleh kosong!', 'warning');
-      return;
-    }
-
-    // Add to storage client blocks
-    const createdBlock = storageService.addBlockCodeToClient(formData.assignedClientId, trimmed);
-    if (createdBlock) {
-      setBlocks(storageService.getBlocks());
-    }
-
-    // Auto add to assignedBlockCodes if not already included
-    if (!formData.assignedBlockCodes.includes(trimmed)) {
-      setFormData((prev) => ({
-        ...prev,
-        assignedBlockCodes: [...prev.assignedBlockCodes, trimmed],
-      }));
-    }
-
-    setNewBlockInput('');
-    showToast(`Blok "${trimmed}" berhasil ditambahkan ke proyek & ditugaskan ke user!`, 'success');
-  };
-
-  // Toggle block selection for user
-  const handleToggleBlock = (blockCode: string) => {
-    setFormData((prev) => {
-      const exists = prev.assignedBlockCodes.includes(blockCode);
-      if (exists) {
-        // Must keep at least one block if possible, but allow empty if needed
-        return {
-          ...prev,
-          assignedBlockCodes: prev.assignedBlockCodes.filter((b) => b !== blockCode),
-        };
-      } else {
-        return {
-          ...prev,
-          assignedBlockCodes: [...prev.assignedBlockCodes, blockCode],
-        };
-      }
-    });
   };
 
   // Form Validation & Submit
@@ -367,7 +274,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
     // 6. Username
     const cleanUsername = formData.username.trim();
     if (!cleanUsername || cleanUsername.length < 3) {
-      errors.username = 'Username minimal 3 karakter tanpa spasi aneh.';
+      errors.username = 'Username minimal 3 karakter tanpa spasi.';
     } else {
       // Check uniqueness
       const existingUser = users.find(
@@ -383,31 +290,11 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       errors.password = 'Password minimal 5 karakter.';
     }
 
-    const isSuper = formData.userLevel === 'Superadmin';
-
-    // 8. Penempatan Proyek (hanya satu klien) - HANYA UNTUK PENGAWAS (BUKAN SUPERADMIN)
-    if (!isSuper) {
-      if (!formData.assignedClientId) {
-        errors.assignedClientId = 'Penempatan Proyek klien harus dipilih.';
-      }
-
-      // 9. Penempatan Lokasi Kerja (bisa lebih dari satu blok)
-      if (!formData.assignedBlockCodes || formData.assignedBlockCodes.length === 0) {
-        errors.assignedBlockCodes = 'Pilih minimal 1 blok penempatan lokasi kerja.';
-      }
-    }
-
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
       showToast('Mohon periksa kembali kolom formulir yang belum lengkap.', 'warning');
       return;
     }
-
-    // Determine assigned client & block values (Direktur/Superadmin = Owner tanpa batasan)
-    const selectedClient = clients.find((c) => c.id === formData.assignedClientId);
-    const clientName = isSuper ? 'Semua Proyek (Owner)' : (selectedClient ? selectedClient.name : 'PT. A');
-    const assignedClientId = isSuper ? 'all' : formData.assignedClientId;
-    const assignedBlockCodes = isSuper ? ['Akses Semua Blok (Tanpa Batas)'] : formData.assignedBlockCodes;
 
     if (editingUserId) {
       // Update existing user
@@ -422,9 +309,9 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
         userLevel: formData.userLevel,
         username: formData.username.trim(),
         password: formData.password.trim(),
-        assignedClientId: assignedClientId,
-        assignedClientName: clientName,
-        assignedBlockCodes: assignedBlockCodes,
+        assignedClientId: existing?.assignedClientId || 'all',
+        assignedClientName: existing?.assignedClientName || '-',
+        assignedBlockCodes: existing?.assignedBlockCodes || [],
         status: formData.status,
         createdAt: existing?.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -440,12 +327,8 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
         userEmail: authUser?.email,
         actionCategory: 'USER_MANAGEMENT',
         actionTitle: `Ubah Data User: ${updatedUser.fullName}`,
-        actionDescription: isSuper
-          ? `Mengupdate akun Superadmin/Owner ${updatedUser.username} (${updatedUser.jobTitle}) dengan akses penuh ke semua proyek & blok tanpa batasan.`
-          : `Mengupdate data user ${updatedUser.username} (${updatedUser.jobTitle} - Level: ${updatedUser.userLevel}) untuk proyek ${clientName}.`,
+        actionDescription: `Mengupdate profil dan kredensial pengguna ${updatedUser.username} (${updatedUser.jobTitle} - Level: ${updatedUser.userLevel}).`,
         targetEntity: `${updatedUser.username} (${updatedUser.userLevel})`,
-        clientId: updatedUser.assignedClientId,
-        clientName: clientName,
       });
 
       showToast(`Data pengguna "${updatedUser.fullName}" berhasil diperbarui!`, 'success');
@@ -461,9 +344,9 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
         userLevel: formData.userLevel,
         username: formData.username.trim(),
         password: formData.password.trim(),
-        assignedClientId: assignedClientId,
-        assignedClientName: clientName,
-        assignedBlockCodes: assignedBlockCodes,
+        assignedClientId: 'all',
+        assignedClientName: '-',
+        assignedBlockCodes: [],
         status: formData.status,
         createdAt: new Date().toISOString(),
         notes: formData.notes.trim(),
@@ -478,12 +361,8 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
         userEmail: authUser?.email,
         actionCategory: 'USER_MANAGEMENT',
         actionTitle: `Tambah User Baru: ${newUser.fullName}`,
-        actionDescription: isSuper
-          ? `Membuat akun Superadmin/Owner baru ${newUser.username} (${newUser.jobTitle}) dengan akses penuh ke seluruh proyek & blok kerja.`
-          : `Membuat akun user baru ${newUser.username} (Level: ${newUser.userLevel}, Jabatan: ${newUser.jobTitle}) ditempatkan pada proyek ${clientName} blok: ${newUser.assignedBlockCodes.join(', ')}.`,
+        actionDescription: `Mendaftarkan akun pengguna baru ${newUser.username} (Level: ${newUser.userLevel}, Jabatan: ${newUser.jobTitle}).`,
         targetEntity: `${newUser.username} (${newUser.userLevel})`,
-        clientId: newUser.assignedClientId,
-        clientName: clientName,
       });
 
       showToast(`Pengguna baru "${newUser.fullName}" (${newUser.username}) berhasil ditambahkan!`, 'success');
@@ -519,8 +398,6 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       actionTitle: `Ubah Status User: ${user.fullName} -> ${newStatus}`,
       actionDescription: `Status akun ${user.username} diubah menjadi ${newStatus}.`,
       targetEntity: `${user.username} (${newStatus})`,
-      clientId: user.assignedClientId,
-      clientName: user.assignedClientName,
     });
 
     reloadData();
@@ -556,8 +433,6 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
         actionTitle: `Hapus User: ${user.fullName}`,
         actionDescription: `Menghapus akun pengguna ${user.username} (${user.userLevel}) dari sistem.`,
         targetEntity: `${user.username}`,
-        clientId: user.assignedClientId,
-        clientName: user.assignedClientName,
       });
 
       reloadData();
@@ -576,14 +451,14 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-black uppercase tracking-wider mb-2.5">
               <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
-              <span>MODUL EKSKLUSIF SUPERADMIN • OTORISASI TERTINGGI</span>
+              <span>MODUL EKSKLUSIF SUPERADMIN • OTORISASI SISTEM</span>
             </div>
             <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2.5">
               <Users className="w-6 h-6 text-amber-400" />
-              <span>Manajemen User & Penempatan Proyek</span>
+              <span>Manajemen User</span>
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-2xl">
-              Pusat CRUD data pengguna resmi sistem: identitas lengkap, nomor WhatsApp, email, kredensial password, penempatan proyek klien (PT. A, PT. B, PT. D), dan multi-blok kerja.
+              Pusat CRUD data pengguna resmi sistem: profil identitas lengkap, nomor WhatsApp, email, jabatan, level hak akses, dan kredensial login akun.
             </p>
           </div>
 
@@ -621,7 +496,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
             <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Level Pengawas</div>
             <div className="text-2xl font-black text-sky-400 mt-0.5">{stats.supervisors}</div>
             <div className="text-[10px] text-sky-300/80 mt-0.5 flex items-center gap-1">
-              <Briefcase className="w-3 h-3 text-sky-400" /> Operasional Lapangan
+              <Briefcase className="w-3 h-3 text-sky-400" /> Lapangan
             </div>
           </div>
 
@@ -629,7 +504,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
             <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Status Aktif</div>
             <div className="text-2xl font-black text-emerald-400 mt-0.5">{stats.active}</div>
             <div className="text-[10px] text-emerald-300/80 mt-0.5 flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Siap Bertugas
+              <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Akun Aktif
             </div>
           </div>
         </div>
@@ -645,7 +520,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari nama, WA, username, blok..."
+              placeholder="Cari nama, WA, username, email..."
               className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition"
             />
             {searchQuery && (
@@ -672,23 +547,6 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                 <option value="ALL">Semua Level</option>
                 <option value="Superadmin">Superadmin</option>
                 <option value="Pengawas">Pengawas</option>
-              </select>
-            </div>
-
-            {/* Client Filter */}
-            <div className="flex items-center gap-1.5 text-xs text-slate-600">
-              <span className="font-bold text-[11px] text-slate-500 uppercase">Proyek:</span>
-              <select
-                value={filterClient}
-                onChange={(e) => setFilterClient(e.target.value)}
-                className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:border-amber-500 cursor-pointer"
-              >
-                <option value="ALL">Semua Proyek (Klien)</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
               </select>
             </div>
 
@@ -737,13 +595,12 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
           <span>
             Menampilkan <strong>{filteredUsers.length}</strong> dari <strong>{users.length}</strong> total pengguna terdaftar.
           </span>
-          {(searchQuery || filterLevel !== 'ALL' || filterClient !== 'ALL' || filterStatus !== 'ALL') && (
+          {(searchQuery || filterLevel !== 'ALL' || filterStatus !== 'ALL') && (
             <button
               type="button"
               onClick={() => {
                 setSearchQuery('');
                 setFilterLevel('ALL');
-                setFilterClient('ALL');
                 setFilterStatus('ALL');
               }}
               className="text-amber-600 hover:underline font-bold cursor-pointer"
@@ -931,10 +788,10 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                         </div>
                         <a
                           href={`mailto:${user.email}`}
-                          className="p-1 text-slate-400 hover:text-sky-600 rounded-md cursor-pointer shrink-0"
+                          className="px-2 py-1 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 shrink-0 cursor-pointer shadow-xs"
                           title="Kirim Email"
                         >
-                          <ExternalLink className="w-3 h-3" />
+                          <span>Kirim</span>
                         </a>
                       </div>
                     </div>
@@ -945,56 +802,10 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                       <span className="text-[11px] leading-relaxed line-clamp-2">{user.address}</span>
                     </div>
 
-                    {/* Penempatan Proyek (Klien Tunggal) & Penempatan Lokasi Kerja (Multi-Blok) */}
-                    {isSuper ? (
-                      <div className="pt-2 border-t border-slate-100 space-y-2">
-                        <div className="p-3 rounded-xl bg-gradient-to-r from-amber-500/10 via-amber-500/15 to-amber-500/10 border border-amber-300">
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center gap-1.5 font-black text-amber-950 text-xs">
-                              <Crown className="w-4 h-4 text-amber-600 shrink-0" />
-                              <span>Akses Pemilik (Owner)</span>
-                            </div>
-                            <span className="px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 font-black text-[9px] uppercase tracking-wider shadow-xs">
-                              Tanpa Batasan
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-amber-900 leading-snug font-medium">
-                            Direktur/Superadmin adalah <strong>Owner</strong>: memiliki otoritas penuh ke <strong>semua proyek klien</strong> dan <strong>seluruh blok kerja</strong> tanpa batasan penempatan.
-                          </p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="pt-2 border-t border-slate-100 space-y-2">
-                        {/* Proyek */}
-                        <div className="flex items-center justify-between text-xs">
-                          <div className="flex items-center gap-1.5 font-bold text-slate-700">
-                            <Building2 className="w-3.5 h-3.5 text-amber-500" />
-                            <span>Penempatan Proyek:</span>
-                          </div>
-                          <span className="px-2.5 py-0.5 rounded-lg bg-amber-50 border border-amber-300 text-amber-900 font-black text-xs">
-                            {user.assignedClientName}
-                          </span>
-                        </div>
-
-                        {/* Lokasi Kerja (Blok-blok) */}
-                        <div>
-                          <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 mb-1">
-                            <span className="flex items-center gap-1">
-                              <Layers className="w-3 h-3 text-indigo-500" />
-                              <span>Lokasi Kerja ({user.assignedBlockCodes.length} Blok):</span>
-                            </span>
-                          </div>
-                          <div className="flex flex-wrap gap-1.5">
-                            {user.assignedBlockCodes.map((bCode, idx) => (
-                              <span
-                                key={idx}
-                                className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-800 border border-indigo-200 font-bold text-[10px] tracking-wide"
-                              >
-                                📍 {bCode}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
+                    {/* Catatan Tambahan jika ada */}
+                    {user.notes && (
+                      <div className="text-[11px] text-slate-500 italic bg-amber-50/50 p-2 rounded-lg border border-amber-100">
+                        Catatan: {user.notes}
                       </div>
                     )}
                   </div>
@@ -1041,19 +852,18 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-900 text-white uppercase text-[10px] tracking-wider">
                 <tr>
-                  <th className="py-3 px-3">Pengguna</th>
-                  <th className="py-3 px-3">Level & Jabatan</th>
-                  <th className="py-3 px-3">Kredensial</th>
-                  <th className="py-3 px-3">Kontak WA & Email</th>
-                  <th className="py-3 px-3">Proyek & Blok Kerja</th>
-                  <th className="py-3 px-3 text-center">Status</th>
-                  <th className="py-3 px-3 text-right">Aksi</th>
+                  <th className="py-3 px-3.5">Pengguna</th>
+                  <th className="py-3 px-3.5">Level & Jabatan</th>
+                  <th className="py-3 px-3.5">Kredensial Login</th>
+                  <th className="py-3 px-3.5">Kontak WA & Email</th>
+                  <th className="py-3 px-3.5 text-center">Status Akun</th>
+                  <th className="py-3 px-3.5 text-right">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
                 {filteredUsers.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-8 text-slate-400">
+                    <td colSpan={6} className="text-center py-8 text-slate-400">
                       Tidak ada data pengguna ditemukan.
                     </td>
                   </tr>
@@ -1066,14 +876,14 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                     return (
                       <tr key={user.id} className="hover:bg-slate-50/80 transition-colors">
                         {/* Pengguna */}
-                        <td className="py-3 px-3">
+                        <td className="py-3 px-3.5">
                           <div className="font-bold text-slate-900">{user.fullName}</div>
                           <div className="text-[11px] text-slate-500 font-mono">@{user.username}</div>
                           <div className="text-[10px] text-slate-400 line-clamp-1 max-w-xs">{user.address}</div>
                         </td>
 
                         {/* Level & Jabatan */}
-                        <td className="py-3 px-3">
+                        <td className="py-3 px-3.5">
                           <div className="flex flex-col gap-1 items-start">
                             <span
                               className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
@@ -1089,7 +899,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                         </td>
 
                         {/* Kredensial */}
-                        <td className="py-3 px-3">
+                        <td className="py-3 px-3.5">
                           <div className="bg-slate-100 p-1.5 rounded-lg border border-slate-200 font-mono text-[11px] space-y-0.5 w-36">
                             <div className="text-slate-600 flex justify-between">
                               <span className="text-[9px] uppercase text-slate-400">User:</span>
@@ -1112,7 +922,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                         </td>
 
                         {/* Kontak WA & Email */}
-                        <td className="py-3 px-3">
+                        <td className="py-3 px-3.5">
                           <div className="space-y-1">
                             <a
                               href={`https://wa.me/${user.whatsappNumber.replace(/\D/g, '').replace(/^0/, '62')}`}
@@ -1133,48 +943,15 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                           </div>
                         </td>
 
-                        {/* Proyek & Blok Kerja */}
-                        <td className="py-3 px-3">
-                          {isSuper ? (
-                            <div className="space-y-1">
-                              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-amber-100 border border-amber-300 text-amber-950 font-black text-[11px]">
-                                <Crown className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                                <span>Semua Proyek (Owner)</span>
-                              </div>
-                              <div className="text-[10px] font-bold text-amber-800 flex items-center gap-1">
-                                <Sparkles className="w-2.5 h-2.5 text-amber-500" />
-                                <span>Akses Semua Blok (Tanpa Batas)</span>
-                              </div>
-                            </div>
-                          ) : (
-                            <>
-                              <div className="font-bold text-slate-800 text-xs flex items-center gap-1">
-                                <Building2 className="w-3 h-3 text-amber-500" />
-                                <span>{user.assignedClientName}</span>
-                              </div>
-                              <div className="flex flex-wrap gap-1 mt-1 max-w-xs">
-                                {user.assignedBlockCodes.map((bCode, idx) => (
-                                  <span
-                                    key={idx}
-                                    className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-bold border border-indigo-200"
-                                  >
-                                    {bCode}
-                                  </span>
-                                ))}
-                              </div>
-                            </>
-                          )}
-                        </td>
-
                         {/* Status */}
-                        <td className="py-3 px-3 text-center">
+                        <td className="py-3 px-3.5 text-center">
                           <button
                             type="button"
                             onClick={() => handleToggleStatus(user)}
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold cursor-pointer ${
+                            className={`px-2.5 py-1 rounded-full text-[10px] font-bold cursor-pointer transition ${
                               user.status === 'Aktif'
-                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                                : 'bg-rose-100 text-rose-800 border border-rose-300'
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200'
+                                : 'bg-rose-100 text-rose-800 border border-rose-300 hover:bg-rose-200'
                             }`}
                           >
                             {user.status}
@@ -1182,7 +959,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                         </td>
 
                         {/* Aksi */}
-                        <td className="py-3 px-3 text-right">
+                        <td className="py-3 px-3.5 text-right">
                           <div className="flex items-center justify-end gap-1">
                             <button
                               type="button"
@@ -1217,8 +994,8 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       {/* MODAL FORM: TAMBAH / EDIT USER (CRUD MODAL)                              */}
       {/* ========================================================================= */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-sm overflow-y-auto">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-2xl my-6 overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-xl my-6 overflow-hidden flex flex-col max-h-[90vh]">
             {/* Modal Header */}
             <div className="px-5 py-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800 shrink-0">
               <div className="flex items-center gap-2.5">
@@ -1227,10 +1004,10 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                 </div>
                 <div>
                   <h3 className="text-base font-black text-white">
-                    {editingUserId ? 'Edit Data Pengguna Sistem' : 'Tambah Pengguna Baru'}
+                    {editingUserId ? 'Edit Data Pengguna' : 'Tambah Pengguna Baru'}
                   </h3>
                   <p className="text-[11px] text-slate-400">
-                    Input data lengkap, kredensial password, penempatan proyek klien dan lokasi kerja blok.
+                    Input data identitas lengkap, jabatan, hak akses, dan kredensial login akun.
                   </p>
                 </div>
               </div>
@@ -1249,8 +1026,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs flex items-start gap-2">
                 <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <div>
-                  <strong>Otorisasi Superadmin:</strong> Semua isian pada form ini tersimpan aman di database lokal
-                  dan akun langsung dapat digunakan login di portal proyek sesuai hak aksesnya.
+                  <strong>Otorisasi Pengguna:</strong> Data pengguna tersimpan di database dan akun dapat langsung digunakan untuk login sesuai hak aksesnya.
                 </div>
               </div>
 
@@ -1280,7 +1056,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                 <textarea
                   required
                   rows={2}
-                  placeholder="Contoh: Mess Karyawan Camp 1, Perkebunan PT. A, Kampar, Riau"
+                  placeholder="Contoh: Mess Karyawan Camp 1, Perkebunan Kampar, Riau"
                   value={formData.address}
                   onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
@@ -1340,7 +1116,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
 
               {/* DUA KOLOM: JABATAN & LEVEL USER */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                {/* 5. JABATAN: Dropdown (Direktur, Manager, Pengawas, Tambah Jabatan) */}
+                {/* 5. JABATAN */}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1 flex items-center justify-between">
                     <span>
@@ -1402,7 +1178,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                   )}
                 </div>
 
-                {/* 6. LEVEL USER: Dropdown (Superadmin, Pengawas) */}
+                {/* 6. LEVEL USER */}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                     Level User <span className="text-rose-500">*</span>
@@ -1411,37 +1187,17 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                     value={formData.userLevel}
                     onChange={(e) => {
                       const newLvl = e.target.value as ManagedUserLevel;
-                      if (newLvl === 'Superadmin') {
-                        setFormData((prev) => ({
-                          ...prev,
-                          userLevel: 'Superadmin',
-                          jobTitle: prev.jobTitle === 'Pengawas' ? 'Direktur' : prev.jobTitle,
-                          assignedClientId: 'all',
-                          assignedBlockCodes: ['Akses Semua Blok (Tanpa Batas)'],
-                        }));
-                      } else {
-                        const defaultClient = clients[0] || { id: 'client-1', name: 'PT. A' };
-                        const clientBlocks = blocks.filter((b) => b.clientId === defaultClient.id);
-                        const initialBCode = clientBlocks.length > 0 ? [clientBlocks[0].code] : ['Blok AB'];
-                        setFormData((prev) => ({
-                          ...prev,
-                          userLevel: 'Pengawas',
-                          jobTitle: prev.jobTitle === 'Direktur' ? 'Pengawas' : prev.jobTitle,
-                          assignedClientId: prev.assignedClientId === 'all' ? defaultClient.id : prev.assignedClientId,
-                          assignedBlockCodes: prev.assignedClientId === 'all' ? initialBCode : prev.assignedBlockCodes,
-                        }));
-                      }
+                      setFormData((prev) => ({
+                        ...prev,
+                        userLevel: newLvl,
+                        jobTitle: newLvl === 'Superadmin' && prev.jobTitle === 'Pengawas' ? 'Direktur' : prev.jobTitle,
+                      }));
                     }}
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-amber-500 cursor-pointer"
                   >
-                    <option value="Superadmin">👑 Superadmin (Owner — Akses Seluruh Proyek)</option>
+                    <option value="Superadmin">👑 Superadmin (Akses Penuh Seluruh Sistem)</option>
                     <option value="Pengawas">🚜 Pengawas (Akses Form &amp; Operasional Lapangan)</option>
                   </select>
-                  <div className="text-[10px] text-slate-500 mt-1">
-                    {formData.userLevel === 'Superadmin'
-                      ? '👑 Owner / Pemilik: Tidak memerlukan penempatan proyek. Akses penuh tanpa batasan ke seluruh proyek klien dan semua blok.'
-                      : '🚜 Akses operasional lapangan: Wajib memilih 1 penempatan proyek klien dan blok kerja operasional.'}
-                  </div>
                 </div>
               </div>
 
@@ -1502,161 +1258,6 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                   )}
                 </div>
               </div>
-
-              {/* PENEMPATAN PROYEK & BLOK KERJA: UNTUK SUPERADMIN TIDAK PERLU KARENA OWNER TANPA BATAS */}
-              {formData.userLevel === 'Superadmin' ? (
-                <div className="p-4 bg-gradient-to-r from-amber-500/10 via-amber-500/20 to-amber-500/10 border-2 border-dashed border-amber-400/60 rounded-2xl space-y-3">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center shrink-0 shadow-md shadow-amber-500/30">
-                      <Crown className="w-5 h-5 font-black" />
-                    </div>
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-black text-amber-950 uppercase tracking-wider">
-                          AKSES PEMILIK (OWNER) — TIDAK PERLU PENEMPATAN PROYEK
-                        </span>
-                        <span className="px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 font-black text-[9px] uppercase tracking-wider shadow-xs">
-                          Global Access
-                        </span>
-                      </div>
-                      <p className="text-xs text-amber-900 leading-relaxed font-medium">
-                        Pengguna dengan level <strong>Superadmin (Direktur / Superadmin)</strong> merupakan <strong>Owner</strong> sistem, sehingga <strong>tidak memerlukan penempatan proyek maupun blok kerja</strong>. Pengguna ini memiliki wewenang penuh tanpa batas ke <strong>seluruh proyek klien (PT. A, PT. B, PT. D, dst.)</strong> dan <strong>seluruh blok kerja lapangan</strong>.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-amber-500/20 text-xs">
-                    <div className="flex items-center gap-2.5 bg-white/90 p-2.5 rounded-xl border border-amber-200 shadow-2xs">
-                      <Building2 className="w-4 h-4 text-amber-600 shrink-0" />
-                      <div>
-                        <div className="text-[10px] text-slate-500 font-bold uppercase">Cakupan Klien Proyek</div>
-                        <div className="font-black text-slate-900 text-xs">Semua Proyek (Owner Tanpa Batas)</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2.5 bg-white/90 p-2.5 rounded-xl border border-amber-200 shadow-2xs">
-                      <Layers className="w-4 h-4 text-indigo-600 shrink-0" />
-                      <div>
-                        <div className="text-[10px] text-slate-500 font-bold uppercase">Cakupan Lokasi Blok</div>
-                        <div className="font-black text-slate-900 text-xs">Akses Seluruh Blok Kerja Lapangan</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                /* 9. PENEMPATAN PROYEK & 10. PENEMPATAN LOKASI KERJA: Khusus Pengawas (Non-Superadmin) */
-                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl space-y-2">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1 flex items-center justify-between">
-                      <span className="flex items-center gap-1.5">
-                        <Building2 className="w-3.5 h-3.5 text-amber-600" />
-                        <span>Penempatan Proyek (Klien)</span>
-                        <span className="text-rose-500">*</span>
-                      </span>
-                      <span className="text-[10px] font-black text-amber-800 uppercase bg-amber-200/80 px-2 py-0.5 rounded">
-                        Hanya Boleh 1 Klien
-                      </span>
-                    </label>
-
-                    <select
-                      value={formData.assignedClientId}
-                      onChange={(e) => {
-                        const newClientId = e.target.value;
-                        // Update client and pick default blocks of that client
-                        const clientBlocks = blocks.filter((b) => b.clientId === newClientId);
-                        const initialBCode = clientBlocks.length > 0 ? [clientBlocks[0].code] : ['Blok AB'];
-                        setFormData({
-                          ...formData,
-                          assignedClientId: newClientId,
-                          assignedBlockCodes: initialBCode,
-                        });
-                      }}
-                      className="w-full px-3 py-2 bg-white border border-amber-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-amber-500 cursor-pointer"
-                    >
-                      {clients.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name} — {c.fullCompanyName} ({c.location})
-                        </option>
-                      ))}
-                    </select>
-                    {formErrors.assignedClientId && (
-                      <div className="text-[11px] text-rose-600 mt-1 font-medium">{formErrors.assignedClientId}</div>
-                    )}
-                  </div>
-
-                  {/* 10. PENEMPATAN LOKASI KERJA: Blok AB, Blok AA (Bisa nambah blok / bisa lebih dari satu blok) */}
-                  <div className="pt-2 border-t border-amber-500/20 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                        <Layers className="w-3.5 h-3.5 text-indigo-600" />
-                        <span>Penempatan Lokasi Kerja (Blok)</span>
-                        <span className="text-rose-500">*</span>
-                      </label>
-                      <span className="text-[10px] font-bold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded">
-                        Bisa Lebih dari 1 Blok
-                      </span>
-                    </div>
-
-                    {/* Available Block Checklist Chips */}
-                    <div className="flex flex-wrap gap-2">
-                      {availableBlocksForSelectedClient.map((b) => {
-                        const isSelected = formData.assignedBlockCodes.includes(b.code);
-                        return (
-                          <button
-                            key={b.id}
-                            type="button"
-                            onClick={() => handleToggleBlock(b.code)}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition flex items-center gap-1.5 cursor-pointer ${
-                              isSelected
-                                ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
-                                : 'bg-white text-slate-700 border-slate-300 hover:border-indigo-400'
-                            }`}
-                          >
-                            <span>{isSelected ? '✓' : '+'}</span>
-                            <span>{b.code}</span>
-                            <span className="text-[10px] opacity-80">({b.targetAreaHa} Ha)</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {/* In-Line Tambah Blok Baru */}
-                    <div className="flex items-center gap-2 pt-2">
-                      <input
-                        type="text"
-                        placeholder="Ketik kode blok baru (Contoh: Blok AA, Blok AB, Blok AD)..."
-                        value={newBlockInput}
-                        onChange={(e) => setNewBlockInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            handleAddNewBlock();
-                          }
-                        }}
-                        className="flex-1 px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-indigo-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleAddNewBlock}
-                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer shrink-0"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Tambah Blok</span>
-                      </button>
-                    </div>
-                    <div className="text-[10px] text-slate-500">
-                      Blok yang dipilih untuk user ini:{' '}
-                      <strong className="text-indigo-900">
-                        {formData.assignedBlockCodes.length > 0
-                          ? formData.assignedBlockCodes.join(', ')
-                          : '(Belum ada blok dipilih)'}
-                      </strong>
-                    </div>
-                    {formErrors.assignedBlockCodes && (
-                      <div className="text-[11px] text-rose-600 font-medium">{formErrors.assignedBlockCodes}</div>
-                    )}
-                  </div>
-                </div>
-              )}
 
               {/* STATUS USER & CATATAN */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

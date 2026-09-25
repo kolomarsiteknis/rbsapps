@@ -546,9 +546,51 @@ export const storageService = {
     return false;
   },
 
+  // Helper untuk generate Nomor Penugasan standar resmi seperti No Kontrak / SPK
+  generateAssignmentNumber(
+    client?: Client | null,
+    assignedDate?: string,
+    existingAssignments: WorkAssignment[] = []
+  ): string {
+    const dateObj = assignedDate ? new Date(assignedDate) : new Date();
+    const year = isNaN(dateObj.getFullYear()) ? new Date().getFullYear() : dateObj.getFullYear();
+    const monthNum = isNaN(dateObj.getMonth()) ? new Date().getMonth() + 1 : dateObj.getMonth() + 1;
+    const romanMonths = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+    const romanMonth = romanMonths[monthNum - 1] || 'VIII';
+
+    let clientCode = 'SL';
+    if (client?.contractNumber) {
+      const parts = client.contractNumber.split('/');
+      if (parts.length >= 3) {
+        clientCode = parts[2].trim().toUpperCase(); // e.g. "PTA" from "045/SPK-LC/PTA/VI/2026"
+      }
+    }
+    if (!clientCode || clientCode === 'SL') {
+      clientCode = client?.name ? client.name.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 4) : 'PT';
+    }
+
+    // Hitung penugasan yang sudah ada untuk SPK / Klien ini untuk mendapatkan nomor urut
+    const matchingCount = existingAssignments.filter(
+      (a) => a.clientId === client?.id || (client?.contractNumber && a.contractNumber === client.contractNumber)
+    ).length;
+
+    const nextSeq = String(matchingCount + 1).padStart(3, '0');
+    return `${nextSeq}/ST-LC/${clientCode}/${romanMonth}/${year}`;
+  },
+
   // Work Assignments (Penugasan Kerja: Personel & Alat Berat per No SPK Klien & Blok Kerja)
   getWorkAssignments(clientId?: string, blockId?: string): WorkAssignment[] {
-    const all = loadFromStorage<WorkAssignment[]>(STORAGE_KEYS.WORK_ASSIGNMENTS, initialWorkAssignments);
+    const raw = loadFromStorage<WorkAssignment[]>(STORAGE_KEYS.WORK_ASSIGNMENTS, initialWorkAssignments);
+    const clients = this.getClients();
+
+    // Pastikan setiap penugasan memiliki assignmentNumber terisi
+    const all = raw.map((asg, idx) => {
+      if (asg.assignmentNumber) return asg;
+      const client = clients.find((c) => c.id === asg.clientId);
+      const generated = this.generateAssignmentNumber(client, asg.assignedDate, raw.slice(0, idx));
+      return { ...asg, assignmentNumber: generated };
+    });
+
     return all.filter((item) => {
       if (clientId && clientId !== 'ALL' && item.clientId !== clientId) return false;
       if (blockId && blockId !== 'ALL' && item.blockId !== 'ALL' && item.blockId !== blockId) return false;
@@ -557,35 +599,43 @@ export const storageService = {
   },
 
   getWorkAssignmentById(id: string): WorkAssignment | undefined {
-    const all = loadFromStorage<WorkAssignment[]>(STORAGE_KEYS.WORK_ASSIGNMENTS, initialWorkAssignments);
+    const all = this.getWorkAssignments();
     return all.find((a) => a.id === id);
   },
 
   saveWorkAssignment(assignment: WorkAssignment): WorkAssignment {
-    const list = loadFromStorage<WorkAssignment[]>(STORAGE_KEYS.WORK_ASSIGNMENTS, initialWorkAssignments);
+    const list = this.getWorkAssignments();
     const idx = list.findIndex((a) => a.id === assignment.id);
+    
+    // Pastikan ada assignmentNumber
+    let finalAssignment = { ...assignment };
+    if (!finalAssignment.assignmentNumber) {
+      const client = this.getClientById(finalAssignment.clientId);
+      finalAssignment.assignmentNumber = this.generateAssignmentNumber(client, finalAssignment.assignedDate, list);
+    }
+
     if (idx >= 0) {
-      list[idx] = { ...assignment };
+      list[idx] = finalAssignment;
     } else {
-      list.unshift({ ...assignment });
+      list.unshift(finalAssignment);
     }
     saveToStorage(STORAGE_KEYS.WORK_ASSIGNMENTS, list);
 
     // Sync to Worker record
-    if (assignment.workerId) {
+    if (finalAssignment.workerId) {
       const workers = this.getWorkers();
-      const wIdx = workers.findIndex((w) => w.id === assignment.workerId);
+      const wIdx = workers.findIndex((w) => w.id === finalAssignment.workerId);
       if (wIdx >= 0) {
-        workers[wIdx].assignedClientId = assignment.clientId;
-        workers[wIdx].assignedBlockId = assignment.blockId;
-        if (assignment.equipmentId) {
-          workers[wIdx].assignedEquipmentId = assignment.equipmentId;
+        workers[wIdx].assignedClientId = finalAssignment.clientId;
+        workers[wIdx].assignedBlockId = finalAssignment.blockId;
+        if (finalAssignment.equipmentId) {
+          workers[wIdx].assignedEquipmentId = finalAssignment.equipmentId;
         }
         this.saveWorker(workers[wIdx]);
       }
     }
 
-    return assignment;
+    return finalAssignment;
   },
 
   deleteWorkAssignment(id: string): boolean {
