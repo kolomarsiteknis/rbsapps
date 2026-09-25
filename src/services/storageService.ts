@@ -17,7 +17,8 @@ import {
   UserActivityLog,
   ActivityActionCategory,
   ManagedUser,
-  AuthUser
+  AuthUser,
+  WorkAssignment
 } from '../types';
 import { 
   initialDailyReports, 
@@ -33,7 +34,8 @@ import {
   initialFuelBowserReceipts,
   initialSoilIncidents,
   initialJobTitles,
-  initialManagedUsers
+  initialManagedUsers,
+  initialWorkAssignments
 } from '../data/mockData';
 import { 
   syncDocWrite, 
@@ -52,6 +54,7 @@ const STORAGE_KEYS = {
   PROJECTS: 'suryaland_projects_v1',
   LOGISTICS_TRANSACTIONS: 'suryaland_logistics_transactions_v1',
   DAILY_TARGETS: 'suryaland_daily_targets_v1',
+  WORK_ASSIGNMENTS: 'suryaland_work_assignments_v1',
   DRAFT_REPORT: 'suryaland_report_wizard_draft_v1',
   P2H_CHECKLISTS: 'suryaland_p2h_checklists_v1',
   FUEL_BOWSER: 'suryaland_fuel_bowser_v1',
@@ -355,7 +358,26 @@ export const storageService = {
 
   // Workers
   getWorkers(): Worker[] {
-    return loadFromStorage<Worker[]>(STORAGE_KEYS.WORKERS, initialWorkers);
+    const raw = loadFromStorage<Worker[]>(STORAGE_KEYS.WORKERS, initialWorkers);
+    let changed = false;
+    const normalized = raw.map((w) => {
+      let cat = w.category;
+      if (!cat || cat === 'Pekerja Utama') {
+        cat = (w.role?.toLowerCase().includes('operator') || w.teamName?.toLowerCase().includes('operator')) ? 'Operator' : 'Pendukung';
+        changed = true;
+      } else if (cat === 'Maintenance') {
+        cat = (w.role?.toLowerCase().includes('driver') || w.role?.toLowerCase().includes('logistik')) ? 'Logistik' : 'Mekanik';
+        changed = true;
+      } else if (cat === 'Pengawas & Pendukung') {
+        cat = (w.role?.toLowerCase().includes('pengawas') || w.role?.toLowerCase().includes('mandor')) ? 'Pengawas' : 'Pendukung';
+        changed = true;
+      }
+      return { ...w, category: cat };
+    });
+    if (changed) {
+      saveToStorage(STORAGE_KEYS.WORKERS, normalized);
+    }
+    return normalized;
   },
 
   saveWorker(worker: Worker): void {
@@ -519,6 +541,58 @@ export const storageService = {
     const filtered = list.filter((t) => t.id !== targetId);
     if (filtered.length !== list.length) {
       saveToStorage(STORAGE_KEYS.DAILY_TARGETS, filtered);
+      return true;
+    }
+    return false;
+  },
+
+  // Work Assignments (Penugasan Kerja: Personel & Alat Berat per No SPK Klien & Blok Kerja)
+  getWorkAssignments(clientId?: string, blockId?: string): WorkAssignment[] {
+    const all = loadFromStorage<WorkAssignment[]>(STORAGE_KEYS.WORK_ASSIGNMENTS, initialWorkAssignments);
+    return all.filter((item) => {
+      if (clientId && clientId !== 'ALL' && item.clientId !== clientId) return false;
+      if (blockId && blockId !== 'ALL' && item.blockId !== 'ALL' && item.blockId !== blockId) return false;
+      return true;
+    }).sort((a, b) => new Date(b.assignedDate || b.createdAt).getTime() - new Date(a.assignedDate || a.createdAt).getTime());
+  },
+
+  getWorkAssignmentById(id: string): WorkAssignment | undefined {
+    const all = loadFromStorage<WorkAssignment[]>(STORAGE_KEYS.WORK_ASSIGNMENTS, initialWorkAssignments);
+    return all.find((a) => a.id === id);
+  },
+
+  saveWorkAssignment(assignment: WorkAssignment): WorkAssignment {
+    const list = loadFromStorage<WorkAssignment[]>(STORAGE_KEYS.WORK_ASSIGNMENTS, initialWorkAssignments);
+    const idx = list.findIndex((a) => a.id === assignment.id);
+    if (idx >= 0) {
+      list[idx] = { ...assignment };
+    } else {
+      list.unshift({ ...assignment });
+    }
+    saveToStorage(STORAGE_KEYS.WORK_ASSIGNMENTS, list);
+
+    // Sync to Worker record
+    if (assignment.workerId) {
+      const workers = this.getWorkers();
+      const wIdx = workers.findIndex((w) => w.id === assignment.workerId);
+      if (wIdx >= 0) {
+        workers[wIdx].assignedClientId = assignment.clientId;
+        workers[wIdx].assignedBlockId = assignment.blockId;
+        if (assignment.equipmentId) {
+          workers[wIdx].assignedEquipmentId = assignment.equipmentId;
+        }
+        this.saveWorker(workers[wIdx]);
+      }
+    }
+
+    return assignment;
+  },
+
+  deleteWorkAssignment(id: string): boolean {
+    const list = loadFromStorage<WorkAssignment[]>(STORAGE_KEYS.WORK_ASSIGNMENTS, initialWorkAssignments);
+    const filtered = list.filter((a) => a.id !== id);
+    if (filtered.length !== list.length) {
+      saveToStorage(STORAGE_KEYS.WORK_ASSIGNMENTS, filtered);
       return true;
     }
     return false;

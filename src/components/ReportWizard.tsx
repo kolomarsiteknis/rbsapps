@@ -320,7 +320,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
       const q = laborSearchQuery.toLowerCase();
       return (
         item.workerName.toLowerCase().includes(q) ||
-        item.role.toLowerCase().includes(q) ||
+        (item.role ? item.role.toLowerCase().includes(q) : false) ||
         (item.teamName && item.teamName.toLowerCase().includes(q))
       );
     }
@@ -1384,8 +1384,18 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                                 <p className="text-xs text-slate-500 font-medium">{worker.role}</p>
                               </div>
 
-                              <span className="text-[10px] uppercase font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
-                                {worker.category}
+                              <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border ${
+                                (worker.category || '').toUpperCase().includes('OPERATOR')
+                                  ? 'bg-amber-100 text-amber-950 border-amber-300'
+                                  : (worker.category || '').toUpperCase().includes('MEKANIK')
+                                  ? 'bg-cyan-100 text-cyan-950 border-cyan-300'
+                                  : (worker.category || '').toUpperCase().includes('LOGISTIK')
+                                  ? 'bg-blue-100 text-blue-950 border-blue-300'
+                                  : (worker.category || '').toUpperCase().includes('PENGAWAS')
+                                  ? 'bg-purple-100 text-purple-950 border-purple-300'
+                                  : 'bg-emerald-100 text-emerald-950 border-emerald-300'
+                              }`}>
+                                {worker.category || 'Operator'}
                               </span>
                             </div>
 

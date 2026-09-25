@@ -25,19 +25,24 @@ import {
   CheckCircle2,
   CheckSquare,
   Square,
-  ListChecks
+  ListChecks,
+  ClipboardList,
+  Briefcase,
+  UserCheck,
+  HardHat
 } from 'lucide-react';
-import { Equipment, Worker, Block, Client, Project, DailyLocationTarget, BlockWorkItem } from '../types';
+import { Equipment, Worker, Block, Client, Project, DailyLocationTarget, BlockWorkItem, WorkAssignment } from '../types';
 import { storageService } from '../services/storageService';
 import { DEFAULT_WORK_ITEMS_CATALOG } from '../data/mockData';
 
 export const MasterDataView: React.FC = () => {
-  const [activeSubTab, setActiveSubTab] = useState<'client' | 'blocks' | 'dailyTargets' | 'equipments' | 'workers'>('client');
+  const [activeSubTab, setActiveSubTab] = useState<'client' | 'blocks' | 'workers' | 'equipments' | 'assignments' | 'dailyTargets'>('client');
   
   const [clients, setClients] = useState<Client[]>(() => storageService.getClients());
   const [blocks, setBlocks] = useState<Block[]>(() => storageService.getBlocks());
   const [equipments, setEquipments] = useState<Equipment[]>(() => storageService.getEquipments());
   const [workers, setWorkers] = useState<Worker[]>(() => storageService.getWorkers());
+  const [workAssignments, setWorkAssignments] = useState<WorkAssignment[]>(() => storageService.getWorkAssignments());
 
   const [selectedClientForBlock, setSelectedClientForBlock] = useState<string>('ALL');
 
@@ -527,6 +532,18 @@ export const MasterDataView: React.FC = () => {
   };
 
   // Equipment State & Filters (Superadmin CRUD Data Alat Berat & Batas BBM)
+  const DEFAULT_EQUIPMENT_TYPES = ['Excavator', 'Bulldozer', 'Dump Truck', 'Motor Grader', 'Vibro Roller'];
+  const [customEquipmentTypes, setCustomEquipmentTypes] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('SL_CUSTOM_EQUIPMENT_TYPES');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [isAddingNewEquipmentType, setIsAddingNewEquipmentType] = useState<boolean>(false);
+  const [newEquipmentTypeInput, setNewEquipmentTypeInput] = useState<string>('');
+
   const [isEquipmentModalOpen, setIsEquipmentModalOpen] = useState(false);
   const [editingEquipmentId, setEditingEquipmentId] = useState<string | null>(null);
   const [equipmentTypeFilter, setEquipmentTypeFilter] = useState<string>('ALL');
@@ -558,13 +575,30 @@ export const MasterDataView: React.FC = () => {
       status: 'Operasional',
       operatorName: '',
     });
+    setIsAddingNewEquipmentType(false);
+    setNewEquipmentTypeInput('');
     setIsEquipmentModalOpen(true);
   };
 
   const handleOpenEditEquipment = (eq: Equipment) => {
     setEditingEquipmentId(eq.id);
     setEquipmentForm({ ...eq });
+    setIsAddingNewEquipmentType(false);
+    setNewEquipmentTypeInput('');
     setIsEquipmentModalOpen(true);
+  };
+
+  const handleAddEquipmentType = () => {
+    const trimmed = newEquipmentTypeInput.trim();
+    if (!trimmed) return;
+    const updated = Array.from(new Set([...customEquipmentTypes, trimmed]));
+    setCustomEquipmentTypes(updated);
+    try {
+      localStorage.setItem('SL_CUSTOM_EQUIPMENT_TYPES', JSON.stringify(updated));
+    } catch {}
+    setEquipmentForm((prev) => ({ ...prev, type: trimmed as any }));
+    setIsAddingNewEquipmentType(false);
+    setNewEquipmentTypeInput('');
   };
 
   const handleSaveEquipment = (e: React.FormEvent) => {
@@ -620,6 +654,152 @@ export const MasterDataView: React.FC = () => {
       eq.status = status;
       storageService.saveEquipment(eq);
       setEquipments([...storageService.getEquipments()]);
+    }
+  };
+
+  // Work Assignment State & Filters (Superadmin Modul 5. Penugasan Kerja)
+  const [isAssignmentModalOpen, setIsAssignmentModalOpen] = useState(false);
+  const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null);
+  const [assignmentToDelete, setAssignmentToDelete] = useState<WorkAssignment | null>(null);
+
+  const [assignmentSearch, setAssignmentSearch] = useState<string>('');
+  const [assignmentClientFilter, setAssignmentClientFilter] = useState<string>('ALL');
+  const [assignmentCategoryFilter, setAssignmentCategoryFilter] = useState<string>('ALL');
+  const [assignmentStatusFilter, setAssignmentStatusFilter] = useState<string>('ALL');
+
+  interface AssignmentFormState {
+    workerCategory: string;
+    workerId: string;
+    workerName: string;
+    equipmentType: string;
+    equipmentId: string;
+    clientId: string;
+    blockId: string;
+    status: 'Aktif' | 'Standby' | 'Selesai' | 'BKO / Bantuan';
+    assignedDate: string;
+    notes: string;
+  }
+
+  const [assignmentForm, setAssignmentForm] = useState<AssignmentFormState>({
+    workerCategory: 'Operator',
+    workerId: '',
+    workerName: '',
+    equipmentType: 'Excavator',
+    equipmentId: '',
+    clientId: 'client-1',
+    blockId: 'ALL',
+    status: 'Aktif',
+    assignedDate: new Date().toISOString().slice(0, 10),
+    notes: '',
+  });
+
+  const handleOpenAddAssignment = () => {
+    setEditingAssignmentId(null);
+    const initialClientId = clients[0]?.id || 'client-1';
+    const operatorWorkers = workers.filter((w) => w.category === 'Operator');
+    const defaultWorker = operatorWorkers[0] || workers[0];
+    const isOp = defaultWorker?.category === 'Operator';
+    const defaultEquip = equipments.find((e) => e.type === 'Excavator') || equipments[0];
+
+    setAssignmentForm({
+      workerCategory: defaultWorker?.category || 'Operator',
+      workerId: defaultWorker?.id || '',
+      workerName: defaultWorker?.name || '',
+      equipmentType: isOp ? (defaultEquip?.type || 'Excavator') : '',
+      equipmentId: isOp ? (defaultEquip?.id || '') : '',
+      clientId: initialClientId,
+      blockId: 'ALL',
+      status: 'Aktif',
+      assignedDate: new Date().toISOString().slice(0, 10),
+      notes: '',
+    });
+    setIsAssignmentModalOpen(true);
+  };
+
+  const handleOpenEditAssignment = (asg: WorkAssignment) => {
+    setEditingAssignmentId(asg.id);
+    const isOp = asg.workerCategory === 'Operator';
+    setAssignmentForm({
+      workerCategory: asg.workerCategory,
+      workerId: asg.workerId,
+      workerName: asg.workerName,
+      equipmentType: isOp ? (asg.equipmentType || 'Excavator') : '',
+      equipmentId: isOp ? (asg.equipmentId || '') : '',
+      clientId: asg.clientId,
+      blockId: asg.blockId || 'ALL',
+      status: asg.status,
+      assignedDate: asg.assignedDate || new Date().toISOString().slice(0, 10),
+      notes: asg.notes || '',
+    });
+    setIsAssignmentModalOpen(true);
+  };
+
+  const handleSaveAssignment = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!assignmentForm.workerId) {
+      alert('Mohon pilih Nama Lengkap Personel yang ditugaskan.');
+      return;
+    }
+
+    const isOperator = assignmentForm.workerCategory === 'Operator';
+
+    if (isOperator && !assignmentForm.equipmentId) {
+      alert('Untuk kategori Operator, wajib memilih Kode Unit Alat Berat.');
+      return;
+    }
+
+    const selectedClient = clients.find((c) => c.id === assignmentForm.clientId) || clients[0];
+    const selectedWorker = workers.find((w) => w.id === assignmentForm.workerId);
+    const selectedEquip = isOperator ? equipments.find((e) => e.id === assignmentForm.equipmentId) : undefined;
+
+    let blockCode = 'Seluruh Blok Kerja pada SPK Terpilih';
+    if (assignmentForm.blockId !== 'ALL') {
+      const bObj = blocks.find((b) => b.id === assignmentForm.blockId);
+      if (bObj) {
+        blockCode = `${bObj.code}${bObj.targetAreaHa ? ` (${bObj.targetAreaHa} Ha)` : ''}`;
+      }
+    }
+
+    const assignmentId = editingAssignmentId || `asg-${Date.now()}`;
+    const newAsg: WorkAssignment = {
+      id: assignmentId,
+      workerId: assignmentForm.workerId,
+      workerName: selectedWorker?.name || assignmentForm.workerName || 'Personel',
+      workerCategory: assignmentForm.workerCategory,
+      equipmentId: isOperator ? (selectedEquip?.id || undefined) : undefined,
+      equipmentType: isOperator ? (selectedEquip?.type || assignmentForm.equipmentType || undefined) : undefined,
+      equipmentName: isOperator ? (selectedEquip?.name || undefined) : undefined,
+      equipmentModel: isOperator ? (selectedEquip?.model || undefined) : undefined,
+      clientId: selectedClient?.id || 'client-1',
+      clientName: selectedClient?.name || 'Klien',
+      contractNumber: selectedClient?.contractNumber || 'Tanpa SPK',
+      blockId: assignmentForm.blockId || 'ALL',
+      blockCode: blockCode,
+      status: assignmentForm.status,
+      assignedDate: assignmentForm.assignedDate,
+      notes: assignmentForm.notes?.trim() || undefined,
+      createdAt: editingAssignmentId 
+        ? (workAssignments.find((a) => a.id === editingAssignmentId)?.createdAt || new Date().toISOString()) 
+        : new Date().toISOString(),
+    };
+
+    storageService.saveWorkAssignment(newAsg);
+    setWorkAssignments([...storageService.getWorkAssignments()]);
+    setWorkers([...storageService.getWorkers()]);
+    setIsAssignmentModalOpen(false);
+    setEditingAssignmentId(null);
+  };
+
+  const handleDeleteAssignmentConfirm = (asg: WorkAssignment) => {
+    setAssignmentToDelete(asg);
+  };
+
+  const executeDeleteAssignment = () => {
+    if (assignmentToDelete) {
+      storageService.deleteWorkAssignment(assignmentToDelete.id);
+      setWorkAssignments([...storageService.getWorkAssignments()]);
+      setWorkers([...storageService.getWorkers()]);
+      setAssignmentToDelete(null);
     }
   };
 
@@ -982,7 +1162,7 @@ export const MasterDataView: React.FC = () => {
 
         {/* Sub-tab navigation */}
         <div className="flex items-center gap-2 overflow-x-auto pt-4 text-xs font-bold">
-          {/* 1. DAFTAR KLIEN PERKEBUNAN */}
+          {/* 1. DAFTAR KLIEN */}
           <button
             onClick={() => setActiveSubTab('client')}
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl transition cursor-pointer whitespace-nowrap ${
@@ -992,10 +1172,10 @@ export const MasterDataView: React.FC = () => {
             }`}
           >
             <Building2 className="w-4 h-4" />
-            <span>1. Daftar Klien Perkebunan ({clients.length} PT)</span>
+            <span>1. Daftar Klien ({clients.length})</span>
           </button>
 
-          {/* 2. DAFTAR LOKASI & ITEM PEKERJAAN */}
+          {/* 2. LOKASI & PEKERJAAN */}
           <button
             onClick={() => setActiveSubTab('blocks')}
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl transition cursor-pointer whitespace-nowrap ${
@@ -1005,7 +1185,7 @@ export const MasterDataView: React.FC = () => {
             }`}
           >
             <Layers className="w-4 h-4" />
-            <span>2. Daftar Lokasi & Item Pekerjaan ({blocks.length})</span>
+            <span>2. Lokasi & Pekerjaan ({blocks.length})</span>
           </button>
 
           {/* 3. TIM & PERSONEL */}
@@ -1034,7 +1214,20 @@ export const MasterDataView: React.FC = () => {
             <span>4. Alat Berat & Batas BBM ({equipments.length})</span>
           </button>
 
-          {/* 5. TARGET HARIAN */}
+          {/* 5. PENUGASAN KERJA */}
+          <button
+            onClick={() => setActiveSubTab('assignments')}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl transition cursor-pointer whitespace-nowrap ${
+              activeSubTab === 'assignments'
+                ? 'bg-amber-500 text-slate-950 shadow font-black'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            <ClipboardList className="w-4 h-4" />
+            <span>5. Penugasan Kerja ({workAssignments.length})</span>
+          </button>
+
+          {/* 6. TARGET HARIAN */}
           <button
             onClick={() => setActiveSubTab('dailyTargets')}
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl transition cursor-pointer whitespace-nowrap ${
@@ -1044,7 +1237,7 @@ export const MasterDataView: React.FC = () => {
             }`}
           >
             <Target className="w-4 h-4" />
-            <span>5. Target Harian ({dailyTargets.length})</span>
+            <span>6. Target Harian ({dailyTargets.length})</span>
           </button>
         </div>
       </div>
@@ -1058,7 +1251,7 @@ export const MasterDataView: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <Building2 className="w-5 h-5 text-amber-600" />
                   <h3 className="text-base font-black text-slate-900 uppercase">
-                    DAFTAR KLIEN PERKEBUNAN ({clients.length} SPK TERDAFTAR)
+                    1. DAFTAR KLIEN ({clients.length} SPK TERDAFTAR)
                   </h3>
                 </div>
                 <p className="text-xs text-slate-600 mt-1">
@@ -1278,7 +1471,7 @@ export const MasterDataView: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <Layers className="w-5 h-5 text-amber-600" />
                   <h3 className="text-base font-black text-slate-900 uppercase">
-                    DAFTAR LOKASI & ITEM PEKERJAAN ({blocks.length} BLOK TERDAFTAR)
+                    2. LOKASI & PEKERJAAN ({blocks.length} BLOK TERDAFTAR)
                   </h3>
                 </div>
                 <p className="text-xs text-slate-600 mt-1">
@@ -1515,6 +1708,341 @@ export const MasterDataView: React.FC = () => {
           )}
         </div>
       )}
+
+      {/* SUB-TAB 5: PENUGASAN KERJA (PERSONEL & ALAT BERAT PER SPK & BLOK KERJA) */}
+      {activeSubTab === 'assignments' && (() => {
+        const filteredAssignments = workAssignments.filter((asg) => {
+          const matchClient = assignmentClientFilter === 'ALL' || asg.clientId === assignmentClientFilter;
+          const matchCategory = assignmentCategoryFilter === 'ALL' || asg.workerCategory === assignmentCategoryFilter;
+          const matchStatus = assignmentStatusFilter === 'ALL' || asg.status === assignmentStatusFilter;
+          const matchSearch =
+            !assignmentSearch ||
+            asg.workerName.toLowerCase().includes(assignmentSearch.toLowerCase()) ||
+            asg.workerCategory.toLowerCase().includes(assignmentSearch.toLowerCase()) ||
+            (asg.equipmentId && asg.equipmentId.toLowerCase().includes(assignmentSearch.toLowerCase())) ||
+            (asg.equipmentName && asg.equipmentName.toLowerCase().includes(assignmentSearch.toLowerCase())) ||
+            asg.contractNumber.toLowerCase().includes(assignmentSearch.toLowerCase()) ||
+            asg.clientName.toLowerCase().includes(assignmentSearch.toLowerCase()) ||
+            asg.blockCode.toLowerCase().includes(assignmentSearch.toLowerCase());
+
+          return matchClient && matchCategory && matchStatus && matchSearch;
+        });
+
+        // Metrics calculations
+        const totalAssignments = workAssignments.length;
+        const activeAssignments = workAssignments.filter((a) => a.status === 'Aktif').length;
+        const assignedWorkersCount = new Set(workAssignments.filter((a) => a.status === 'Aktif').map((a) => a.workerId)).size;
+        const assignedEquipmentsCount = new Set(workAssignments.filter((a) => a.status === 'Aktif' && a.equipmentId).map((a) => a.equipmentId)).size;
+
+        return (
+          <div className="space-y-4">
+            {/* Header Card Sub-Tab 5 */}
+            <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-200 space-y-4">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <ClipboardList className="w-5 h-5 text-amber-600" />
+                    <h3 className="text-base font-black text-slate-900 uppercase">
+                      5. PENUGASAN KERJA ({workAssignments.length} DATA AKTIF)
+                    </h3>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1 max-w-2xl">
+                    Matriks ploting resmi penugasan personel dan armada alat berat berdasarkan Nomor Kontrak / SPK Klien serta lokasi blok kerja operasional.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={handleOpenAddAssignment}
+                    className="flex items-center gap-1.5 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs shadow-md transition cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>+ Tambah Penugasan Kerja Baru</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick Metrics Bar */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-slate-100">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Total Penugasan</span>
+                  <div className="text-xl font-black text-slate-900 mt-0.5">{totalAssignments}</div>
+                  <span className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-1">
+                    <ClipboardList className="w-3 h-3 text-amber-600" /> Seluruh Riwayat
+                  </span>
+                </div>
+
+                <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3">
+                  <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider block">Penugasan Aktif</span>
+                  <div className="text-xl font-black text-amber-950 mt-0.5">{activeAssignments}</div>
+                  <span className="text-[10px] text-amber-700 mt-0.5 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Sedang Bertugas
+                  </span>
+                </div>
+
+                <div className="bg-sky-50/70 border border-sky-200 rounded-xl p-3">
+                  <span className="text-[10px] font-bold text-sky-800 uppercase tracking-wider block">Personel Lapangan</span>
+                  <div className="text-xl font-black text-sky-950 mt-0.5">{assignedWorkersCount}</div>
+                  <span className="text-[10px] text-sky-700 mt-0.5 flex items-center gap-1">
+                    <Users className="w-3 h-3 text-sky-600" /> Terploting di Lokasi
+                  </span>
+                </div>
+
+                <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3">
+                  <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">Armada Alat Berat</span>
+                  <div className="text-xl font-black text-emerald-950 mt-0.5">{assignedEquipmentsCount}</div>
+                  <span className="text-[10px] text-emerald-700 mt-0.5 flex items-center gap-1">
+                    <Truck className="w-3 h-3 text-emerald-600" /> Unit Bekerja
+                  </span>
+                </div>
+              </div>
+
+              {/* Filters & Search Control */}
+              <div className="flex flex-col sm:flex-row flex-wrap items-center justify-between gap-2.5 pt-3 border-t border-slate-100">
+                <div className="flex flex-wrap items-center gap-2 flex-1 w-full sm:w-auto">
+                  {/* Search box */}
+                  <div className="relative min-w-[200px] flex-1 sm:max-w-xs">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="Cari personil, kode alat, SPK, blok..."
+                      value={assignmentSearch}
+                      onChange={(e) => setAssignmentSearch(e.target.value)}
+                      className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    />
+                  </div>
+
+                  {/* Klien / SPK Filter */}
+                  <select
+                    value={assignmentClientFilter}
+                    onChange={(e) => setAssignmentClientFilter(e.target.value)}
+                    className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer"
+                  >
+                    <option value="ALL">Semua Klien SPK</option>
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({c.contractNumber || 'Tanpa SPK'})
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* Kategori Personel Filter */}
+                  <select
+                    value={assignmentCategoryFilter}
+                    onChange={(e) => setAssignmentCategoryFilter(e.target.value)}
+                    className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer"
+                  >
+                    <option value="ALL">Semua Kategori</option>
+                    <option value="Operator">Operator</option>
+                    <option value="Mekanik">Mekanik</option>
+                    <option value="Pengawas">Pengawas</option>
+                    <option value="Site Manager">Site Manager</option>
+                    <option value="Logistik">Logistik</option>
+                    <option value="Pendukung">Pendukung</option>
+                    {customWorkerCategories
+                      .filter((c) => !['Operator', 'Mekanik', 'Logistik', 'Pendukung', 'Pengawas', 'Site Manager'].includes(c))
+                      .map((c) => (
+                        <option key={c} value={c}>
+                          {c} (Kustom)
+                        </option>
+                      ))}
+                  </select>
+
+                  {/* Status Penugasan Filter */}
+                  <select
+                    value={assignmentStatusFilter}
+                    onChange={(e) => setAssignmentStatusFilter(e.target.value)}
+                    className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer"
+                  >
+                    <option value="ALL">Semua Status</option>
+                    <option value="Aktif">Aktif</option>
+                    <option value="Standby">Standby</option>
+                    <option value="BKO / Bantuan">BKO / Bantuan</option>
+                    <option value="Selesai">Selesai</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
+                  <span>Menampilkan {filteredAssignments.length} dari {workAssignments.length} penugasan</span>
+                  {(assignmentSearch || assignmentClientFilter !== 'ALL' || assignmentCategoryFilter !== 'ALL' || assignmentStatusFilter !== 'ALL') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAssignmentSearch('');
+                        setAssignmentClientFilter('ALL');
+                        setAssignmentCategoryFilter('ALL');
+                        setAssignmentStatusFilter('ALL');
+                      }}
+                      className="text-amber-700 hover:underline cursor-pointer"
+                    >
+                      Reset Filter
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Assignments Table & Card View */}
+            {filteredAssignments.length === 0 ? (
+              <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 space-y-3">
+                <ClipboardList className="w-10 h-10 text-slate-300 mx-auto" />
+                <h4 className="font-black text-slate-800 text-sm">Tidak Ada Data Penugasan Kerja</h4>
+                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                  Belum ada penugasan personel dan alat berat yang cocok dengan kriteria filter saat ini.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleOpenAddAssignment}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs cursor-pointer shadow-xs transition"
+                >
+                  + Tambah Penugasan Baru
+                </button>
+              </div>
+            ) : (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-900 text-white uppercase text-[10px] tracking-wider">
+                      <tr>
+                        <th className="py-3 px-3.5 text-center w-12">No</th>
+                        <th className="py-3 px-3.5">Personel & Kategori</th>
+                        <th className="py-3 px-3.5">Alokasi Unit Alat Berat</th>
+                        <th className="py-3 px-3.5">No. Kontrak / SPK & Klien</th>
+                        <th className="py-3 px-3.5">Lokasi Blok Kerja</th>
+                        <th className="py-3 px-3.5 text-center">Status & Tanggal</th>
+                        <th className="py-3 px-3.5 text-right w-28">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {filteredAssignments.map((asg, idx) => {
+                        return (
+                          <tr key={asg.id} className="hover:bg-amber-50/30 transition">
+                            {/* No */}
+                            <td className="py-3 px-3.5 text-center font-mono font-bold text-slate-400">
+                              {idx + 1}
+                            </td>
+
+                            {/* Personel */}
+                            <td className="py-3 px-3.5">
+                              <div className="space-y-1">
+                                <div className="font-black text-slate-900 text-xs sm:text-sm flex items-center gap-1.5">
+                                  <span>{asg.workerName}</span>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                    asg.workerCategory === 'Operator'
+                                      ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                      : asg.workerCategory === 'Pengawas' || asg.workerCategory === 'Site Manager'
+                                      ? 'bg-sky-100 text-sky-900 border border-sky-300'
+                                      : asg.workerCategory === 'Mekanik'
+                                      ? 'bg-indigo-100 text-indigo-900 border border-indigo-300'
+                                      : 'bg-slate-100 text-slate-800 border border-slate-200'
+                                  }`}>
+                                    {asg.workerCategory}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* Unit Alat Berat */}
+                            <td className="py-3 px-3.5">
+                              {asg.equipmentId ? (
+                                <div className="space-y-0.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-black font-mono text-[10px]">
+                                      {asg.equipmentId}
+                                    </span>
+                                    <span className="font-bold text-slate-900 text-xs">
+                                      {asg.equipmentName || asg.equipmentType}
+                                    </span>
+                                  </div>
+                                  <div className="text-[11px] text-slate-500 font-medium">
+                                    Tipe: {asg.equipmentType} {asg.equipmentModel ? `• Model: ${asg.equipmentModel}` : ''}
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-slate-400 font-medium text-xs">-</span>
+                              )}
+                            </td>
+
+                            {/* SPK & Klien */}
+                            <td className="py-3 px-3.5">
+                              <div className="space-y-0.5">
+                                <div className="font-mono font-black text-slate-900 text-xs">
+                                  {asg.contractNumber}
+                                </div>
+                                <div className="text-[11px] font-bold text-amber-900 flex items-center gap-1">
+                                  <Building2 className="w-3 h-3 text-amber-600" />
+                                  <span>{asg.clientName}</span>
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* Blok Kerja */}
+                            <td className="py-3 px-3.5">
+                              <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold ${
+                                asg.blockId === 'ALL'
+                                  ? 'bg-amber-100 text-amber-950 border border-amber-300'
+                                  : 'bg-slate-100 text-slate-800 border border-slate-300'
+                              }`}>
+                                <MapPin className="w-3 h-3 text-slate-500" />
+                                <span>{asg.blockCode}</span>
+                              </span>
+                            </td>
+
+                            {/* Tanggal & Status */}
+                            <td className="py-3 px-3.5 text-center">
+                              <div className="space-y-1">
+                                <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                  asg.status === 'Aktif'
+                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                    : asg.status === 'Standby'
+                                    ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                    : asg.status === 'BKO / Bantuan'
+                                    ? 'bg-sky-100 text-sky-800 border border-sky-300'
+                                    : 'bg-slate-100 text-slate-600 border border-slate-300'
+                                }`}>
+                                  {asg.status}
+                                </span>
+                                <div className="text-[10px] text-slate-500 font-mono">
+                                  Mulai: {asg.assignedDate}
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* Aksi */}
+                            <td className="py-3 px-3.5 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditAssignment(asg)}
+                                  className="p-1.5 bg-slate-100 hover:bg-amber-100 text-slate-700 hover:text-amber-900 rounded-lg transition cursor-pointer"
+                                  title="Edit Penugasan Kerja"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteAssignmentConfirm(asg)}
+                                  className="p-1.5 bg-slate-100 hover:bg-rose-100 text-slate-400 hover:text-rose-600 rounded-lg transition cursor-pointer"
+                                  title="Hapus Penugasan Kerja"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* SUB-TAB: TARGET HARIAN (HA) PER HARI PER LOKASI KERJA (CRUD SUPERADMIN / DIREKTUR) */}
       {activeSubTab === 'dailyTargets' && (() => {
@@ -1986,11 +2514,18 @@ export const MasterDataView: React.FC = () => {
                 className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500"
               >
                 <option value="ALL">Semua Jenis Alat</option>
-                <option value="Excavator">Excavator</option>
-                <option value="Bulldozer">Bulldozer</option>
-                <option value="Dump Truck">Dump Truck</option>
-                <option value="Motor Grader">Motor Grader</option>
-                <option value="Vibro Roller">Vibro Roller</option>
+                {DEFAULT_EQUIPMENT_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+                {customEquipmentTypes
+                  .filter((t) => !DEFAULT_EQUIPMENT_TYPES.includes(t))
+                  .map((t) => (
+                    <option key={t} value={t}>
+                      {t} (Kustom)
+                    </option>
+                  ))}
               </select>
 
               {/* Status Filter */}
@@ -2188,19 +2723,6 @@ export const MasterDataView: React.FC = () => {
                   ))}
               </select>
 
-              {/* Filter Tim */}
-              <select
-                value={selectedTeamForWorker}
-                onChange={(e) => setSelectedTeamForWorker(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500"
-              >
-                <option value="ALL">Semua Tim Kerja</option>
-                <option value="Tim Operator Alat Berat">Tim Operator Alat Berat</option>
-                <option value="Tim Rintis & Imas Kayu">Tim Rintis & Imas Kayu</option>
-                <option value="Tim Mekanik Maintenance">Tim Mekanik Maintenance</option>
-                <option value="Tim Pengawas & K3">Tim Pengawas & K3</option>
-              </select>
-
               {/* Tambah Personil Baru */}
               <button
                 type="button"
@@ -2260,8 +2782,20 @@ export const MasterDataView: React.FC = () => {
                     <div>
                       {/* Category & Status */}
                       <div className="flex items-center justify-between gap-2 mb-2">
-                        <span className="text-[10px] uppercase font-black text-amber-900 bg-amber-100 px-2 py-0.5 rounded border border-amber-300 tracking-wider">
-                          {w.category}
+                        <span className={`text-[10px] uppercase font-black px-2 py-0.5 rounded border tracking-wider ${
+                          (w.category || '').toUpperCase().includes('OPERATOR')
+                            ? 'bg-amber-100 text-amber-950 border-amber-300'
+                            : (w.category || '').toUpperCase().includes('MEKANIK')
+                            ? 'bg-cyan-100 text-cyan-950 border-cyan-300'
+                            : (w.category || '').toUpperCase().includes('LOGISTIK')
+                            ? 'bg-blue-100 text-blue-950 border-blue-300'
+                            : (w.category || '').toUpperCase().includes('PENGAWAS')
+                            ? 'bg-purple-100 text-purple-950 border-purple-300'
+                            : (w.category || '').toUpperCase().includes('PENDUKUNG') || (w.category || '').toUpperCase().includes('RINTIS')
+                            ? 'bg-emerald-100 text-emerald-950 border-emerald-300'
+                            : 'bg-slate-100 text-slate-800 border-slate-300'
+                        }`}>
+                          {w.category || (w.role?.toLowerCase().includes('operator') ? 'Operator' : 'Personil')}
                         </span>
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
                           {w.status}
@@ -2459,32 +2993,18 @@ export const MasterDataView: React.FC = () => {
                 </div>
               </div>
 
-              {/* 6 & 7. KONTAK PERSON (PIC) & NO. HP / TELEPON */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-800 mb-1">
-                    Kontak Person (PIC):
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Contoh: Ir. Bambang Trihatmojo"
-                    value={clientForm.contactPerson}
-                    onChange={(e) => setClientForm({ ...clientForm, contactPerson: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-800 mb-1">
-                    No. HP / Telepon:
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Contoh: +62 812-3456-7890"
-                    value={clientForm.phone}
-                    onChange={(e) => setClientForm({ ...clientForm, phone: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono text-sm text-slate-900 focus:outline-none focus:border-amber-500"
-                  />
-                </div>
+              {/* 6. NO. HP / TELEPON */}
+              <div>
+                <label className="block font-bold text-slate-800 mb-1">
+                  No. HP / Telepon:
+                </label>
+                <input
+                  type="text"
+                  placeholder="Contoh: +62 812-3456-7890"
+                  value={clientForm.phone}
+                  onChange={(e) => setClientForm({ ...clientForm, phone: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono text-sm text-slate-900 focus:outline-none focus:border-amber-500"
+                />
               </div>
 
               {/* 8 & STATUS. EMAIL & STATUS KONTRAK */}
@@ -3401,22 +3921,94 @@ export const MasterDataView: React.FC = () => {
                   <p className="text-[10px] text-slate-400 mt-0.5">Identitas unik unit alat di lapangan.</p>
                 </div>
 
-                {/* Jenis / Tipe Alat */}
+                {/* Jenis / Tipe Alat Berat - Bisa tambah jenis baru */}
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Jenis / Tipe Alat Berat <span className="text-rose-500">*</span>
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-bold text-slate-700">
+                      Jenis / Tipe Alat Berat <span className="text-rose-500">*</span>
+                    </label>
+                    {!isAddingNewEquipmentType && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsAddingNewEquipmentType(true);
+                          setNewEquipmentTypeInput('');
+                        }}
+                        className="text-[10px] font-bold text-amber-700 hover:text-amber-900 hover:underline cursor-pointer"
+                      >
+                        + Tambah Tipe Baru
+                      </button>
+                    )}
+                  </div>
+
                   <select
-                    value={equipmentForm.type || 'Excavator'}
-                    onChange={(e) => setEquipmentForm({ ...equipmentForm, type: e.target.value as any })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-xl font-bold bg-white"
+                    value={isAddingNewEquipmentType ? '__NEW__' : (equipmentForm.type || 'Excavator')}
+                    onChange={(e) => {
+                      if (e.target.value === '__NEW__') {
+                        setIsAddingNewEquipmentType(true);
+                        setNewEquipmentTypeInput('');
+                      } else {
+                        setIsAddingNewEquipmentType(false);
+                        setEquipmentForm({ ...equipmentForm, type: e.target.value as any });
+                      }
+                    }}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl font-bold bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer"
                   >
-                    <option value="Excavator">Excavator</option>
-                    <option value="Bulldozer">Bulldozer</option>
-                    <option value="Dump Truck">Dump Truck</option>
-                    <option value="Motor Grader">Motor Grader</option>
-                    <option value="Vibro Roller">Vibro Roller</option>
+                    {DEFAULT_EQUIPMENT_TYPES.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                    {customEquipmentTypes
+                      .filter((t) => !DEFAULT_EQUIPMENT_TYPES.includes(t))
+                      .map((t) => (
+                        <option key={t} value={t}>
+                          {t} (Kustom)
+                        </option>
+                      ))}
+                    <option value="__NEW__">+ Tambah Tipe Baru</option>
                   </select>
+
+                  {/* Input Tambah Tipe Alat Baru */}
+                  {isAddingNewEquipmentType && (
+                    <div className="mt-2 p-2 bg-amber-50 rounded-lg border border-amber-300 space-y-1.5">
+                      <label className="block text-[10px] font-bold text-amber-900 uppercase">
+                        + Tambah Jenis / Tipe Alat Baru:
+                      </label>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          placeholder="Ketik tipe alat baru (misal: Wheel Loader, Backhoe)..."
+                          value={newEquipmentTypeInput}
+                          onChange={(e) => setNewEquipmentTypeInput(e.target.value)}
+                          className="flex-1 px-2.5 py-1.5 border border-slate-300 rounded-md text-xs font-bold text-slate-900 bg-white focus:outline-none focus:border-amber-500"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleAddEquipmentType();
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddEquipmentType}
+                          className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-md shadow-2xs transition cursor-pointer"
+                        >
+                          Tambah
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsAddingNewEquipmentType(false);
+                            setNewEquipmentTypeInput('');
+                          }}
+                          className="px-2 py-1.5 text-slate-500 hover:text-slate-700 text-xs font-bold cursor-pointer"
+                        >
+                          Batal
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -3461,41 +4053,18 @@ export const MasterDataView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* Operator Penanggungjawab */}
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Operator Penanggungjawab</label>
-                  <input
-                    type="text"
-                    placeholder="Nama Operator Unit"
-                    value={equipmentForm.operatorName || ''}
-                    onChange={(e) => setEquipmentForm({ ...equipmentForm, operatorName: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium"
-                    list="workers-list"
-                  />
-                  <datalist id="workers-list">
-                    {workers.map((w) => (
-                      <option key={w.id} value={w.name}>
-                        {w.role} ({w.teamName || 'Tim Lapangan'})
-                      </option>
-                    ))}
-                  </datalist>
-                  <span className="text-[10px] text-slate-400">Bisa ketik nama atau pilih dari personil.</span>
-                </div>
-
-                {/* HM Berjalan Saat Ini */}
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">HM Berjalan (Jam Mesin Saat Ini)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    placeholder="0"
-                    value={equipmentForm.currentHm ?? 0}
-                    onChange={(e) => setEquipmentForm({ ...equipmentForm, currentHm: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono font-bold"
-                  />
-                  <span className="text-[10px] text-slate-400">Terakumulasi otomatis dari form harian.</span>
-                </div>
+              {/* HM Berjalan Saat Ini (Operator Penanggungjawab Dihapus Sesuai Permintaan) */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">HM Berjalan (Jam Mesin Saat Ini)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  placeholder="0"
+                  value={equipmentForm.currentHm ?? 0}
+                  onChange={(e) => setEquipmentForm({ ...equipmentForm, currentHm: parseFloat(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono font-bold"
+                />
+                <span className="text-[10px] text-slate-400">Terakumulasi otomatis dari form harian.</span>
               </div>
 
               {/* BATAS STANDAR EFISIENSI BBM (L/HM) - FITUR UTAMA */}
@@ -3938,6 +4507,452 @@ export const MasterDataView: React.FC = () => {
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>Ya, Hapus Target Harian</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: TAMBAH / EDIT PENUGASAN KERJA (OPERASIONAL LAPANGAN) */}
+      {isAssignmentModalOpen && (() => {
+        const isOperator = assignmentForm.workerCategory === 'Operator';
+
+        const filteredWorkersForModal = workers.filter(
+          (w) => assignmentForm.workerCategory === 'ALL' || w.category === assignmentForm.workerCategory
+        );
+
+        const matchedEquipsForModal = equipments.filter(
+          (e) => e.type === assignmentForm.equipmentType
+        );
+
+        const selectedWorkerInModal = workers.find((w) => w.id === assignmentForm.workerId);
+        const selectedEquipInModal = isOperator ? equipments.find((e) => e.id === assignmentForm.equipmentId) : undefined;
+        const selectedClientInModal = clients.find((c) => c.id === assignmentForm.clientId);
+        const availableBlocksInModal = blocks.filter((b) => b.clientId === assignmentForm.clientId);
+
+        return (
+          <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+            <div className="bg-white rounded-3xl p-5 sm:p-7 max-w-2xl w-full shadow-2xl space-y-4 my-auto max-h-[94vh] overflow-y-auto border border-slate-200">
+              {/* Modal Header */}
+              <div className="border-b border-slate-100 pb-3 flex items-start justify-between">
+                <div>
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black uppercase tracking-wider mb-1">
+                    <ClipboardList className="w-3 h-3 text-amber-700" />
+                    <span>Modul 5 • Penugasan Kerja Operasional</span>
+                  </div>
+                  <h3 className="text-base sm:text-lg font-black text-slate-900 uppercase flex items-center gap-2">
+                    {editingAssignmentId ? 'Edit Data Penugasan Kerja' : '+ Tambah Penugasan Kerja Baru'}
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Alokasikan personel dan alat berat ke SPK klien dan blok kerja lapangan secara resmi.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsAssignmentModalOpen(false)}
+                  className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 font-bold transition cursor-pointer shrink-0"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveAssignment} className="space-y-4 text-xs">
+                {/* 1. MEMILIH KATEGORI PERSONIL & MEMILIH NAMA LENGKAP PERSONIL */}
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-300 space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                    <label className="font-black text-slate-900 text-xs uppercase tracking-wide flex items-center gap-1.5">
+                      <Users className="w-4 h-4 text-amber-600" />
+                      <span>1. Data Personel & Kategori Penugasan</span>
+                      <span className="text-rose-600">*</span>
+                    </label>
+                    <span className="text-[10px] font-bold text-slate-500">
+                      Tersedia: {filteredWorkersForModal.length} Personel
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Pilih Kategori Personil */}
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">
+                        Kategori Personel <span className="text-rose-600">*</span>
+                      </label>
+                      <select
+                        value={assignmentForm.workerCategory}
+                        onChange={(e) => {
+                          const newCat = e.target.value;
+                          const filtered = workers.filter((w) => w.category === newCat);
+                          const firstW = filtered[0];
+                          const isOp = newCat === 'Operator';
+                          const defaultEquip = equipments.find((eq) => eq.type === 'Excavator') || equipments[0];
+
+                          setAssignmentForm({
+                            ...assignmentForm,
+                            workerCategory: newCat,
+                            workerId: firstW?.id || '',
+                            workerName: firstW?.name || '',
+                            equipmentId: isOp ? (assignmentForm.equipmentId || defaultEquip?.id || '') : '',
+                            equipmentType: isOp ? (assignmentForm.equipmentType || defaultEquip?.type || 'Excavator') : '',
+                          });
+                        }}
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-bold text-slate-900 focus:outline-none focus:border-amber-500 cursor-pointer"
+                      >
+                        <option value="Operator">Operator</option>
+                        <option value="Mekanik">Mekanik</option>
+                        <option value="Pengawas">Pengawas</option>
+                        <option value="Site Manager">Site Manager</option>
+                        <option value="Logistik">Logistik</option>
+                        <option value="Pendukung">Pendukung</option>
+                        {customWorkerCategories
+                          .filter((c) => !['Operator', 'Mekanik', 'Logistik', 'Pendukung', 'Pengawas', 'Site Manager'].includes(c))
+                          .map((c) => (
+                            <option key={c} value={c}>
+                              {c} (Kustom)
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+
+                    {/* Pilih Nama Lengkap Personil */}
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">
+                        Nama Lengkap Personel <span className="text-rose-600">*</span>
+                      </label>
+                      <select
+                        required
+                        value={assignmentForm.workerId}
+                        onChange={(e) => {
+                          const wId = e.target.value;
+                          const wObj = workers.find((w) => w.id === wId);
+                          setAssignmentForm({
+                            ...assignmentForm,
+                            workerId: wId,
+                            workerName: wObj?.name || '',
+                          });
+                        }}
+                        className="w-full px-3 py-2 bg-white border-2 border-amber-400 rounded-lg font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer shadow-2xs"
+                      >
+                        <option value="">-- Pilih Nama Personel ({filteredWorkersForModal.length}) --</option>
+                        {filteredWorkersForModal.map((w) => (
+                          <option key={w.id} value={w.id}>
+                            {w.name} ({w.role || w.category})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Preview Detail Personil Terpilih */}
+                  {selectedWorkerInModal && (
+                    <div className="p-2.5 bg-amber-50/70 border border-amber-200 rounded-lg text-xs text-amber-950 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-900">{selectedWorkerInModal.name}</span>
+                        <span className="text-slate-500 text-[11px]">({selectedWorkerInModal.role || selectedWorkerInModal.category})</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-[11px] text-slate-600">
+                        <span>📱 {selectedWorkerInModal.phone}</span>
+                        <span>👥 {selectedWorkerInModal.teamName || 'Tim Lapangan'}</span>
+                        <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
+                          {selectedWorkerInModal.status}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. ALOKASI UNIT ALAT BERAT OPERASIONAL (HANYA OPERATOR YANG MEMILIH, DI LUAR OPERATOR DINONAKTIFKAN TANPA PEMBERITAHUAN) */}
+                <div className={`p-4 rounded-xl border space-y-3 transition ${
+                  isOperator ? 'bg-slate-50 border-slate-300' : 'bg-slate-100/70 border-slate-200'
+                }`}>
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                    <label className="font-black text-slate-900 text-xs uppercase tracking-wide flex items-center gap-1.5">
+                      <Truck className={`w-4 h-4 ${isOperator ? 'text-amber-600' : 'text-slate-400'}`} />
+                      <span>2. Alokasi Unit Alat Berat Operasional</span>
+                      {isOperator && <span className="text-rose-600">*</span>}
+                    </label>
+                    <span className="text-[10px] font-bold text-slate-500">
+                      {isOperator ? `Tersedia: ${matchedEquipsForModal.length} Unit` : 'Dinonaktifkan (Khusus Operator)'}
+                    </span>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Memilih Jenis / Tipe Alat Berat */}
+                      <div>
+                        <label className={`block font-bold mb-1 ${isOperator ? 'text-slate-700' : 'text-slate-400'}`}>
+                          Jenis / Tipe Alat Berat {isOperator && <span className="text-rose-600">*</span>}
+                        </label>
+                        <select
+                          disabled={!isOperator}
+                          value={isOperator ? (assignmentForm.equipmentType || 'Excavator') : ''}
+                          onChange={(e) => {
+                            const newType = e.target.value;
+                            const matched = equipments.filter((eq) => eq.type === newType);
+                            setAssignmentForm({
+                              ...assignmentForm,
+                              equipmentType: newType,
+                              equipmentId: matched[0]?.id || '',
+                            });
+                          }}
+                          className={`w-full px-3 py-2 border rounded-lg font-bold text-xs ${
+                            isOperator
+                              ? 'bg-white border-slate-300 text-slate-900 focus:outline-none focus:border-amber-500 cursor-pointer'
+                              : 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                          }`}
+                        >
+                          <option value="">{isOperator ? '-- Pilih Tipe Alat --' : '-- Dinonaktifkan --'}</option>
+                          {isOperator && DEFAULT_EQUIPMENT_TYPES.map((t) => (
+                            <option key={t} value={t}>
+                              {t}
+                            </option>
+                          ))}
+                          {isOperator && customEquipmentTypes
+                            .filter((t) => !DEFAULT_EQUIPMENT_TYPES.includes(t))
+                            .map((t) => (
+                              <option key={t} value={t}>
+                                {t} (Kustom)
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+
+                      {/* Memilih Kode Unit Alat */}
+                      <div>
+                        <label className={`block font-bold mb-1 ${isOperator ? 'text-slate-700' : 'text-slate-400'}`}>
+                          Kode Unit Alat Berat {isOperator && <span className="text-rose-600">*</span>}
+                        </label>
+                        <select
+                          disabled={!isOperator}
+                          required={isOperator}
+                          value={isOperator ? assignmentForm.equipmentId : ''}
+                          onChange={(e) => setAssignmentForm({ ...assignmentForm, equipmentId: e.target.value })}
+                          className={`w-full px-3 py-2 border-2 rounded-lg font-bold text-xs font-mono ${
+                            isOperator
+                              ? 'bg-white border-amber-400 text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer shadow-2xs'
+                              : 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                          }`}
+                        >
+                          <option value="">{isOperator ? `-- Pilih Kode Unit Alat (${matchedEquipsForModal.length}) --` : '-- Dinonaktifkan --'}</option>
+                          {isOperator && matchedEquipsForModal.map((eq) => (
+                            <option key={eq.id} value={eq.id}>
+                              {eq.id} - {eq.name} ({eq.status})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Menampilkan Nama Unit & Model (Hanya untuk Operator yang memilih unit) */}
+                    {isOperator && selectedEquipInModal && (
+                      <div className="p-3 bg-amber-50/70 border border-amber-300 rounded-lg text-xs space-y-1">
+                        <div className="flex items-center justify-between font-bold text-slate-900">
+                          <span className="flex items-center gap-1.5">
+                            <Truck className="w-3.5 h-3.5 text-amber-700" />
+                            <span>Nama Unit & Merk: {selectedEquipInModal.name}</span>
+                          </span>
+                          <span className="font-mono text-amber-950 font-black px-1.5 py-0.5 rounded bg-amber-200 text-[10px]">
+                            {selectedEquipInModal.id}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px] text-slate-600 pt-1 border-t border-amber-200">
+                          <div>Model: <strong className="text-slate-800">{selectedEquipInModal.model || '-'}</strong></div>
+                          <div>HM Saat Ini: <strong className="font-mono text-slate-800">{selectedEquipInModal.currentHm} HM</strong></div>
+                          <div>Status: <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">{selectedEquipInModal.status}</span></div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 3. PENUGASAN LOKASI KERJA (NO KONTRAK/SPK & BLOK KERJA) - MIRROR GAMBAR */}
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-300 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                    <label className="block font-black text-slate-900 text-xs uppercase tracking-wide flex items-center gap-1.5">
+                      <FileText className="w-4 h-4 text-amber-600" />
+                      Penugasan Lokasi Kerja (NO KONTRAK/SPK) <span className="text-rose-600">*</span>
+                    </label>
+                    <span className="text-[10px] font-bold text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200 self-start sm:self-auto">
+                      PILIHAN DROPDOWN • AMBIL DATA DARI DAFTAR KLIEN
+                    </span>
+                  </div>
+
+                  {/* Dropdown No Kontrak / SPK & Nama Klien */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      No Kontrak / SPK & Nama Klien:
+                    </label>
+                    <select
+                      value={assignmentForm.clientId}
+                      onChange={(e) => {
+                        const newClient = e.target.value;
+                        setAssignmentForm({
+                          ...assignmentForm,
+                          clientId: newClient,
+                          blockId: 'ALL',
+                        });
+                      }}
+                      className="w-full px-3.5 py-2.5 bg-white border-2 border-amber-400 rounded-lg font-mono font-bold text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer shadow-2xs"
+                    >
+                      {clients.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.contractNumber || 'Tanpa SPK'} - {c.name}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Contoh: &quot;045/SPK-LC/PTA/VI/2026 - PT. A&quot;
+                    </p>
+                  </div>
+
+                  {/* Dropdown Lokasi Blok Kerja */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      Lokasi Blok Kerja:
+                    </label>
+                    <select
+                      value={assignmentForm.blockId}
+                      onChange={(e) => setAssignmentForm({ ...assignmentForm, blockId: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-300 bg-white rounded-lg font-bold text-xs text-slate-900 focus:outline-none focus:border-amber-500 cursor-pointer"
+                    >
+                      <option value="ALL">Seluruh Blok Kerja pada SPK Terpilih</option>
+                      {availableBlocksInModal.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.code} ({b.targetAreaHa ? `${b.targetAreaHa} Ha` : 'Luas belum diatur'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Info Perusahaan Klien */}
+                  {selectedClientInModal && (
+                    <div className="p-2.5 bg-white rounded-lg border border-slate-200 text-[11px] text-slate-600 flex flex-wrap items-center justify-between gap-1">
+                      <div className="font-bold text-slate-900 flex items-center gap-1">
+                        <Building2 className="w-3.5 h-3.5 text-amber-600" />
+                        <span>{selectedClientInModal.fullCompanyName} ({selectedClientInModal.name})</span>
+                      </div>
+                      <div>
+                        <span>{selectedClientInModal.location} • Luas: {selectedClientInModal.totalAreaHa} Ha</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 4. STATUS & TANGGAL PENUGASAN */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">
+                      Tanggal Mulai Penugasan <span className="text-rose-600">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={assignmentForm.assignedDate}
+                      onChange={(e) => setAssignmentForm({ ...assignmentForm, assignedDate: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-bold text-xs text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">
+                      Status Penugasan <span className="text-rose-600">*</span>
+                    </label>
+                    <select
+                      value={assignmentForm.status}
+                      onChange={(e) => setAssignmentForm({ ...assignmentForm, status: e.target.value as any })}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-bold text-xs text-slate-900 cursor-pointer"
+                    >
+                      <option value="Aktif">Aktif Bertugas di Lokasi</option>
+                      <option value="Standby">Standby (Siaga)</option>
+                      <option value="BKO / Bantuan">BKO / Bantuan Sementara</option>
+                      <option value="Selesai">Penugasan Selesai</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Catatan / Keterangan Penugasan */}
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Catatan / Instruksi Kerja (Opsional):
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="Contoh: Fokus perabasan semak belukar dan imas kayu di sisi timur kanal..."
+                    value={assignmentForm.notes}
+                    onChange={(e) => setAssignmentForm({ ...assignmentForm, notes: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs"
+                  />
+                </div>
+
+                {/* Form Buttons */}
+                <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsAssignmentModalOpen(false)}
+                    className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-xl font-bold cursor-pointer transition"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-2.5 text-xs bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl shadow-md cursor-pointer transition flex items-center gap-1.5"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>{editingAssignmentId ? 'Simpan Perubahan Penugasan' : 'Simpan Data Penugasan Kerja'}</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* MODAL: KONFIRMASI HAPUS PENUGASAN KERJA */}
+      {assignmentToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="p-3 bg-rose-50 rounded-2xl border border-rose-200">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-black text-slate-900 text-base">Hapus Penugasan Kerja?</h3>
+                <span className="text-xs text-slate-500">Tindakan ini akan mencabut alokasi penugasan.</span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1.5">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Personel:</span>
+                <strong className="text-slate-900">{assignmentToDelete.workerName} ({assignmentToDelete.workerCategory})</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Unit Alat:</span>
+                <strong className="text-slate-900">{assignmentToDelete.equipmentId ? `${assignmentToDelete.equipmentId} - ${assignmentToDelete.equipmentName}` : 'Supervisi (Tanpa Unit)'}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">No. SPK & Klien:</span>
+                <span className="font-mono text-slate-800">{assignmentToDelete.contractNumber} ({assignmentToDelete.clientName})</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Lokasi Blok:</span>
+                <strong className="text-amber-800">{assignmentToDelete.blockCode}</strong>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setAssignmentToDelete(null)}
+                className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-xl font-bold cursor-pointer transition"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={executeDeleteAssignment}
+                className="px-4 py-2 text-xs bg-rose-600 hover:bg-rose-500 text-white font-black rounded-xl shadow cursor-pointer transition flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Ya, Hapus Penugasan</span>
               </button>
             </div>
           </div>

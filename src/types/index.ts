@@ -56,7 +56,7 @@ export type BreakdownCategory =
   | 'Attachment / Bucket'
   | 'Lainnya';
 
-export type EquipmentType = 'Excavator' | 'Bulldozer' | 'Dump Truck' | 'Motor Grader' | 'Vibro Roller';
+export type EquipmentType = 'Excavator' | 'Bulldozer' | 'Dump Truck' | 'Motor Grader' | 'Vibro Roller' | (string & {});
 
 export type EquipmentStatus = 'Operasional' | 'Breakdown' | 'Standby' | 'Perawatan Rutin';
 
@@ -152,6 +152,26 @@ export interface Worker {
   teamName?: string; // e.g. "Tim Operator Alat Berat", "Tim Rintis & Imas", "Tim Mekanik Maintenance", "Tim Land Clearing", "Tim Pengawas & K3"
   assignedClientId?: string; // e.g. "client-1" or "ALL"
   assignedBlockId?: string; // e.g. "blk-1" or "ALL"
+}
+
+export interface WorkAssignment {
+  id: string; // e.g. "ASG-001"
+  workerId: string;
+  workerName: string;
+  workerCategory: string; // Operator, Mekanik, Logistik, Pendukung, Pengawas, Site Manager, etc.
+  equipmentId?: string; // Kode Unit Alat, e.g. "EX-01"
+  equipmentType?: string; // "Excavator"
+  equipmentName?: string; // "Excavator Komatsu PC200-8"
+  equipmentModel?: string; // "PC200-8"
+  clientId: string; // "client-1"
+  clientName: string; // "PT. A"
+  contractNumber: string; // "045/SPK-LC/PTA/VI/2026"
+  blockId: string; // "ALL" or specific block id
+  blockCode: string; // "Seluruh Blok Kerja pada SPK Terpilih" or "BLOK AG (80 Ha)"
+  status: 'Aktif' | 'Standby' | 'Selesai' | 'BKO / Bantuan';
+  assignedDate: string; // YYYY-MM-DD
+  notes?: string;
+  createdAt: string;
 }
 
 export interface InventoryItem {
