@@ -67,6 +67,7 @@ export interface Client {
   address: string;
   contactPerson: string;
   phone: string;
+  email?: string; // EMAIL PIC / Perusahaan
   contractNumber: string; // e.g. "045/SPK-LC/PTA/VI/2026"
   projectName: string;
   location: string;
@@ -86,15 +87,25 @@ export interface Project {
   targetCompletionDate: string;
 }
 
+export interface BlockWorkItem {
+  id: string;
+  name: string; // e.g. "UNDERBRUSHING (SEMAK BELUKAR)", "BATANG KUBUR", "MAINROAD"
+  unit: string; // e.g. "HEKTAR", "POHON", "METER LARI", "METER KUBIK"
+  targetVolume?: number; // target kuantitas/volume opsional
+  completedVolume?: number; // realisasi kuantitas
+  notes?: string;
+}
+
 export interface Block {
   id: string;
   projectId: string;
   clientId: string;
-  code: string; // "Blok AB"
-  targetAreaHa: number; // 100 Ha
+  code: string; // "Blok AB" atau "BLOK AZ"
+  targetAreaHa: number; // 100 Ha atau 35.5 Ha
   dailyTargetAreaHa?: number; // Target harian Land Clearing (Ha) yang ditentukan oleh Direktur (misal: 4.0 Ha)
   clearedAreaHa: number; // current cleared
   status: 'Dalam Pengerjaan' | 'Belum Dimulai' | 'Selesai';
+  workItems?: BlockWorkItem[]; // Daftar Item Pekerjaan yang ditugaskan pada blok ini
 }
 
 // Target Harian Land Clearing (Ha) per hari per lokasi kerja
@@ -133,8 +144,8 @@ export interface Equipment {
 export interface Worker {
   id: string;
   name: string;
-  category: 'Pekerja Utama' | 'Maintenance' | 'Pengawas & Pendukung';
-  role: string; // e.g. "Operator EX-01", "Mekanik", "Mandor / Pengawas"
+  category: 'Operator' | 'Mekanik' | 'Logistik' | 'Pendukung' | 'Pengawas' | string;
+  role?: string; // e.g. "Operator EX-01", "Mekanik", "Mandor / Pengawas"
   assignedEquipmentId?: string; // Alat Berat yang ditugaskan (pilihan dari master alat berat)
   phone: string;
   status: AttendanceStatus;
@@ -225,8 +236,8 @@ export interface EquipmentWorkLog {
 export interface LaborAbsence {
   workerId: string;
   workerName: string;
-  category: 'Pekerja Utama' | 'Maintenance' | 'Pengawas & Pendukung';
-  role: string;
+  category: string;
+  role?: string;
   status: AttendanceStatus;
   teamName?: string;
   assignedClientId?: string;

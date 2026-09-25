@@ -380,7 +380,47 @@ export const storageService = {
 
   // Blocks
   getBlocks(clientId?: string, authUser?: AuthUser | null): Block[] {
-    const all = loadFromStorage<Block[]>(STORAGE_KEYS.BLOCKS, initialBlocks);
+    const raw = loadFromStorage<Block[]>(STORAGE_KEYS.BLOCKS, initialBlocks);
+    const standardVolumeMap: Record<string, { targetVolume: number; unit: string }> = {
+      'UNDERBRUSHING (SEMAK BELUKAR)': { targetVolume: 30, unit: 'HEKTAR' },
+      'BATANG KUBUR': { targetVolume: 25, unit: 'POHON' },
+      'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS': { targetVolume: 10, unit: 'Ha' },
+      'MAINROAD': { targetVolume: 250, unit: 'm' },
+      'COLLECTION ROAD': { targetVolume: 100, unit: 'm' },
+      'SALURAN PRIMER': { targetVolume: 50, unit: 'm³' },
+      'SALURAN SEKUNDER': { targetVolume: 50, unit: 'm³' },
+      'SALURAN TERSIER': { targetVolume: 50, unit: 'm³' },
+    };
+
+    // Ensure every block has workItems populated with target volumes
+    const all = raw.map((b) => {
+      if (b.workItems && Array.isArray(b.workItems) && b.workItems.length > 0) {
+        // Fill targetVolume if missing from older storage
+        const enrichedItems = b.workItems.map((wi) => {
+          if (wi.targetVolume !== undefined) return wi;
+          const matched = standardVolumeMap[wi.name.toUpperCase()];
+          return {
+            ...wi,
+            targetVolume: matched?.targetVolume ?? 10,
+            unit: matched?.unit ?? wi.unit,
+          };
+        });
+        return { ...b, workItems: enrichedItems };
+      }
+      return {
+        ...b,
+        workItems: [
+          { id: `${b.id}-wi-1`, name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'HEKTAR', targetVolume: 30 },
+          { id: `${b.id}-wi-2`, name: 'BATANG KUBUR', unit: 'POHON', targetVolume: 25 },
+          { id: `${b.id}-wi-3`, name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'Ha', targetVolume: 10 },
+          { id: `${b.id}-wi-4`, name: 'MAINROAD', unit: 'm', targetVolume: 250 },
+          { id: `${b.id}-wi-5`, name: 'COLLECTION ROAD', unit: 'm', targetVolume: 100 },
+          { id: `${b.id}-wi-6`, name: 'SALURAN PRIMER', unit: 'm³', targetVolume: 50 },
+          { id: `${b.id}-wi-7`, name: 'SALURAN SEKUNDER', unit: 'm³', targetVolume: 50 },
+          { id: `${b.id}-wi-8`, name: 'SALURAN TERSIER', unit: 'm³', targetVolume: 50 },
+        ],
+      };
+    });
 
     // Pengawas: Hanya blok untuk 1 klien tugasnya dan terbatas pada lokasi kerja (blok-blok) tugasnya
     if (authUser && authUser.role === 'supervisor') {

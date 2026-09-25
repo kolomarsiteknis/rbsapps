@@ -47,6 +47,7 @@ export const initialClients: Client[] = [
     address: 'Jl. Jenderal Sudirman No. 120, Pekanbaru, Riau',
     contactPerson: 'Ir. Hendra Wijaya, M.Si',
     phone: '+62 812-7654-3210',
+    email: 'hendra.wijaya@agroperdana.co.id',
     contractNumber: '045/SPK-LC/PTA/VI/2026',
     projectName: 'Land Clearing Perkebunan Sawit PT. A (100 Ha)',
     location: 'Kabupaten Kampar / Pelalawan, Riau',
@@ -61,6 +62,7 @@ export const initialClients: Client[] = [
     address: 'Kawasan Industri Pelalawan Blok C-4, Riau',
     contactPerson: 'H. Rahmat Hidayat, ST',
     phone: '+62 811-9876-5432',
+    email: 'rahmat.hidayat@sss-estate.com',
     contractNumber: '012/SPK-LC/SSS/VII/2026',
     projectName: 'Land Clearing Perkebunan Sawit PT. B (175 Ha)',
     location: 'Siak Sri Indrapura, Riau',
@@ -75,6 +77,7 @@ export const initialClients: Client[] = [
     address: 'Jl. Riau Trade Center No. 15, Pekanbaru',
     contactPerson: 'Bambang Suryono',
     phone: '+62 813-5544-3322',
+    email: 'bambang.suryono@riaupalma.com',
     contractNumber: '088/SPK-LC/RPN/VIII/2026',
     projectName: 'Pembersihan Lahan Sawit PT. D (260 Ha)',
     location: 'Indragiri Hulu, Riau',
@@ -117,8 +120,39 @@ export const initialProjects: Project[] = [
   },
 ];
 
+export const DEFAULT_WORK_ITEMS_CATALOG = [
+  { name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'HEKTAR', defaultTargetVolume: 30 },
+  { name: 'BATANG KUBUR', unit: 'POHON', defaultTargetVolume: 25 },
+  { name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'Ha', defaultTargetVolume: 10 },
+  { name: 'MAINROAD', unit: 'm', defaultTargetVolume: 250 },
+  { name: 'COLLECTION ROAD', unit: 'm', defaultTargetVolume: 100 },
+  { name: 'SALURAN PRIMER', unit: 'm³', defaultTargetVolume: 50 },
+  { name: 'SALURAN SEKUNDER', unit: 'm³', defaultTargetVolume: 50 },
+  { name: 'SALURAN TERSIER', unit: 'm³', defaultTargetVolume: 50 },
+];
+
 export const initialBlocks: Block[] = [
-  // PT. A Blocks
+  // PT. A Blocks (SPK: 045/SPK-LC/PTA/VI/2026)
+  {
+    id: 'blk-az',
+    projectId: 'proj-1',
+    clientId: 'client-1',
+    code: 'BLOK AZ',
+    targetAreaHa: 35.5,
+    dailyTargetAreaHa: 4.0,
+    clearedAreaHa: 14.2,
+    status: 'Dalam Pengerjaan',
+    workItems: [
+      { id: 'wi-az-1', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'HEKTAR', targetVolume: 30 },
+      { id: 'wi-az-2', name: 'BATANG KUBUR', unit: 'POHON', targetVolume: 25 },
+      { id: 'wi-az-3', name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'Ha', targetVolume: 10 },
+      { id: 'wi-az-4', name: 'MAINROAD', unit: 'm', targetVolume: 250 },
+      { id: 'wi-az-5', name: 'COLLECTION ROAD', unit: 'm', targetVolume: 100 },
+      { id: 'wi-az-6', name: 'SALURAN PRIMER', unit: 'm³', targetVolume: 50 },
+      { id: 'wi-az-7', name: 'SALURAN SEKUNDER', unit: 'm³', targetVolume: 50 },
+      { id: 'wi-az-8', name: 'SALURAN TERSIER', unit: 'm³', targetVolume: 50 },
+    ],
+  },
   {
     id: 'blk-0',
     projectId: 'proj-1',
@@ -128,6 +162,12 @@ export const initialBlocks: Block[] = [
     dailyTargetAreaHa: 4.0,
     clearedAreaHa: 80.0,
     status: 'Selesai',
+    workItems: [
+      { id: 'wi-aa-1', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'HEKTAR' },
+      { id: 'wi-aa-2', name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'HEKTAR' },
+      { id: 'wi-aa-3', name: 'MAINROAD', unit: 'METER LARI' },
+      { id: 'wi-aa-4', name: 'SALURAN PRIMER', unit: 'METER KUBIK' },
+    ],
   },
   {
     id: 'blk-1',
@@ -138,6 +178,16 @@ export const initialBlocks: Block[] = [
     dailyTargetAreaHa: 4.0,
     clearedAreaHa: 48.8,
     status: 'Dalam Pengerjaan',
+    workItems: [
+      { id: 'wi-ab-1', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'HEKTAR' },
+      { id: 'wi-ab-2', name: 'BATANG KUBUR', unit: 'POHON' },
+      { id: 'wi-ab-3', name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'HEKTAR' },
+      { id: 'wi-ab-4', name: 'MAINROAD', unit: 'METER LARI' },
+      { id: 'wi-ab-5', name: 'COLLECTION ROAD', unit: 'METER LARI' },
+      { id: 'wi-ab-6', name: 'SALURAN PRIMER', unit: 'METER KUBIK' },
+      { id: 'wi-ab-7', name: 'SALURAN SEKUNDER', unit: 'METER KUBIK' },
+      { id: 'wi-ab-8', name: 'SALURAN TERSIER', unit: 'METER KUBIK' },
+    ],
   },
   {
     id: 'blk-2',
@@ -148,6 +198,11 @@ export const initialBlocks: Block[] = [
     dailyTargetAreaHa: 3.5,
     clearedAreaHa: 0,
     status: 'Belum Dimulai',
+    workItems: [
+      { id: 'wi-ac-1', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'HEKTAR' },
+      { id: 'wi-ac-2', name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'HEKTAR' },
+      { id: 'wi-ac-3', name: 'COLLECTION ROAD', unit: 'METER LARI' },
+    ],
   },
   {
     id: 'blk-3',
@@ -158,6 +213,12 @@ export const initialBlocks: Block[] = [
     dailyTargetAreaHa: 5.0,
     clearedAreaHa: 0,
     status: 'Belum Dimulai',
+    workItems: [
+      { id: 'wi-ad-1', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'HEKTAR' },
+      { id: 'wi-ad-2', name: 'BATANG KUBUR', unit: 'POHON' },
+      { id: 'wi-ad-3', name: 'MAINROAD', unit: 'METER LARI' },
+      { id: 'wi-ad-4', name: 'SALURAN PRIMER', unit: 'METER KUBIK' },
+    ],
   },
   // PT. B Blocks
   {
