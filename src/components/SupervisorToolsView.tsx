@@ -28,7 +28,8 @@ import {
   Check,
   X,
   Lock,
-  ShieldCheck
+  ShieldCheck,
+  BookOpen
 } from 'lucide-react';
 import {
   Equipment,
@@ -53,6 +54,7 @@ interface SupervisorToolsViewProps {
   onSelectClientId: (id: string) => void;
   showToast: (text: string, type?: 'success' | 'info' | 'warning') => void;
   onNavigateToWizard?: () => void;
+  onNavigateToTutorial?: () => void;
 }
 
 export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
@@ -62,6 +64,7 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
   onSelectClientId,
   showToast,
   onNavigateToWizard,
+  onNavigateToTutorial,
 }) => {
   // STRICT ROLE ACCESS CONTROL: Pengawas Lapangan Only
   if (authUser?.role === 'director') {
@@ -315,7 +318,7 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
       const watermarkedList = await applyBatchWatermarks(
         fileList,
         {
-          companyName: 'PT. SURYALAND GROUP',
+          companyName: 'PT. RBS GROUP',
           clientName: activeClient?.name || 'PT. A',
           blockCode: cameraBlockCode,
           equipmentId: cameraEquipmentId,
@@ -396,7 +399,7 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
   const handleDownloadPhoto = (photo: ProcessedWatermarkedPhoto) => {
     const a = document.createElement('a');
     a.href = photo.dataUrl;
-    a.download = `SURYALAND_GEOTAG_${photo.blockCode}_${photo.fileName}`;
+    a.download = `RBS_GEOTAG_${photo.blockCode}_${photo.fileName}`;
     a.click();
   };
 
@@ -658,7 +661,7 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
                 Pusat Alat & Lapangan
               </span>
               <span className="text-xs font-semibold text-slate-400">
-                PT. SURYALAND GROUP • Zero Burning Method
+                PT. RBS GROUP • Zero Burning Method
               </span>
             </div>
             <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white">
@@ -686,6 +689,18 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
               <RefreshCw className={`w-3.5 h-3.5 ${isGpsLoading ? 'animate-spin' : ''}`} />
             </button>
           </div>
+
+          {onNavigateToTutorial && (
+            <button
+              type="button"
+              onClick={onNavigateToTutorial}
+              className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold rounded-xl text-xs border border-slate-700 shadow-sm transition cursor-pointer"
+              title="Buka Buku Panduan & Tutorial Pengawas Lapangan"
+            >
+              <BookOpen className="w-4 h-4" />
+              <span>Panduan Pengawas</span>
+            </button>
+          )}
 
           {onNavigateToWizard && (
             <button

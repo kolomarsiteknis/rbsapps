@@ -27,22 +27,23 @@ import {
   Lock,
   BookOpen
 } from 'lucide-react';
-import { UserRole, Client, AuthUser } from '../types';
+import { UserRole, Client, AuthUser, CompanyIdentity } from '../types';
 import { ConnectionHealthCheck } from './ConnectionHealthCheck';
 
 export type TabKey = 
   | 'dashboard' 
   | 'master'
   | 'director-field-monitor'
-  | 'logistics'
+  | 'logistics' 
   | 'reports' 
   | 'official-pdf' 
-  | 'user-management'
+  | 'user-management' 
   | 'user-activity-log'
   | 'tutorial'
   | 'wizard' 
   | 'supervisor-tools'
-  | 'approval';
+  | 'approval'
+  | 'company-identity';
 
 interface HeaderProps {
   activeTab: TabKey;
@@ -60,6 +61,7 @@ interface HeaderProps {
   clients: Client[];
   isSidebarOpen?: boolean;
   setIsSidebarOpen?: (open: boolean) => void;
+  companyIdentity?: CompanyIdentity;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -76,6 +78,7 @@ export const Header: React.FC<HeaderProps> = ({
   clients,
   isSidebarOpen: externalIsSidebarOpen,
   setIsSidebarOpen: externalSetIsSidebarOpen,
+  companyIdentity,
 }) => {
   // Local state for sidebar if not controlled externally
   const [internalIsSidebarOpen, setInternalIsSidebarOpen] = useState<boolean>(false);
@@ -185,6 +188,13 @@ export const Header: React.FC<HeaderProps> = ({
           visible: true,
         },
         {
+          key: 'company-identity' as TabKey,
+          label: 'Identitas Perusahaan',
+          subtitle: 'Profil, Logo & Staff TTD',
+          icon: Building2,
+          visible: true,
+        },
+        {
           key: 'approval' as TabKey,
           label: 'Approval Pengawas',
           subtitle: 'Verifikasi & Otorisasi Pekerjaan',
@@ -266,6 +276,13 @@ export const Header: React.FC<HeaderProps> = ({
           icon: Printer,
           visible: true,
         },
+        {
+          key: 'tutorial' as TabKey,
+          label: 'Panduan Pengawas',
+          subtitle: 'SOP & Tutorial Fitur Lapangan',
+          icon: BookOpen,
+          visible: true,
+        },
       ];
 
   return (
@@ -297,20 +314,27 @@ export const Header: React.FC<HeaderProps> = ({
                 onClick={() => handleSelectTab(isDirector ? 'dashboard' : isManager ? 'approval' : 'wizard')}
                 className="flex items-center gap-2.5 text-left group cursor-pointer focus:outline-none"
               >
-                <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center text-slate-950 font-black shadow-md shadow-amber-500/20 group-hover:scale-105 transition-transform duration-200 shrink-0">
-                  <span className="text-base sm:text-lg">🚜</span>
+                <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl overflow-hidden bg-slate-900 border border-amber-500/40 flex items-center justify-center shadow-md shadow-amber-500/20 group-hover:scale-105 transition-transform duration-200 shrink-0">
+                  <img
+                    src={companyIdentity?.logoUrl || '/Logo RBS.png'}
+                    alt="Logo Perusahaan"
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLElement).style.display = 'none';
+                    }}
+                  />
                 </div>
                 <div className="flex flex-col">
                   <div className="flex items-center gap-1.5 leading-none">
                     <span className="text-sm sm:text-base font-black tracking-wider text-white group-hover:text-amber-400 transition-colors duration-200">
-                      SURYALAND
+                      {companyIdentity?.shortName || 'RBS'}
                     </span>
                     <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
                       APPS
                     </span>
                   </div>
-                  <span className="text-[10px] text-slate-400 font-medium hidden sm:inline tracking-tight mt-0.5">
-                    PT. SURYALAND GROUP • Land Clearing
+                  <span className="text-[10px] text-slate-400 font-medium hidden sm:inline tracking-tight mt-0.5 truncate max-w-[220px]">
+                    {companyIdentity?.fullName || 'PT. RBS GROUP'} • {companyIdentity?.tagline || 'Land Clearing Heavy Equipment'}
                   </span>
                 </div>
               </button>
@@ -376,6 +400,23 @@ export const Header: React.FC<HeaderProps> = ({
                   </span>
                 )}
               </button>
+
+              {/* Quick Panduan Button for Supervisor */}
+              {isSupervisor && (
+                <button
+                  type="button"
+                  onClick={() => handleSelectTab('tutorial')}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 border cursor-pointer ${
+                    activeTab === 'tutorial'
+                      ? 'bg-amber-500 text-slate-950 border-amber-400 font-black shadow-md shadow-amber-500/20'
+                      : 'bg-slate-800/90 hover:bg-slate-700/90 text-amber-400 border-slate-700/80 hover:text-amber-300'
+                  }`}
+                  title="Buka Buku Panduan & Tutorial Pengawas Lapangan"
+                >
+                  <BookOpen className="w-3.5 h-3.5 shrink-0" />
+                  <span className="hidden sm:inline font-bold">Panduan</span>
+                </button>
+              )}
 
               {/* User Profile & Direct Action Button */}
               {authUser && (
@@ -444,15 +485,22 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Drawer Header */}
             <div className="p-4 border-b border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-amber-500 flex items-center justify-center text-slate-950 font-black shadow-md shadow-amber-500/20">
-                  <span className="text-lg">🚜</span>
+                <div className="w-9 h-9 rounded-xl overflow-hidden bg-slate-900 border border-amber-500/40 flex items-center justify-center shadow-md shadow-amber-500/20 shrink-0">
+                  <img
+                    src={companyIdentity?.logoUrl || '/Logo RBS.png'}
+                    alt="Logo Perusahaan"
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLElement).style.display = 'none';
+                    }}
+                  />
                 </div>
                 <div>
                   <div className="text-sm font-black text-amber-400 tracking-wider">
-                    SURYALAND APPS
+                    {companyIdentity?.shortName || 'RBS'} APPS
                   </div>
-                  <div className="text-[10px] text-slate-400 font-medium">
-                    PT. SURYALAND GROUP
+                  <div className="text-[10px] text-slate-400 font-medium truncate max-w-[200px]">
+                    {companyIdentity?.fullName || 'PT. RBS GROUP'}
                   </div>
                 </div>
               </div>
@@ -646,7 +694,7 @@ export const Header: React.FC<HeaderProps> = ({
                 Reset Data ke Default
               </h3>
               <p className="text-xs text-slate-600">
-                Tindakan ini akan mengembalikan data laporan, master alat berat, dan klien ke kondisi awal PT. SURYALAND GROUP.
+                Tindakan ini akan mengembalikan data laporan, master alat berat, dan klien ke kondisi awal PT. RBS GROUP.
               </p>
             </div>
 

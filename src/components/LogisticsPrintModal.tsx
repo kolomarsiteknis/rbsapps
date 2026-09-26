@@ -25,8 +25,10 @@ import {
   Client, 
   Block, 
   Equipment, 
-  LogisticsCategory 
+  LogisticsCategory,
+  CompanyIdentity
 } from '../types';
+import { storageService } from '../services/storageService';
 
 interface LogisticsPrintModalProps {
   isOpen: boolean;
@@ -62,6 +64,15 @@ export const LogisticsPrintModal: React.FC<LogisticsPrintModalProps> = ({
   const todayStr = new Date().toISOString().slice(0, 10);
   const [startDate, setStartDate] = useState<string>('2026-09-01');
   const [endDate, setEndDate] = useState<string>(todayStr);
+
+  const identity = storageService.getCompanyIdentity();
+  const staffList = storageService.getCompanyStaff();
+
+  const supervisorStaff = staffList.find((s) => s.jobTitle.toLowerCase().includes('pengawas') || s.jobTitle.toLowerCase().includes('logistik'));
+  const directorStaff = staffList.find((s) => s.jobTitle.toLowerCase().includes('direktur'));
+
+  const supervisorSig = supervisorStaff?.signatureUrl;
+  const directorSig = directorStaff?.signatureUrl || identity.directorSignatureUrl;
 
   // Sync mode and client when modal opens
   useEffect(() => {
@@ -162,7 +173,7 @@ export const LogisticsPrintModal: React.FC<LogisticsPrintModalProps> = ({
     try {
       let headers: string[] = [];
       let rows: string[][] = [];
-      let filename = 'Laporan_Logistik_Suryaland.csv';
+      let filename = 'Laporan_Logistik_RBS.csv';
 
       if (reportType === 'in') {
         filename = `Laporan_Stok_Masuk_Logistik_${startDate}_sd_${endDate}.csv`;
@@ -455,26 +466,31 @@ export const LogisticsPrintModal: React.FC<LogisticsPrintModalProps> = ({
             <div className="border-b-2 border-slate-900 pb-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <div className="w-9 h-9 bg-slate-950 text-amber-400 flex items-center justify-center font-black rounded text-base border border-slate-800">
-                      SL
-                    </div>
+                  <div className="flex items-center gap-2.5 mb-1">
+                    <img
+                      src={identity.logoUrl || '/Logo RBS.png'}
+                      alt="Logo Perusahaan"
+                      className="w-10 h-10 object-contain rounded-lg"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLElement).style.display = 'none';
+                      }}
+                    />
                     <div>
                       <h1 className="text-xl sm:text-2xl font-black text-slate-950 tracking-tight leading-none uppercase">
-                        PT. SURYALAND GROUP
+                        {identity.fullName || 'PT. RBS GROUP'}
                       </h1>
                       <span className="text-[11px] font-bold text-amber-700 uppercase tracking-widest block mt-0.5">
-                        Kontraktor Land Clearing, Heavy Equipment & Perkebunan
+                        {identity.tagline || 'Kontraktor Land Clearing, Heavy Equipment & Perkebunan'}
                       </span>
                     </div>
                   </div>
                   <p className="text-[11px] text-slate-600 leading-tight">
-                    Kantor Operasional: Jl. Soekarno-Hatta No. 88, Pekanbaru - Riau | Telp: (0761) 841290 | Email: operasional@suryaland.co.id
+                    Kantor Operasional: {identity.address || 'Jl. Soekarno-Hatta No. 88, Pekanbaru - Riau'} | Telp: {identity.phone || '(0761) 841290'} | Email: {identity.email || 'operasional@rbs.co.id'}
                   </p>
                 </div>
 
                 <div className="text-right text-[11px] text-slate-500 font-mono hidden sm:block">
-                  <div>No. Dokumen: <strong className="text-slate-900 font-bold">SRY-LOG/{startDate.replace(/-/g, '')}</strong></div>
+                  <div>No. Dokumen: <strong className="text-slate-900 font-bold">RBS-LOG/{startDate.replace(/-/g, '')}</strong></div>
                   <div>Tanggal Cetak: <strong className="text-slate-900">{todayStr}</strong></div>
                   <div>Halaman: <strong>1 / 1</strong></div>
                 </div>
@@ -775,13 +791,21 @@ export const LogisticsPrintModal: React.FC<LogisticsPrintModalProps> = ({
                 <p className="font-bold text-slate-800 mt-0.5">Pengawas / Penanggung Jawab Logistik</p>
                 
                 <div className="h-16 flex items-center justify-center">
-                  <div className="border-b border-dashed border-slate-400 w-36" />
+                  {supervisorSig ? (
+                    <img
+                      src={supervisorSig}
+                      alt="TTD Pengawas"
+                      className="max-h-14 max-w-[140px] object-contain mx-auto"
+                    />
+                  ) : (
+                    <div className="border-b border-dashed border-slate-400 w-36" />
+                  )}
                 </div>
                 
                 <p className="font-black text-slate-900 underline font-mono text-xs">
-                  BUDI SANTOSO
+                  {supervisorStaff?.fullName || 'BUDI SANTOSO'}
                 </p>
-                <p className="text-[10px] text-slate-500">Supervisor Lapangan PT. SURYALAND GROUP</p>
+                <p className="text-[10px] text-slate-500">Supervisor Lapangan {identity.fullName || 'PT. RBS GROUP'}</p>
               </div>
 
               <div>
@@ -789,24 +813,34 @@ export const LogisticsPrintModal: React.FC<LogisticsPrintModalProps> = ({
                 <p className="font-bold text-slate-800 mt-0.5">Direktur Operasional & Alat Berat</p>
                 
                 <div className="h-16 flex items-center justify-center relative">
-                  <div className="absolute inset-0 flex items-center justify-center opacity-80 pointer-events-none">
-                    <div className="border-2 border-emerald-600 text-emerald-800 font-black text-[9px] uppercase px-2 py-0.5 rounded rotate-[-6deg] bg-emerald-50/70 shadow-2xs">
-                      VERIFIED & APPROVED
-                    </div>
-                  </div>
-                  <div className="border-b border-dashed border-slate-400 w-36" />
+                  {directorSig ? (
+                    <img
+                      src={directorSig}
+                      alt="TTD Direktur"
+                      className="max-h-14 max-w-[140px] object-contain mx-auto"
+                    />
+                  ) : (
+                    <>
+                      <div className="absolute inset-0 flex items-center justify-center opacity-80 pointer-events-none">
+                        <div className="border-2 border-emerald-600 text-emerald-800 font-black text-[9px] uppercase px-2 py-0.5 rounded rotate-[-6deg] bg-emerald-50/70 shadow-2xs">
+                          VERIFIED & APPROVED
+                        </div>
+                      </div>
+                      <div className="border-b border-dashed border-slate-400 w-36" />
+                    </>
+                  )}
                 </div>
                 
                 <p className="font-black text-slate-900 underline font-mono text-xs">
-                  IR. HENDRA WIJAYA, M.SI
+                  {directorStaff?.fullName || identity.directorName || 'IR. HENDRA WIJAYA, M.SI'}
                 </p>
-                <p className="text-[10px] text-slate-500">Direktur PT. SURYALAND GROUP</p>
+                <p className="text-[10px] text-slate-500">Direktur {identity.fullName || 'PT. RBS GROUP'}</p>
               </div>
             </div>
 
             {/* Document Footer Note */}
             <div className="text-[10px] text-slate-400 text-center border-t border-slate-100 pt-3">
-              Dokumen ini dihasilkan secara otomatis oleh Sistem Pelaporan Land Clearing & Inventaris Logistik Lapangan PT. SURYALAND GROUP. Seluruh catatan bersifat sah dan teraudit.
+              Dokumen ini dihasilkan secara otomatis oleh Sistem Pelaporan Land Clearing & Inventaris Logistik Lapangan {identity.fullName || 'PT. RBS GROUP'}. Seluruh catatan bersifat sah dan teraudit.
             </div>
 
           </div>

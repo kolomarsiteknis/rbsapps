@@ -7,14 +7,16 @@ import {
   AlertCircle,
   Truck
 } from 'lucide-react';
-import { AuthUser } from '../types';
+import { AuthUser, CompanyIdentity } from '../types';
 import { storageService } from '../services/storageService';
 
 interface LoginPageProps {
   onLoginSuccess: (user: AuthUser) => void;
+  companyIdentity?: CompanyIdentity;
 }
 
-export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
+export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, companyIdentity }) => {
+  const identity = companyIdentity || storageService.getCompanyIdentity();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -105,7 +107,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             displayName: 'Bambang Sugiarto, S.P.',
             role: 'manager',
             roleTitle: 'Manager Operasional • Wilayah Riau & Sumatera',
-            email: 'bambang.sugiarto@suryaland.co.id',
+            email: 'bambang.sugiarto@rbs.co.id',
             phoneNumber: '081388776655',
             userLevel: 'Manager',
             jobTitle: 'Manager Operasional',
@@ -132,7 +134,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             displayName: 'Ahmad Rizky Pratama, S.T.',
             role: 'supervisor',
             roleTitle: 'Pengawas Lapangan • PT. A (Blok AB, Blok AA)',
-            email: 'pengawas@suryaland.co.id',
+            email: 'pengawas@rbs.co.id',
             phoneNumber: '081276543210',
             userLevel: 'Pengawas',
             assignedClientId: 'client-1',
@@ -157,7 +159,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             displayName: 'Ir. Hendra Wijaya, M.Si',
             role: 'director',
             roleTitle: 'Direktur Utama (Superadmin)',
-            email: 'hendra.wijaya@suryaland.co.id',
+            email: 'hendra.wijaya@rbs.co.id',
             loginTime: new Date().toISOString(),
           };
           onLoginSuccess(userObj);
@@ -187,15 +189,22 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       <header className="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md px-6 py-4 z-10">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center text-slate-950 font-black shadow-lg shadow-amber-500/20">
-              <Truck className="w-6 h-6 text-slate-950" />
+            <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-900 border border-amber-500/40 flex items-center justify-center shadow-lg shadow-amber-500/20 shrink-0">
+              <img
+                src={identity.logoUrl || '/Logo RBS.png'}
+                alt="Logo Perusahaan"
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  (e.currentTarget as HTMLElement).style.display = 'none';
+                }}
+              />
             </div>
             <div>
               <div className="font-black text-base text-amber-400 tracking-wider">
-                SURYALAND APPS
+                {identity.shortName || 'RBS'} APPS
               </div>
               <div className="text-[11px] text-slate-400">
-                PT. SURYALAND GROUP • Land Clearing Heavy Equipment
+                {identity.fullName || 'PT. RBS GROUP'} • {identity.tagline || 'Land Clearing Heavy Equipment'}
               </div>
             </div>
           </div>
@@ -309,7 +318,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       <footer className="border-t border-slate-800/80 bg-slate-900/60 backdrop-blur-md px-6 py-4 text-center z-10">
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2">
           <div>
-            PT. SURYALAND GROUP • Heavy Equipment Plantation Land Clearing
+            {identity.fullName || 'PT. RBS GROUP'} • {identity.tagline || 'Land Clearing Heavy Equipment'}
           </div>
           <div>
             Hak Cipta © 2026. Hak Akses Terproteksi.

@@ -1,7 +1,7 @@
 /**
- * SURYALAND APPS - Heavy Equipment Land Clearing Plantation Project
+ * RBS APPS - Heavy Equipment Land Clearing Plantation Project
  * Zero Burning Method (Metode Tanpa Bakar)
- * PT. SURYALAND GROUP
+ * PT. RBS GROUP
  */
 
 import React, { useState, useEffect } from 'react';
@@ -19,6 +19,7 @@ import { ManagerApprovalView } from './components/ManagerApprovalView';
 import { UserActivityAuditLogView } from './components/UserActivityAuditLogView';
 import { UserManagementView } from './components/UserManagementView';
 import { TutorialView } from './components/TutorialView';
+import { SupervisorTutorialView } from './components/SupervisorTutorialView';
 import { LoginPage } from './components/LoginPage';
 import { storageService } from './services/storageService';
 import { initFirestoreSync, onSyncStatusChange, toggleFirestoreNetwork, SyncStatus } from './services/firestoreSync';
@@ -26,13 +27,14 @@ import { recordUserActivity } from './utils/activityLogger';
 import { DailyReport, Equipment, UserRole, Client, AuthUser } from './types';
 import { CheckCircle2, AlertCircle, ShieldAlert } from 'lucide-react';
 
-const AUTH_STORAGE_KEY = 'suryaland_auth_user_v1';
+const AUTH_STORAGE_KEY = 'rbs_auth_user_v1';
+const LEGACY_AUTH_STORAGE_KEY = 'suryaland_auth_user_v1';
 
 export default function App() {
   // Authentication State
   const [authUser, setAuthUser] = useState<AuthUser | null>(() => {
     try {
-      const saved = localStorage.getItem(AUTH_STORAGE_KEY);
+      const saved = localStorage.getItem(AUTH_STORAGE_KEY) || localStorage.getItem(LEGACY_AUTH_STORAGE_KEY);
       return saved ? JSON.parse(saved) : null;
     } catch {
       return null;
@@ -41,7 +43,7 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<TabKey>(() => {
     try {
-      const saved = localStorage.getItem(AUTH_STORAGE_KEY);
+      const saved = localStorage.getItem(AUTH_STORAGE_KEY) || localStorage.getItem(LEGACY_AUTH_STORAGE_KEY);
       if (saved) {
         const u = JSON.parse(saved);
         if (u.role === 'manager') return 'approval';
@@ -299,7 +301,7 @@ export default function App() {
     storageService.resetToDefault();
     loadData();
     setSelectedClientId('ALL');
-    showToast('Data berhasil di-reset ke data default multi-klien PT. SURYALAND GROUP.');
+    showToast('Data berhasil di-reset ke data default multi-klien PT. RBS GROUP.');
   };
 
   const handleOpenPdfModal = (reportId: string) => {
@@ -458,6 +460,7 @@ export default function App() {
             authUser={authUser}
             onNavigateToReports={() => setActiveTab('reports')}
             onNavigateToTools={() => setActiveTab('supervisor-tools')}
+            onNavigateToTutorial={() => setActiveTab('tutorial')}
           />
         )}
 
@@ -510,6 +513,7 @@ export default function App() {
               onSelectClientId={handleSetSelectedClientId}
               showToast={showToast}
               onNavigateToWizard={() => setActiveTab('wizard')}
+              onNavigateToTutorial={() => setActiveTab('tutorial')}
             />
           ) : (
             <div className="max-w-xl mx-auto my-12 p-6 bg-white rounded-2xl border border-rose-200 text-center space-y-3 shadow-lg">
@@ -653,26 +657,17 @@ export default function App() {
           )
         )}
 
-        {/* Tab 11: Superadmin Tutorial & Documentation - STRICT: ONLY FOR SUPERADMIN */}
+        {/* Tab 11: Role-Specific Tutorial & SOP Documentation */}
         {activeTab === 'tutorial' && (
           authUser.role === 'director' ? (
             <TutorialView
               onNavigateTab={(tab) => setActiveTab(tab)}
             />
           ) : (
-            <div className="max-w-xl mx-auto my-12 p-6 bg-white rounded-2xl border border-rose-200 text-center space-y-3 shadow-lg">
-              <ShieldAlert className="w-12 h-12 text-rose-500 mx-auto" />
-              <h3 className="font-black text-slate-900 text-base">Akses Khusus Superadmin</h3>
-              <p className="text-xs text-slate-600">
-                Halaman Panduan & Tutorial Penggunaan Fitur Komprehensif ini dikhususkan bagi Akun Superadmin / Direktur.
-              </p>
-              <button
-                onClick={() => setActiveTab('wizard')}
-                className="px-4 py-2 bg-amber-500 text-slate-950 font-bold text-xs rounded-xl shadow cursor-pointer"
-              >
-                Kembali ke Form Laporan
-              </button>
-            </div>
+            <SupervisorTutorialView
+              onNavigateTab={(tab) => setActiveTab(tab)}
+              authUser={authUser}
+            />
           )
         )}
       </main>
@@ -695,10 +690,10 @@ export default function App() {
       <footer className="bg-slate-900 border-t border-slate-800 text-slate-500 text-xs py-4 text-center mb-16 lg:mb-0">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
           <div>
-            <strong className="text-slate-300">SURYALAND APPS</strong> • Sistem Pengawasan Proyek Land Clearing (Zero Burning Method)
+            <strong className="text-slate-300">RBS APPS</strong> • Sistem Pengawasan Proyek Land Clearing (Zero Burning Method)
           </div>
           <div className="text-[11px] text-slate-400">
-            Hak Cipta © 2026 PT. SURYALAND GROUP. Masuk sebagai: <span className="text-amber-400 font-bold">{authUser.username}</span> ({authUser.roleTitle})
+            Hak Cipta © 2026 PT. RBS GROUP. Masuk sebagai: <span className="text-amber-400 font-bold">{authUser.username}</span> ({authUser.roleTitle})
           </div>
         </div>
       </footer>

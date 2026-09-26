@@ -1118,7 +1118,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                     <input
                       type="email"
                       required
-                      placeholder="Contoh: nama@suryaland.co.id"
+                      placeholder="Contoh: nama@rbs.co.id"
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                       className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"

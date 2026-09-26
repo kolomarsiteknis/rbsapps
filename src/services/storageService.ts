@@ -18,7 +18,9 @@ import {
   ActivityActionCategory,
   ManagedUser,
   AuthUser,
-  WorkAssignment
+  WorkAssignment,
+  CompanyIdentity,
+  CompanyStaff
 } from '../types';
 import { 
   initialDailyReports, 
@@ -35,7 +37,9 @@ import {
   initialSoilIncidents,
   initialJobTitles,
   initialManagedUsers,
-  initialWorkAssignments
+  initialWorkAssignments,
+  initialCompanyIdentity,
+  initialCompanyStaff
 } from '../data/mockData';
 import { 
   syncDocWrite, 
@@ -63,6 +67,8 @@ const STORAGE_KEYS = {
   USER_ACTIVITIES: 'suryaland_user_activities_v1',
   MANAGED_USERS: 'suryaland_managed_users_v1',
   JOB_TITLES: 'suryaland_job_titles_v1',
+  COMPANY_IDENTITY: 'rbs_company_identity_v1',
+  COMPANY_STAFF: 'rbs_company_staff_v1',
 };
 
 // Safe JSON parser helper
@@ -1751,7 +1757,7 @@ export const storageService = {
         userId: 'spv-01',
         userName: 'Budi Santoso',
         userRole: 'supervisor',
-        userEmail: 'pengawas.riau@suryaland.co.id',
+        userEmail: 'pengawas.riau@rbs.co.id',
         actionCategory: 'P2H',
         actionTitle: 'Checklist P2H Pra-Operasi Disimpan',
         actionDescription: 'Melakukan inspeksi kelayakan harian Excavator EX-01 (Komatsu PC200). Status: Layak Operasi. HM Awal: 3.420,5.',
@@ -1779,7 +1785,7 @@ export const storageService = {
         userId: 'spv-01',
         userName: 'Budi Santoso',
         userRole: 'supervisor',
-        userEmail: 'pengawas.riau@suryaland.co.id',
+        userEmail: 'pengawas.riau@rbs.co.id',
         actionCategory: 'CAMERA_GEOTAG',
         actionTitle: 'Upload Foto Geotagging GPS Progres',
         actionDescription: 'Mengambil & memberi cap watermark GPS foto progres Stacking/Perumpukan kayu kontur tanah di Sub-Blok 12.',
@@ -1807,7 +1813,7 @@ export const storageService = {
         userId: 'spv-02',
         userName: 'Ahmad Fauzi',
         userRole: 'supervisor',
-        userEmail: 'ahmad.fauzi@suryaland.co.id',
+        userEmail: 'ahmad.fauzi@rbs.co.id',
         actionCategory: 'FUEL_BOWSER',
         actionTitle: 'Penerimaan Solar Bowser Keliling Dicatat',
         actionDescription: 'Mencatat pengisian solar dari Truk Bowser B 9821 TPA (Supir: Rahmat Santoso). Total: 1.200 Liter, Segel: S-7721, Status BBM: B35 Jernih/Lolos Uji Visual.',
@@ -1835,7 +1841,7 @@ export const storageService = {
         userId: 'spv-02',
         userName: 'Ahmad Fauzi',
         userRole: 'supervisor',
-        userEmail: 'ahmad.fauzi@suryaland.co.id',
+        userEmail: 'ahmad.fauzi@rbs.co.id',
         actionCategory: 'SOIL_INCIDENT',
         actionTitle: 'Pencatatan Insiden K3 Tanah Gambut',
         actionDescription: 'Merekam insiden alat berat amblas kedalaman 1,8 meter pada rintis parit. Evakuasi bantuan unit Dozer D65P penarik kabel seling. Nihil korban cidera (Zero Accident).',
@@ -1863,7 +1869,7 @@ export const storageService = {
         userId: 'spv-01',
         userName: 'Budi Santoso',
         userRole: 'supervisor',
-        userEmail: 'pengawas.riau@suryaland.co.id',
+        userEmail: 'pengawas.riau@rbs.co.id',
         actionCategory: 'REPORT',
         actionTitle: 'Submit Laporan Harian #SRL-2026-001',
         actionDescription: 'Menyimpan dan mengunggah Laporan Harian Progres Land Clearing PT. A (Progres 3.5 Ha, 4 Unit Alat Berat Beroperasi, Pemakaian BBM 650 Liter).',
@@ -1891,7 +1897,7 @@ export const storageService = {
         userId: 'dir-01',
         userName: 'Ir. Hendra Wijaya, M.Si',
         userRole: 'director',
-        userEmail: 'direktur@suryaland.co.id',
+        userEmail: 'direktur@rbs.co.id',
         actionCategory: 'REPORT',
         actionTitle: 'Approval Digital Dokumen Laporan',
         actionDescription: 'Memberikan tanda tangan digital persetujuan Direktur untuk Laporan Harian #SRL-2026-001 PT. A.',
@@ -1903,7 +1909,7 @@ export const storageService = {
           lat: 0.50707,
           lng: 101.44778,
           accuracy: 5.0,
-          locationName: 'Kantor Pusat PT. Suryaland, Pekanbaru (Riau)',
+          locationName: 'Kantor Pusat PT. RBS GROUP, Pekanbaru (Riau)',
           mapsUrl: 'https://www.google.com/maps?q=0.50707,101.44778',
         },
         deviceInfo: {
@@ -1919,7 +1925,7 @@ export const storageService = {
         userId: 'spv-01',
         userName: 'Budi Santoso',
         userRole: 'supervisor',
-        userEmail: 'pengawas.riau@suryaland.co.id',
+        userEmail: 'pengawas.riau@rbs.co.id',
         actionCategory: 'AUTH',
         actionTitle: 'Masuk Sesi Pengawas Lapangan',
         actionDescription: 'Pengawas berhasil login ke sistem di lokasi proyek Siak dengan sinyal 4G stabil.',
@@ -1947,7 +1953,7 @@ export const storageService = {
         userId: 'spv-02',
         userName: 'Ahmad Fauzi',
         userRole: 'supervisor',
-        userEmail: 'ahmad.fauzi@suryaland.co.id',
+        userEmail: 'ahmad.fauzi@rbs.co.id',
         actionCategory: 'AUTH',
         actionTitle: 'Masuk Sesi Pengawas Lapangan',
         actionDescription: 'Pengawas berhasil login ke sistem di estate Pelalawan.',
@@ -2196,6 +2202,155 @@ export const storageService = {
     return newBlock;
   },
 
+  // ==========================================
+  // IDENTITAS PERUSAHAAN & STAFF RESMI
+  // ==========================================
+  getCompanyIdentity(): CompanyIdentity {
+    return loadFromStorage<CompanyIdentity>(STORAGE_KEYS.COMPANY_IDENTITY, initialCompanyIdentity);
+  },
+
+  saveCompanyIdentity(data: Partial<CompanyIdentity>, authUser?: AuthUser | null): CompanyIdentity {
+    const current = this.getCompanyIdentity();
+    const updated: CompanyIdentity = {
+      ...current,
+      ...data,
+      updatedAt: new Date().toISOString(),
+    };
+    saveToStorage(STORAGE_KEYS.COMPANY_IDENTITY, updated);
+    syncDocWrite(FIRESTORE_COLLECTIONS.COMPANY_IDENTITY, { id: 'main', ...updated });
+
+    if (authUser) {
+      this.recordUserActivity({
+        userId: authUser.id || 'dir-01',
+        userName: authUser.displayName || 'Direktur Utama',
+        userRole: 'director',
+        userEmail: authUser.email,
+        actionCategory: 'MASTER_DATA',
+        actionTitle: 'Pembaruan Identitas & Logo Perusahaan',
+        actionDescription: `Direktur memperbarui identitas perusahaan: ${updated.fullName} (${updated.shortName}). Logo dan nama aplikasi telah diperbarui.`,
+        targetEntity: updated.fullName,
+      });
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('company_identity_changed', { detail: updated })
+      );
+    }
+
+    return updated;
+  },
+
+  getCompanyStaff(): CompanyStaff[] {
+    const list = loadFromStorage<CompanyStaff[]>(STORAGE_KEYS.COMPANY_STAFF, initialCompanyStaff);
+    // Check if staff has corresponding user account in MANAGED_USERS
+    const users = this.getManagedUsers();
+    return list.map((staff) => {
+      const matchedUser = users.find(
+        (u) =>
+          u.id === staff.userId ||
+          (u.email && staff.email && u.email.toLowerCase() === staff.email.toLowerCase()) ||
+          u.fullName.toLowerCase() === staff.fullName.toLowerCase()
+      );
+      return {
+        ...staff,
+        hasUserAccount: !!matchedUser,
+        userId: matchedUser ? matchedUser.id : staff.userId,
+      };
+    });
+  },
+
+  getCompanyStaffById(id: string): CompanyStaff | undefined {
+    return this.getCompanyStaff().find((s) => s.id === id);
+  },
+
+  saveCompanyStaff(staffData: Omit<CompanyStaff, 'id' | 'createdAt'> & { id?: string }, authUser?: AuthUser | null): CompanyStaff {
+    const list = loadFromStorage<CompanyStaff[]>(STORAGE_KEYS.COMPANY_STAFF, initialCompanyStaff);
+    const now = new Date().toISOString();
+
+    if (staffData.id) {
+      // Update existing
+      const index = list.findIndex((s) => s.id === staffData.id);
+      if (index >= 0) {
+        const updated: CompanyStaff = {
+          ...list[index],
+          ...staffData,
+          id: staffData.id,
+          updatedAt: now,
+        };
+        list[index] = updated;
+        saveToStorage(STORAGE_KEYS.COMPANY_STAFF, list);
+        syncDocWrite(FIRESTORE_COLLECTIONS.COMPANY_STAFF, updated);
+
+        if (authUser) {
+          this.recordUserActivity({
+            userId: authUser.id || 'dir-01',
+            userName: authUser.displayName,
+            userRole: 'director',
+            userEmail: authUser.email,
+            actionCategory: 'MASTER_DATA',
+            actionTitle: `Pembaruan Data Staff: ${updated.fullName}`,
+            actionDescription: `Mengubah data staff ${updated.fullName} (${updated.jobTitle} - ${updated.department || 'Operasional'}).`,
+            targetEntity: updated.fullName,
+          });
+        }
+
+        return updated;
+      }
+    }
+
+    // Create new staff
+    const newStaff: CompanyStaff = {
+      ...staffData,
+      id: staffData.id || `staff-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      createdAt: now,
+      updatedAt: now,
+    };
+    list.unshift(newStaff);
+    saveToStorage(STORAGE_KEYS.COMPANY_STAFF, list);
+    syncDocWrite(FIRESTORE_COLLECTIONS.COMPANY_STAFF, newStaff);
+
+    if (authUser) {
+      this.recordUserActivity({
+        userId: authUser.id || 'dir-01',
+        userName: authUser.displayName,
+        userRole: 'director',
+        userEmail: authUser.email,
+        actionCategory: 'MASTER_DATA',
+        actionTitle: `Staff Baru Ditambahkan: ${newStaff.fullName}`,
+        actionDescription: `Menambahkan personil staff resmi perusahaan: ${newStaff.fullName} sebagai ${newStaff.jobTitle}.`,
+        targetEntity: newStaff.fullName,
+      });
+    }
+
+    return newStaff;
+  },
+
+  deleteCompanyStaff(id: string, authUser?: AuthUser | null): boolean {
+    const list = loadFromStorage<CompanyStaff[]>(STORAGE_KEYS.COMPANY_STAFF, initialCompanyStaff);
+    const target = list.find((s) => s.id === id);
+    if (!target) return false;
+
+    const filtered = list.filter((s) => s.id !== id);
+    saveToStorage(STORAGE_KEYS.COMPANY_STAFF, filtered);
+    syncDocDelete(FIRESTORE_COLLECTIONS.COMPANY_STAFF, id);
+
+    if (authUser) {
+      this.recordUserActivity({
+        userId: authUser.id || 'dir-01',
+        userName: authUser.displayName,
+        userRole: 'director',
+        userEmail: authUser.email,
+        actionCategory: 'MASTER_DATA',
+        actionTitle: `Hapus Staff: ${target.fullName}`,
+        actionDescription: `Menghapus data personil staff ${target.fullName} (${target.jobTitle}) dari daftar resmi perusahaan.`,
+        targetEntity: target.fullName,
+      });
+    }
+
+    return true;
+  },
+
   // Reset database to initial seed
   resetToDefault(): void {
     saveToStorage(STORAGE_KEYS.REPORTS, initialDailyReports);
@@ -2212,6 +2367,8 @@ export const storageService = {
     saveToStorage(STORAGE_KEYS.USER_ACTIVITIES, this.getUserActivities());
     saveToStorage(STORAGE_KEYS.MANAGED_USERS, initialManagedUsers);
     saveToStorage(STORAGE_KEYS.JOB_TITLES, initialJobTitles);
+    saveToStorage(STORAGE_KEYS.COMPANY_IDENTITY, initialCompanyIdentity);
+    saveToStorage(STORAGE_KEYS.COMPANY_STAFF, initialCompanyStaff);
     this.clearDraft();
   },
 };

@@ -27,7 +27,8 @@ import {
   UserPlus,
   Info,
   Search,
-  Lock
+  Lock,
+  BookOpen
 } from 'lucide-react';
 import { 
   DailyReport, 
@@ -56,6 +57,7 @@ interface ReportWizardProps {
   authUser?: AuthUser | null;
   onNavigateToReports?: () => void;
   onNavigateToTools?: () => void;
+  onNavigateToTutorial?: () => void;
 }
 
 const STEPS = [
@@ -76,6 +78,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
   authUser,
   onNavigateToReports,
   onNavigateToTools,
+  onNavigateToTutorial,
 }) => {
   const [currentStep, setCurrentStep] = useState(1);
   const [clients, setClients] = useState<Client[]>(() => storageService.getClients());
@@ -501,7 +504,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
         const watermarked = await applyWatermark(file, {
           blockCode,
           category: photoCategory,
-          companyName: 'PT. SURYALAND GROUP',
+          companyName: 'PT. RBS GROUP',
           clientName: clientName,
         });
 
@@ -688,7 +691,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
             Akses Input Khusus Pengawas Lapangan
           </h2>
           <p className="text-sm text-slate-600 max-w-lg mx-auto leading-relaxed">
-            Sesuai Standard Operating Procedure (SOP) PT. SURYALAND GROUP, Direktur tidak melakukan penginputan Laporan Harian Operasional Proyek. Penginputan dilakukan secara langsung di lapangan oleh Pengawas Lapangan.
+            Sesuai Standard Operating Procedure (SOP) PT. RBS GROUP, Direktur tidak melakukan penginputan Laporan Harian Operasional Proyek. Penginputan dilakukan secara langsung di lapangan oleh Pengawas Lapangan.
           </p>
           <p className="text-xs text-slate-500 max-w-md mx-auto">
             Sebagai Direktur, Anda berwenang melakukan pengawasan, verifikasi, serta menyetujui atau menolak laporan melalui menu <strong>Rekap Laporan</strong>.
@@ -731,6 +734,17 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {onNavigateToTutorial && (
+              <button
+                type="button"
+                onClick={onNavigateToTutorial}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-slate-800 hover:bg-slate-700 active:scale-95 text-amber-400 border border-slate-700 rounded-lg shadow-xs transition-all duration-200 cursor-pointer"
+                title="Buka Buku Panduan & Tutorial Pengawas Lapangan"
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Panduan</span>
+              </button>
+            )}
             {onNavigateToTools && userRole === 'supervisor' && (
               <button
                 type="button"

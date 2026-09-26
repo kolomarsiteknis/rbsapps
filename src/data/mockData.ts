@@ -1,4 +1,4 @@
-import { Client, Project, Block, Equipment, Worker, InventoryItem, DailyReport, LogisticsTransaction, DailyLocationTarget, ManagedUser, WorkAssignment } from '../types';
+import { Client, Project, Block, Equipment, Worker, InventoryItem, DailyReport, LogisticsTransaction, DailyLocationTarget, ManagedUser, WorkAssignment, CompanyIdentity, CompanyStaff } from '../types';
 
 // Helper to generate simulated SVG photographic base64 for initial seed photos
 function createSimulatedFieldPhoto(title: string, subtitle: string, color: string, lat: string, lng: string, time: string, clientName: string = 'PT. A'): string {
@@ -21,14 +21,14 @@ function createSimulatedFieldPhoto(title: string, subtitle: string, color: strin
     
     <!-- Icon or subject -->
     <circle cx="400" cy="180" r="70" fill="rgba(255,255,255,0.08)" stroke="#fbbf24" stroke-width="2"/>
-    <text x="400" y="175" fill="#f59e0b" font-family="system-ui, sans-serif" font-size="26" font-weight="bold" text-anchor="middle">🚜 SURYALAND</text>
+    <text x="400" y="175" fill="#f59e0b" font-family="system-ui, sans-serif" font-size="26" font-weight="bold" text-anchor="middle">🚜 RBS</text>
     <text x="400" y="210" fill="#ffffff" font-family="system-ui, sans-serif" font-size="18" font-weight="600" text-anchor="middle">${title}</text>
     <text x="400" y="235" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="13" text-anchor="middle">KLIEN: ${clientName} • ${subtitle}</text>
     
     <!-- Watermark Banner -->
     <rect x="0" y="405" width="800" height="95" fill="url(#bannerGrad)"/>
     <rect x="0" y="405" width="800" height="3" fill="#f59e0b"/>
-    <text x="24" y="432" fill="#ffffff" font-family="system-ui, sans-serif" font-size="14" font-weight="bold">PT. SURYALAND GROUP • PROYEK KLIEN: ${clientName} (ZERO BURNING)</text>
+    <text x="24" y="432" fill="#ffffff" font-family="system-ui, sans-serif" font-size="14" font-weight="bold">PT. RBS GROUP • PROYEK KLIEN: ${clientName} (ZERO BURNING)</text>
     <text x="24" y="456" fill="#fbbf24" font-family="system-ui, sans-serif" font-size="12" font-weight="600">LOKASI: ${subtitle}</text>
     <text x="24" y="480" fill="#e2e8f0" font-family="monospace" font-size="11">📍 GPS: ${lat}, ${lng}    🕒 WAKTU: ${time} WIB</text>
     
@@ -1423,7 +1423,7 @@ export const initialManagedUsers: ManagedUser[] = [
     fullName: 'Ir. Hendra Wijaya, M.Si',
     address: 'Jl. Jenderal Sudirman No. 18, Pekanbaru, Riau',
     whatsappNumber: '081175218899',
-    email: 'hendra.wijaya@suryaland.co.id',
+    email: 'hendra.wijaya@rbs.co.id',
     jobTitle: 'Direktur',
     userLevel: 'Superadmin',
     username: 'DIREKTUR',
@@ -1433,14 +1433,14 @@ export const initialManagedUsers: ManagedUser[] = [
     assignedBlockCodes: ['Akses Semua Blok (Tanpa Batas)'],
     status: 'Aktif',
     createdAt: '2026-07-01T08:00:00.000Z',
-    notes: 'Owner & Superadmin Utama Direksi PT. SURYALAND GROUP (Akses Pemilik Tanpa Batasan)',
+    notes: 'Owner & Superadmin Utama Direksi PT. RBS GROUP (Akses Pemilik Tanpa Batasan)',
   },
   {
     id: 'user-usr-02',
     fullName: 'Ahmad Rizky Pratama, S.T.',
     address: 'Mess Karyawan Camp 1, Perkebunan PT. A, Kampar, Riau',
     whatsappNumber: '081276543210',
-    email: 'ahmad.rizky@suryaland.co.id',
+    email: 'ahmad.rizky@rbs.co.id',
     jobTitle: 'Pengawas',
     userLevel: 'Pengawas',
     username: 'PENGAWAS',
@@ -1457,7 +1457,7 @@ export const initialManagedUsers: ManagedUser[] = [
     fullName: 'Bambang Sugiarto, S.P.',
     address: 'Kompleks Perumahan Sawit Mandiri Blok C-12, Siak, Riau',
     whatsappNumber: '081388776655',
-    email: 'bambang.sugiarto@suryaland.co.id',
+    email: 'bambang.sugiarto@rbs.co.id',
     jobTitle: 'Manager Operasional',
     userLevel: 'Manager',
     username: 'MANAGER',
@@ -1474,7 +1474,7 @@ export const initialManagedUsers: ManagedUser[] = [
     fullName: 'Dedi Kurniawan',
     address: 'Jl. Lintas Timur KM 42, Pangkalan Kerinci, Pelalawan, Riau',
     whatsappNumber: '085265438901',
-    email: 'dedi.kurniawan@suryaland.co.id',
+    email: 'dedi.kurniawan@rbs.co.id',
     jobTitle: 'Pengawas',
     userLevel: 'Pengawas',
     username: 'dedi_pengawas',
@@ -1586,6 +1586,98 @@ export const initialWorkAssignments: WorkAssignment[] = [
     createdAt: '2026-08-05T07:00:00Z',
   },
 ];
+
+export const initialCompanyIdentity: CompanyIdentity = {
+  shortName: 'RBS',
+  fullName: 'PT. RBS GROUP',
+  tagline: 'Land Clearing Heavy Equipment',
+  logoUrl: '/Logo RBS.png',
+  businessType: 'Kontraktor Pembukaan Lahan, Heavy Equipment & Perkebunan Kelapa Sawit (Zero Burning Method)',
+  description: 'Penyedia jasa pembukaan lahan skala besar berstandar Zero Burning, manajemen operasional alat berat komprehensif, dan logistik bahan bakar presisi tinggi.',
+  address: 'Jl. Soekarno-Hatta No. 88, Pekanbaru - Riau',
+  phone: '(0761) 841290 / 081175218899',
+  email: 'operasional@rbs.co.id',
+  website: 'https://rbs.co.id',
+  taxId: '01.234.567.8-216.000',
+  directorName: 'Ir. Hendra Wijaya, M.Si',
+  directorSignatureUrl: '',
+  managerName: 'Bambang Sugiarto, S.P.',
+  managerSignatureUrl: '',
+  updatedAt: '2026-09-24T08:00:00.000Z',
+};
+
+export const initialCompanyStaff: CompanyStaff[] = [
+  {
+    id: 'staff-01',
+    fullName: 'Ir. Hendra Wijaya, M.Si',
+    employeeId: 'RBS-DIR-001',
+    jobTitle: 'Direktur',
+    department: 'Direksi Eksekutif',
+    email: 'hendra.wijaya@rbs.co.id',
+    phone: '081175218899',
+    status: 'Aktif',
+    notes: 'Direktur Utama & Penanggung Jawab Operasional',
+    hasUserAccount: true,
+    userId: 'user-usr-01',
+    createdAt: '2026-07-01T08:00:00.000Z',
+  },
+  {
+    id: 'staff-02',
+    fullName: 'Bambang Sugiarto, S.P.',
+    employeeId: 'RBS-MGR-002',
+    jobTitle: 'Manager Operasional',
+    department: 'Operasional Lapangan',
+    email: 'bambang.sugiarto@rbs.co.id',
+    phone: '081388776655',
+    status: 'Aktif',
+    notes: 'Manager Operasional Wilayah Riau & Sumatera',
+    hasUserAccount: true,
+    userId: 'user-usr-03',
+    createdAt: '2026-08-01T08:00:00.000Z',
+  },
+  {
+    id: 'staff-03',
+    fullName: 'Ahmad Rizky Pratama, S.T.',
+    employeeId: 'RBS-SPV-003',
+    jobTitle: 'Pengawas',
+    department: 'Pengawasan Lapangan & Proyek',
+    email: 'ahmad.rizky@rbs.co.id',
+    phone: '081276543210',
+    status: 'Aktif',
+    notes: 'Pengawas Lapangan Proyek Estate PT. A',
+    hasUserAccount: true,
+    userId: 'user-usr-02',
+    createdAt: '2026-07-15T08:00:00.000Z',
+  },
+  {
+    id: 'staff-04',
+    fullName: 'Dedi Kurniawan',
+    employeeId: 'RBS-SPV-004',
+    jobTitle: 'Pengawas',
+    department: 'Pengawasan Lapangan & Proyek',
+    email: 'dedi.kurniawan@rbs.co.id',
+    phone: '085265438901',
+    status: 'Aktif',
+    notes: 'Pengawas Lapangan Estate PT. D',
+    hasUserAccount: true,
+    userId: 'user-usr-04',
+    createdAt: '2026-08-10T08:00:00.000Z',
+  },
+  {
+    id: 'staff-05',
+    fullName: 'Siti Rahmawati, S.E., Ak.',
+    employeeId: 'RBS-FIN-005',
+    jobTitle: 'Akuntan',
+    department: 'Keuangan & Logistik',
+    email: 'siti.rahma@rbs.co.id',
+    phone: '081234567890',
+    status: 'Aktif',
+    notes: 'Kepala Bagian Akuntansi & Verifikasi Pengeluaran BBM Solar',
+    hasUserAccount: false,
+    createdAt: '2026-08-20T08:00:00.000Z',
+  },
+];
+
 
 
 

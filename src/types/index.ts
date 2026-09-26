@@ -578,4 +578,40 @@ export interface UserActivityLog {
   };
 }
 
+export interface CompanyStaff {
+  id: string;
+  fullName: string;
+  employeeId?: string; // NIK / NIP
+  jobTitle: string; // Direktur, Manager, Pengawas, Akuntan, atau custom
+  department?: string; // Operasional, Keuangan, K3, dll
+  email: string;
+  phone: string;
+  signatureUrl?: string; // Data URL or Image URL TTD Digital
+  status: 'Aktif' | 'Nonaktif';
+  notes?: string;
+  hasUserAccount?: boolean; // apakah sudah terhubung dengan akun login di Manajemen User
+  userId?: string; // referensi ManagedUser.id
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface CompanyIdentity {
+  shortName: string; // e.g. "RBS" -> jadi nama apps "RBS APPS"
+  fullName: string; // e.g. "PT. RBS GROUP"
+  tagline: string; // e.g. "Land Clearing Heavy Equipment"
+  logoUrl: string; // URL / Data URL logo
+  businessType?: string; // Bidang usaha
+  description?: string;
+  address: string; // Alamat kantor pusat / operasional
+  phone: string; // No telepon / WA
+  email: string; // Email resmi
+  website?: string;
+  taxId?: string; // NPWP / NIB
+  directorName?: string;
+  directorSignatureUrl?: string;
+  managerName?: string;
+  managerSignatureUrl?: string;
+  updatedAt?: string;
+}
+
 

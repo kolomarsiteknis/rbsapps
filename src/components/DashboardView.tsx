@@ -302,13 +302,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <span className="text-slate-600">·</span>
                   <span>Lokasi: <strong className="text-slate-200">{activeClient.location}</strong></span>
                   <span className="text-slate-600">·</span>
-                  <span>Pelaksana: <strong className="text-slate-200">PT. SURYALAND GROUP</strong></span>
+                  <span>Pelaksana: <strong className="text-slate-200">PT. RBS GROUP</strong></span>
                 </>
               ) : (
                 <>
                   <span>Konsolidasi: <strong className="text-amber-300">{metrics.targetAreaTotal} Ha</strong> di berbagai perkebunan</span>
                   <span className="text-slate-600">·</span>
-                  <span>Pelaksana Utama: <strong className="text-slate-200">PT. SURYALAND GROUP</strong></span>
+                  <span>Pelaksana Utama: <strong className="text-slate-200">PT. RBS GROUP</strong></span>
                 </>
               )}
             </div>
@@ -639,7 +639,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               Daftar Proyek Klien Aktif (Perbandingan Capaian Ha)
             </h3>
             <p className="text-xs text-slate-500">
-              Memantau seluruh proyek klien dalam satu layar pengawasan terpadu PT. SURYALAND GROUP. Klik kartu klien untuk memfilter analisis.
+              Memantau seluruh proyek klien dalam satu layar pengawasan terpadu PT. RBS GROUP. Klik kartu klien untuk memfilter analisis.
             </p>
           </div>
           {isFiltered && (
@@ -898,7 +898,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </span>
             </div>
             <p className="text-slate-500 text-[11px]">
-              Toleransi target operasional PT. SURYALAND GROUP adalah downtime kerusakan &lt; 5%.
+              Toleransi target operasional PT. RBS GROUP adalah downtime kerusakan &lt; 5%.
             </p>
           </div>
         </div>
