@@ -93,8 +93,15 @@ export const storageService = {
     authUser?: AuthUser | null
   ): boolean {
     if (!authUser) return true;
-    // Superadmin / Direktur = Owner dengan akses tanpa batas
-    if (authUser.role === 'director' || authUser.userLevel === 'Superadmin') return true;
+    // Superadmin / Direktur / Manager = Manajemen dengan akses luas ke semua klien
+    if (
+      authUser.role === 'director' || 
+      authUser.role === 'manager' || 
+      authUser.userLevel === 'Superadmin' || 
+      authUser.userLevel === 'Manager'
+    ) {
+      return true;
+    }
 
     // Untuk Pengawas:
     // 1. Validasi Klien: Pengawas HANYA bertugas mengawasi 1 Klien PT yang ditugaskan
@@ -264,6 +271,52 @@ export const storageService = {
     report.rejectedAt = formatted;
     report.signatures.director = {
       name: directorName,
+      signedAt: formatted,
+      status: 'Pending',
+    };
+    report.updatedAt = new Date().toISOString();
+
+    saveToStorage(STORAGE_KEYS.REPORTS, reports);
+    syncDocWrite(FIRESTORE_COLLECTIONS.REPORTS, report);
+    return report;
+  },
+
+  approveReportByManager(id: string, managerName: string): DailyReport | null {
+    const reports = loadFromStorage<DailyReport[]>(STORAGE_KEYS.REPORTS, initialDailyReports);
+    const report = reports.find((r) => r.id === id);
+    if (!report) return null;
+
+    const now = new Date();
+    const formatted = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} WIB`;
+
+    report.status = 'Disetujui Manager';
+    report.signatures.siteManager = {
+      name: managerName,
+      signedAt: formatted,
+      status: 'Signed',
+    };
+    report.rejectionReason = undefined;
+    report.updatedAt = new Date().toISOString();
+
+    saveToStorage(STORAGE_KEYS.REPORTS, reports);
+    syncDocWrite(FIRESTORE_COLLECTIONS.REPORTS, report);
+    return report;
+  },
+
+  rejectReportByManager(id: string, managerName: string, reason: string): DailyReport | null {
+    const reports = loadFromStorage<DailyReport[]>(STORAGE_KEYS.REPORTS, initialDailyReports);
+    const report = reports.find((r) => r.id === id);
+    if (!report) return null;
+
+    const now = new Date();
+    const formatted = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} WIB`;
+
+    report.status = 'Ditolak Manager';
+    report.rejectionReason = reason;
+    report.rejectedBy = managerName;
+    report.rejectedAt = formatted;
+    report.signatures.siteManager = {
+      name: managerName,
       signedAt: formatted,
       status: 'Pending',
     };
@@ -1107,7 +1160,7 @@ export const storageService = {
     return tx;
   },
 
-  approveLogisticsInflow(txId: string, directorName: string): LogisticsTransaction | null {
+  approveLogisticsInflow(txId: string, approverName: string, approverRole: 'director' | 'manager' = 'director'): LogisticsTransaction | null {
     const list = this.getLogisticsTransactions();
     const tx = list.find((t) => t.id === txId);
     if (!tx || tx.type !== 'in') return null;
@@ -1116,13 +1169,15 @@ export const storageService = {
     const formatted = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} WIB`;
 
     tx.approvalStatus = 'approved';
-    tx.approvedByDirectorName = directorName;
+    tx.approvedByDirectorName = approverName;
+    tx.approvedByRole = approverRole;
     tx.approvedAt = formatted;
+    tx.rejectionReason = undefined;
 
     saveToStorage(STORAGE_KEYS.LOGISTICS_TRANSACTIONS, list);
     syncDocWrite(FIRESTORE_COLLECTIONS.LOGISTICS, tx);
 
-    // Add to actual inventory stock once Director approves
+    // Add to actual inventory stock once verified & approved
     const invList = this.getInventory();
     const match = invList.find((i) => i.name.toLowerCase() === tx.itemName.toLowerCase() || i.category === tx.category);
     if (match) {
@@ -1133,7 +1188,7 @@ export const storageService = {
     return tx;
   },
 
-  rejectLogisticsInflow(txId: string, directorName: string, rejectionReason: string): LogisticsTransaction | null {
+  rejectLogisticsInflow(txId: string, approverName: string, rejectionReason: string, approverRole: 'director' | 'manager' = 'director'): LogisticsTransaction | null {
     const list = this.getLogisticsTransactions();
     const tx = list.find((t) => t.id === txId);
     if (!tx || tx.type !== 'in') return null;
@@ -1142,12 +1197,75 @@ export const storageService = {
     const formatted = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} WIB`;
 
     tx.approvalStatus = 'rejected';
-    tx.approvedByDirectorName = directorName;
+    tx.approvedByDirectorName = approverName;
+    tx.approvedByRole = approverRole;
     tx.approvedAt = formatted;
     tx.rejectionReason = rejectionReason;
 
     saveToStorage(STORAGE_KEYS.LOGISTICS_TRANSACTIONS, list);
     syncDocWrite(FIRESTORE_COLLECTIONS.LOGISTICS, tx);
+    return tx;
+  },
+
+  approveLogisticsOutflow(txId: string, approverName: string, approverRole: 'director' | 'manager' = 'manager'): LogisticsTransaction | null {
+    const list = this.getLogisticsTransactions();
+    const tx = list.find((t) => t.id === txId);
+    if (!tx || tx.type !== 'out') return null;
+
+    const now = new Date();
+    const formatted = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} WIB`;
+
+    const wasPending = tx.approvalStatus === 'pending' || tx.approvalStatus === 'rejected';
+    tx.approvalStatus = 'approved';
+    tx.approvedByDirectorName = approverName;
+    tx.approvedByRole = approverRole;
+    tx.approvedAt = formatted;
+    tx.rejectionReason = undefined;
+
+    saveToStorage(STORAGE_KEYS.LOGISTICS_TRANSACTIONS, list);
+    syncDocWrite(FIRESTORE_COLLECTIONS.LOGISTICS, tx);
+
+    // If it was previously pending or rejected and inventory wasn't deducted yet:
+    if (wasPending) {
+      const invList = this.getInventory();
+      const match = invList.find((i) => i.name.toLowerCase() === tx.itemName.toLowerCase() || i.category === tx.category);
+      if (match) {
+        match.stockQuantity = Math.max(0, match.stockQuantity - tx.quantity);
+        this.saveInventory(match);
+      }
+    }
+
+    return tx;
+  },
+
+  rejectLogisticsOutflow(txId: string, approverName: string, rejectionReason: string, approverRole: 'director' | 'manager' = 'manager'): LogisticsTransaction | null {
+    const list = this.getLogisticsTransactions();
+    const tx = list.find((t) => t.id === txId);
+    if (!tx || tx.type !== 'out') return null;
+
+    const now = new Date();
+    const formatted = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} WIB`;
+
+    const wasApproved = tx.approvalStatus === 'approved';
+    tx.approvalStatus = 'rejected';
+    tx.approvedByDirectorName = approverName;
+    tx.approvedByRole = approverRole;
+    tx.approvedAt = formatted;
+    tx.rejectionReason = rejectionReason;
+
+    saveToStorage(STORAGE_KEYS.LOGISTICS_TRANSACTIONS, list);
+    syncDocWrite(FIRESTORE_COLLECTIONS.LOGISTICS, tx);
+
+    // If it was already approved and deducted from inventory, restore the stock!
+    if (wasApproved) {
+      const invList = this.getInventory();
+      const match = invList.find((i) => i.name.toLowerCase() === tx.itemName.toLowerCase() || i.category === tx.category);
+      if (match) {
+        match.stockQuantity = match.stockQuantity + tx.quantity;
+        this.saveInventory(match);
+      }
+    }
+
     return tx;
   },
 
@@ -1935,6 +2053,16 @@ export const storageService = {
             : ['Akses Semua Blok (Tanpa Batas)'],
         };
       }
+      if (u.userLevel === 'Manager' || u.jobTitle.toLowerCase().includes('manager')) {
+        return {
+          ...u,
+          assignedClientId: u.assignedClientId || 'all',
+          assignedClientName: u.assignedClientName || 'Semua Proyek (Manager Operasional)',
+          assignedBlockCodes: u.assignedBlockCodes && u.assignedBlockCodes.length > 0 && !u.assignedBlockCodes.includes('Blok AB')
+            ? u.assignedBlockCodes
+            : ['Akses Supervisi Semua Blok'],
+        };
+      }
       return u;
     });
   },
@@ -1954,12 +2082,20 @@ export const storageService = {
 
     // If Superadmin / Direktur: Owner tanpa batasan penempatan proyek
     const isSuper = user.userLevel === 'Superadmin' || user.jobTitle.toLowerCase().includes('direktur');
+    const isManager = user.userLevel === 'Manager' || user.jobTitle.toLowerCase().includes('manager');
     const normalizedUser: ManagedUser = isSuper
       ? {
           ...user,
           assignedClientId: 'all',
           assignedClientName: 'Semua Proyek (Owner)',
           assignedBlockCodes: ['Akses Semua Blok (Tanpa Batas)'],
+        }
+      : isManager
+      ? {
+          ...user,
+          assignedClientId: user.assignedClientId || 'all',
+          assignedClientName: user.assignedClientName || 'Semua Proyek (Manager Operasional)',
+          assignedBlockCodes: ['Akses Supervisi Semua Blok'],
         }
       : user;
 

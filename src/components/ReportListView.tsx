@@ -62,8 +62,10 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
   const [isRejectInputOpen, setIsRejectInputOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
 
-  const isDirector = userRole === 'director';
+  const isDirector = userRole === 'director' || authUser?.role === 'director';
+  const isManager = userRole === 'manager' || authUser?.role === 'manager';
   const isSupervisor = userRole === 'supervisor' || authUser?.role === 'supervisor';
+  const canApprove = isDirector || isManager;
 
   const allBlocks = storageService.getBlocks(undefined, authUser);
   const availableBlocks = isSupervisor && authUser?.assignedBlockCodes && authUser.assignedBlockCodes.length > 0 && !authUser.assignedBlockCodes[0].includes('Semua Blok')
@@ -195,7 +197,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
               <span>Ekspor Excel (CSV)</span>
             </button>
 
-            {/* Tombol Input Laporan Harian: HANYA UNTUK PENGAWAS (Direktur tidak boleh input) */}
+            {/* Tombol Input Laporan Harian: HANYA UNTUK PENGAWAS (Direktur & Manager tidak boleh input) */}
             {isSupervisor ? (
               <button
                 onClick={onNewReport}
@@ -207,7 +209,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
             ) : (
               <div className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 text-slate-600 text-xs rounded-xl font-bold border border-slate-200">
                 <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                <span>Mode Direktur: Otorisasi & Verifikasi</span>
+                <span>Mode {isManager ? 'Manager' : 'Direktur'}: Otorisasi &amp; Approval</span>
               </div>
             )}
           </div>
@@ -346,14 +348,23 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                   </div>
                   {/* Status Badge */}
                   <div>
-                    {isApproved ? (
+                    {report.status === 'Disetujui Direktur' ? (
                       <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full font-bold text-[10px]">
                         <Check className="w-3 h-3 text-emerald-600" />
-                        Disetujui
+                        Disetujui Direktur
+                      </span>
+                    ) : report.status === 'Disetujui Manager' ? (
+                      <span className="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full font-bold text-[10px]">
+                        <Check className="w-3 h-3 text-indigo-600" />
+                        Disetujui Manager
+                      </span>
+                    ) : report.status === 'Ditolak Manager' ? (
+                      <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-full font-bold text-[10px]">
+                        Ditolak Manager
                       </span>
                     ) : report.status === 'Ditolak Direktur' ? (
                       <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-full font-bold text-[10px]">
-                        Ditolak
+                        Ditolak Direktur
                       </span>
                     ) : report.status === 'Diajukan' ? (
                       <span className="bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-full font-bold text-[10px]">
@@ -523,11 +534,28 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                       )}
                     </td>
                     <td className="p-3 text-center whitespace-nowrap">
-                      {isApproved ? (
+                      {report.status === 'Disetujui Direktur' ? (
                         <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-0.5 rounded-full font-bold text-[10px]">
                           <Check className="w-3 h-3 text-emerald-600" />
-                          Disetujui
+                          Disetujui Direktur
                         </span>
+                      ) : report.status === 'Disetujui Manager' ? (
+                        <span className="inline-flex items-center gap-1 bg-indigo-100 text-indigo-800 border border-indigo-300 px-2.5 py-0.5 rounded-full font-bold text-[10px]">
+                          <Check className="w-3 h-3 text-indigo-600" />
+                          Disetujui Manager
+                        </span>
+                      ) : report.status === 'Ditolak Manager' ? (
+                        <button
+                          onClick={() => {
+                            setViewingReport(report);
+                            setIsRejectInputOpen(false);
+                          }}
+                          className="inline-flex items-center gap-1 bg-rose-100 text-rose-800 border border-rose-300 px-2 py-0.5 rounded-full font-bold text-[10px] hover:bg-rose-200 cursor-pointer"
+                          title="Klik untuk melihat catatan keterangan penolakan Manager"
+                        >
+                          <AlertTriangle className="w-3 h-3 text-rose-600" />
+                          Ditolak Manager
+                        </button>
                       ) : report.status === 'Ditolak Direktur' ? (
                         <button
                           onClick={() => {
@@ -915,19 +943,24 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                           alert('Mohon tuliskan catatan keterangan penolakan terlebih dahulu.');
                           return;
                         }
+                        const approverName = authUser?.displayName || (isManager ? 'Bambang Sugiarto, S.P.' : 'Ir. Hendra Wijaya, M.Si');
+                        const newStatus = isManager ? 'Ditolak Manager' : 'Ditolak Direktur';
+                        const now = new Date();
+                        const timeStr = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} WIB`;
+
                         if (onRejectReport) {
                           onRejectReport(viewingReport.id, rejectionReason.trim());
-                          setViewingReport({
-                            ...viewingReport,
-                            status: 'Ditolak Direktur',
-                            rejectionReason: rejectionReason.trim(),
-                            rejectedBy: 'Ir. Hendra Wijaya, M.Si',
-                            rejectedAt: `${new Date().getDate()}/${new Date().getMonth() + 1}/${new Date().getFullYear()} WIB`,
-                          });
-                          setIsRejectInputOpen(false);
                         }
+                        setViewingReport({
+                          ...viewingReport,
+                          status: newStatus,
+                          rejectionReason: rejectionReason.trim(),
+                          rejectedBy: approverName,
+                          rejectedAt: timeStr,
+                        });
+                        setIsRejectInputOpen(false);
                       }}
-                      className="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg font-black shadow"
+                      className="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg font-black shadow cursor-pointer"
                     >
                       Kirim Penolakan Laporan
                     </button>
@@ -949,9 +982,9 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                 </button>
               </div>
 
-              {/* ACTION BUTTONS UNTUK DIREKTUR (Menyetujui atau Menolak) */}
+              {/* ACTION BUTTONS UNTUK MANAJEMEN (MANAGER & DIREKTUR) */}
               <div className="flex items-center gap-2">
-                {isDirector && viewingReport.status !== 'Disetujui Direktur' && (
+                {canApprove && viewingReport.status !== 'Disetujui Direktur' && !(isManager && viewingReport.status === 'Disetujui Manager') && (
                   <>
                     {/* Tombol Tolak */}
                     <button
@@ -967,32 +1000,44 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                     <button
                       type="button"
                       onClick={() => {
+                        const approverName = authUser?.displayName || (isManager ? 'Bambang Sugiarto, S.P.' : 'Ir. Hendra Wijaya, M.Si');
+                        const now = new Date();
+                        const timeStr = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} WIB`;
+
                         onApproveReport(viewingReport.id);
                         setViewingReport({
                           ...viewingReport,
-                          status: 'Disetujui Direktur',
+                          status: isManager ? 'Disetujui Manager' : 'Disetujui Direktur',
                           signatures: {
                             ...viewingReport.signatures,
-                            director: {
-                              name: 'Ir. Hendra Wijaya, M.Si',
-                              signedAt: `${new Date().getDate()}/${new Date().getMonth() + 1}/${new Date().getFullYear()} WIB`,
-                              status: 'Signed',
-                            },
+                            ...(isManager ? {
+                              siteManager: {
+                                name: approverName,
+                                signedAt: timeStr,
+                                status: 'Signed',
+                              },
+                            } : {
+                              director: {
+                                name: approverName,
+                                signedAt: timeStr,
+                                status: 'Signed',
+                              },
+                            }),
                           },
                         });
                       }}
                       className="flex items-center gap-1.5 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-xs shadow transition cursor-pointer"
                     >
                       <ShieldCheck className="w-4 h-4" />
-                      <span>Setujui Laporan Ini</span>
+                      <span>Setujui Laporan ({isManager ? 'Manager' : 'Direktur'})</span>
                     </button>
                   </>
                 )}
 
-                {viewingReport.status === 'Disetujui Direktur' && (
+                {(viewingReport.status === 'Disetujui Direktur' || viewingReport.status === 'Disetujui Manager') && (
                   <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold border border-emerald-300">
                     <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                    <span>Laporan Resmi Disetujui</span>
+                    <span>Laporan Resmi {viewingReport.status}</span>
                   </div>
                 )}
 

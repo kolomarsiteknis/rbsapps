@@ -15,6 +15,7 @@ import { MasterDataView } from './components/MasterDataView';
 import { LogisticsInventoryView } from './components/LogisticsInventoryView';
 import { SupervisorToolsView } from './components/SupervisorToolsView';
 import { DirectorFieldMonitorView } from './components/DirectorFieldMonitorView';
+import { ManagerApprovalView } from './components/ManagerApprovalView';
 import { UserActivityAuditLogView } from './components/UserActivityAuditLogView';
 import { UserManagementView } from './components/UserManagementView';
 import { TutorialView } from './components/TutorialView';
@@ -38,7 +39,20 @@ export default function App() {
     }
   });
 
-  const [activeTab, setActiveTab] = useState<TabKey>('wizard');
+  const [activeTab, setActiveTab] = useState<TabKey>(() => {
+    try {
+      const saved = localStorage.getItem(AUTH_STORAGE_KEY);
+      if (saved) {
+        const u = JSON.parse(saved);
+        if (u.role === 'manager') return 'approval';
+        if (u.role === 'director') return 'dashboard';
+        return 'wizard';
+      }
+    } catch {
+      // fallback
+    }
+    return 'wizard';
+  });
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [isOnline, setIsOnline] = useState<boolean>(true);
   
@@ -131,6 +145,10 @@ export default function App() {
       setSelectedClientId(assignedId);
       setActiveTab('wizard');
       showToast(`Selamat Datang, ${user.displayName}! Anda masuk sebagai Pengawas Lapangan untuk ${user.assignedClientName || 'proyek penugasan'}.`);
+    } else if (user.role === 'manager') {
+      setSelectedClientId('ALL');
+      setActiveTab('approval');
+      showToast(`Selamat Datang, ${user.displayName}! Anda masuk sebagai Manager Operasional.`);
     } else {
       setSelectedClientId('ALL');
       setActiveTab('dashboard');
@@ -145,8 +163,8 @@ export default function App() {
       userEmail: user.email,
       actionCategory: 'AUTH',
       actionTitle: `Masuk Sesi: ${user.displayName}`,
-      actionDescription: `Pengguna berhasil login ke sistem sebagai ${user.role === 'director' ? 'Direktur (Superadmin)' : 'Pengawas Lapangan'}.`,
-      targetEntity: `Sesi ${user.role === 'director' ? 'Direksi' : 'Mobile Pengawas'}`,
+      actionDescription: `Pengguna berhasil login ke sistem sebagai ${user.role === 'director' ? 'Direktur (Superadmin)' : user.role === 'manager' ? 'Manager Operasional' : 'Pengawas Lapangan'}.`,
+      targetEntity: `Sesi ${user.role === 'director' ? 'Direksi' : user.role === 'manager' ? 'Manajemen Manager' : 'Mobile Pengawas'}`,
     });
   };
 
@@ -194,28 +212,62 @@ export default function App() {
   };
 
   const handleApproveReport = (reportId: string) => {
-    if (authUser?.role !== 'director') {
-      showToast('Persetujuan dokumen hanya memiliki otorisasi untuk akun Direktur.', 'warning');
+    if (authUser?.role !== 'director' && authUser?.role !== 'manager') {
+      showToast('Persetujuan dokumen hanya dapat dilakukan oleh Direktur atau Manager.', 'warning');
       return;
     }
-    const directorName = authUser?.displayName || 'Ir. Hendra Wijaya, M.Si';
-    const updated = storageService.approveReportByDirector(reportId, directorName);
+    const isManager = authUser.role === 'manager';
+    const approverName = authUser?.displayName || (isManager ? 'Bambang Sugiarto, S.P.' : 'Ir. Hendra Wijaya, M.Si');
+    const updated = isManager 
+      ? storageService.approveReportByManager(reportId, approverName)
+      : storageService.approveReportByDirector(reportId, approverName);
+
     if (updated) {
       loadData();
       recordUserActivity({
         userId: authUser?.id,
-        userName: directorName,
-        userRole: 'director',
+        userName: approverName,
+        userRole: authUser.role,
         userEmail: authUser?.email,
         actionCategory: 'REPORT',
         actionTitle: `Approval Laporan ${updated.reportNumber}`,
-        actionDescription: `Memberikan tanda tangan persetujuan resmi Direktur untuk laporan ${updated.clientName} (Blok ${updated.blockCode}).`,
+        actionDescription: `Memberikan persetujuan resmi ${isManager ? 'Manager' : 'Direktur'} untuk laporan ${updated.clientName} (Blok ${updated.blockCode}).`,
         targetEntity: updated.reportNumber,
         clientId: updated.clientId,
         clientName: updated.clientName,
         blockCode: updated.blockCode,
       });
-      showToast(`Laporan ${updated.reportNumber} resmi disetujui Direktur.`);
+      showToast(`Laporan ${updated.reportNumber} resmi disetujui ${isManager ? 'Manager' : 'Direktur'}.`);
+    }
+  };
+
+  const handleRejectReport = (reportId: string, reason: string) => {
+    if (authUser?.role !== 'director' && authUser?.role !== 'manager') {
+      showToast('Penolakan dokumen hanya dapat dilakukan oleh Direktur atau Manager.', 'warning');
+      return;
+    }
+    const isManager = authUser.role === 'manager';
+    const approverName = authUser?.displayName || (isManager ? 'Bambang Sugiarto, S.P.' : 'Ir. Hendra Wijaya, M.Si');
+    const updated = isManager
+      ? storageService.rejectReportByManager(reportId, approverName, reason)
+      : storageService.rejectReportByDirector(reportId, approverName, reason);
+
+    if (updated) {
+      loadData();
+      recordUserActivity({
+        userId: authUser?.id,
+        userName: approverName,
+        userRole: authUser.role,
+        userEmail: authUser?.email,
+        actionCategory: 'REPORT',
+        actionTitle: `Penolakan Laporan ${updated.reportNumber}`,
+        actionDescription: `Menolak laporan ${updated.clientName} (Blok ${updated.blockCode}) dengan catatan alasan: ${reason}.`,
+        targetEntity: updated.reportNumber,
+        clientId: updated.clientId,
+        clientName: updated.clientName,
+        blockCode: updated.blockCode,
+      });
+      showToast(`Laporan ${updated.reportNumber} ditolak ${isManager ? 'Manager' : 'Direktur'}. Catatan diteruskan ke Pengawas.`, 'info');
     }
   };
 
@@ -267,9 +319,17 @@ export default function App() {
 
     // Check permissions
     if (authUser?.role === 'supervisor') {
-      if (tab === 'dashboard' || tab === 'master' || tab === 'director-field-monitor' || tab === 'user-activity-log' || tab === 'user-management') {
-        showToast('Akses Ditolak: Fitur ini hanya dapat diakses dan diinput oleh Superadmin.', 'warning');
+      if (tab === 'dashboard' || tab === 'master' || tab === 'director-field-monitor' || tab === 'user-activity-log' || tab === 'user-management' || tab === 'approval' || tab === 'tutorial') {
+        showToast('Akses Ditolak: Fitur ini hanya dapat diakses oleh Manajemen / Direksi.', 'warning');
         setActiveTab('wizard');
+        return;
+      }
+    }
+
+    if (authUser?.role === 'manager') {
+      if (tab === 'dashboard' || tab === 'master' || tab === 'wizard' || tab === 'supervisor-tools' || tab === 'user-management' || tab === 'user-activity-log' || tab === 'tutorial') {
+        showToast('Akses Ditolak: Fitur ini tidak termasuk dalam wewenang akun Manager.', 'warning');
+        setActiveTab('approval');
         return;
       }
     }
@@ -468,9 +528,9 @@ export default function App() {
           )
         )}
 
-        {/* Tab 7: Audit Hasil Input Pengawas Lapangan (Field Operational Suite Review) - STRICT: ONLY FOR DIRECTOR */}
+        {/* Tab 7: Audit Hasil Input Pengawas Lapangan (Field Operational Suite Review) - READ-ONLY FIELD AUDIT FOR DIRECTOR & MANAGER */}
         {activeTab === 'director-field-monitor' && (
-          authUser.role === 'director' ? (
+          (authUser.role === 'director' || authUser.role === 'manager') ? (
             <DirectorFieldMonitorView
               authUser={authUser}
               clients={clients}
@@ -482,9 +542,37 @@ export default function App() {
           ) : (
             <div className="max-w-xl mx-auto my-12 p-6 bg-white rounded-2xl border border-rose-200 text-center space-y-3 shadow-lg">
               <ShieldAlert className="w-12 h-12 text-rose-500 mx-auto" />
-              <h3 className="font-black text-slate-900 text-base">Akses Terbatas Direktur</h3>
+              <h3 className="font-black text-slate-900 text-base">Akses Khusus Manajemen</h3>
               <p className="text-xs text-slate-600">
-                Menu Audit & Monitoring Hasil Pengawas Lapangan ini khusus untuk akses Direktur.
+                Menu Audit & Monitoring Hasil Pengawas Lapangan ini khusus untuk akses Direktur dan Manager.
+              </p>
+              <button
+                onClick={() => setActiveTab('wizard')}
+                className="px-4 py-2 bg-amber-500 text-slate-950 font-bold text-xs rounded-xl shadow cursor-pointer"
+              >
+                Kembali ke Form Laporan
+              </button>
+            </div>
+          )
+        )}
+
+        {/* Tab: APPROVAL PEKERJAAN PENGAWAS - KHUSUS MANAGER & DIREKTUR */}
+        {activeTab === 'approval' && (
+          (authUser.role === 'manager' || authUser.role === 'director') ? (
+            <ManagerApprovalView
+              authUser={authUser}
+              clients={clients}
+              selectedClientId={selectedClientId}
+              onSelectClientId={handleSetSelectedClientId}
+              onOpenPdfReport={handleOpenPdfModal}
+              showToast={showToast}
+            />
+          ) : (
+            <div className="max-w-xl mx-auto my-12 p-6 bg-white rounded-2xl border border-rose-200 text-center space-y-3 shadow-lg">
+              <ShieldAlert className="w-12 h-12 text-rose-500 mx-auto" />
+              <h3 className="font-black text-slate-900 text-base">Akses Khusus Manager & Direktur</h3>
+              <p className="text-xs text-slate-600">
+                Menu Approval Pekerjaan Pengawas (Verifikasi Laporan Harian, P2H Alat Berat, Mutasi Stok BBM & Insiden K3 Lapangan) hanya dapat diakses oleh akun Manager atau Direktur.
               </p>
               <button
                 onClick={() => setActiveTab('wizard')}

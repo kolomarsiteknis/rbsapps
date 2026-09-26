@@ -53,7 +53,11 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
   showToast,
 }) => {
   const isDirector = authUser?.role === 'director';
+  const isManager = authUser?.role === 'manager' || authUser?.userLevel === 'Manager';
   const isSupervisor = authUser?.role === 'supervisor';
+  const canAuthorizeLogistics = isDirector || isManager;
+  const approverName = authUser?.displayName || (isManager ? 'Bambang Sugiarto, S.P.' : 'Ir. Hendra Wijaya, M.Si');
+  const approverRole: 'director' | 'manager' = isManager ? 'manager' : 'director';
 
   const effectiveClientId = (isSupervisor && authUser?.assignedClientId && authUser.assignedClientId !== 'all')
     ? authUser.assignedClientId
@@ -255,22 +259,29 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
     showToast(`Pemakaian ${newTx.quantity} ${newTx.unit} ${newTx.itemName} untuk ${newTx.equipmentId} berhasil dicatat di lapangan!`);
   };
 
-  // Director Approval Handler
-  const handleApproveInflow = (txId: string) => {
-    if (!isDirector) {
-      showToast('Otorisasi Ditolak: Hanya Direktur yang dapat memverifikasi & menyetujui stok masuk.', 'warning');
+  // Manager & Director Approval Handler (Inflow & Outflow)
+  const handleApproveTransaction = (tx: LogisticsTransaction) => {
+    if (!canAuthorizeLogistics) {
+      showToast('Otorisasi Ditolak: Hanya Manager atau Direktur yang dapat memverifikasi & menyetujui mutasi stok.', 'warning');
       return;
     }
 
-    const directorName = authUser?.displayName || 'Ir. Hendra Wijaya, M.Si';
-    const updated = storageService.approveLogisticsInflow(txId, directorName);
-    if (updated) {
-      reloadData();
-      showToast(`Stok Masuk ${updated.itemName} (${updated.quantity} ${updated.unit}) resmi disetujui dan ditambahkan ke saldo aktif!`);
+    if (tx.type === 'in') {
+      const updated = storageService.approveLogisticsInflow(tx.id, approverName, approverRole);
+      if (updated) {
+        reloadData();
+        showToast(`Stok Masuk ${updated.itemName} (${updated.quantity} ${updated.unit}) resmi disetujui ${isManager ? 'Manager' : 'Direktur'} dan ditambahkan ke saldo aktif!`);
+      }
+    } else {
+      const updated = storageService.approveLogisticsOutflow(tx.id, approverName, approverRole);
+      if (updated) {
+        reloadData();
+        showToast(`Pemakaian Stok Keluar ${updated.itemName} (${updated.quantity} ${updated.unit}) untuk unit ${updated.equipmentId || 'alat'} resmi disetujui ${isManager ? 'Manager' : 'Direktur'}!`);
+      }
     }
   };
 
-  // Director Rejection Handler
+  // Manager & Director Rejection Handler (Inflow & Outflow with mandatory notes)
   const handleConfirmReject = (e: React.FormEvent) => {
     e.preventDefault();
     if (!rejectingTxId) return;
@@ -280,13 +291,25 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
       return;
     }
 
-    const directorName = authUser?.displayName || 'Ir. Hendra Wijaya, M.Si';
-    const updated = storageService.rejectLogisticsInflow(rejectingTxId, directorName, rejectionReasonInput.trim());
-    if (updated) {
-      reloadData();
-      setRejectingTxId(null);
-      setRejectionReasonInput('');
-      showToast(`Penerimaan stok masuk ditolak. Catatan penolakan telah diteruskan ke Pengawas.`, 'info');
+    const tx = transactions.find((t) => t.id === rejectingTxId);
+    if (!tx) return;
+
+    if (tx.type === 'in') {
+      const updated = storageService.rejectLogisticsInflow(rejectingTxId, approverName, rejectionReasonInput.trim(), approverRole);
+      if (updated) {
+        reloadData();
+        setRejectingTxId(null);
+        setRejectionReasonInput('');
+        showToast(`Penerimaan stok masuk ditolak ${isManager ? 'Manager' : 'Direktur'}. Catatan penolakan diteruskan ke Pengawas.`, 'info');
+      }
+    } else {
+      const updated = storageService.rejectLogisticsOutflow(rejectingTxId, approverName, rejectionReasonInput.trim(), approverRole);
+      if (updated) {
+        reloadData();
+        setRejectingTxId(null);
+        setRejectionReasonInput('');
+        showToast(`Pemakaian stok keluar ditolak ${isManager ? 'Manager' : 'Direktur'}. Stok dikembalikan ke saldo inventaris.`, 'info');
+      }
     }
   };
 
@@ -906,52 +929,45 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
                         <div className="text-[10px] text-slate-400">Pengawas Lapangan</div>
                       </td>
 
-                      {/* Status & Verifikasi Direktur */}
+                      {/* Status & Verifikasi Manajemen */}
                       <td className="p-3 text-center whitespace-nowrap">
-                        {isInflow ? (
-                          isPending ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
-                              <Clock className="w-3 h-3 text-amber-600 animate-spin" />
-                              Menunggu Approval Direktur
-                            </span>
-                          ) : isApproved ? (
-                            <div className="inline-flex flex-col items-center">
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                                Disetujui Direktur
-                              </span>
-                              <span className="text-[9px] text-slate-400 font-mono mt-0.5">
-                                {tx.approvedByDirectorName?.split(' ')[0] || 'Direktur'}
-                              </span>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => setDetailTx(tx)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300 hover:bg-rose-200 cursor-pointer"
-                              title={tx.rejectionReason || 'Ditolak'}
-                            >
-                              <XCircle className="w-3 h-3 text-rose-600" />
-                              Ditolak Direktur (Lihat Catatan)
-                            </button>
-                          )
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
-                            <Check className="w-3 h-3 text-blue-600" />
-                            Tercatat Real-Time
+                        {isPending ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                            <Clock className="w-3 h-3 text-amber-600 animate-spin" />
+                            Menunggu Approval
                           </span>
+                        ) : isApproved ? (
+                          <div className="inline-flex flex-col items-center">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                              {tx.approvedByRole === 'manager' ? 'Disetujui Manager' : 'Disetujui Direktur'}
+                            </span>
+                            <span className="text-[9px] text-slate-400 font-mono mt-0.5">
+                              {tx.approvedByDirectorName?.split(' ')[0] || (tx.approvedByRole === 'manager' ? 'Manager' : 'Direktur')}
+                            </span>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setDetailTx(tx)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300 hover:bg-rose-200 cursor-pointer"
+                            title={tx.rejectionReason || 'Ditolak dengan Catatan'}
+                          >
+                            <XCircle className="w-3 h-3 text-rose-600" />
+                            {tx.approvedByRole === 'manager' ? 'Ditolak Manager' : 'Ditolak'} (Catatan)
+                          </button>
                         )}
                       </td>
 
                       {/* Aksi */}
                       <td className="p-3 text-center whitespace-nowrap">
                         <div className="inline-flex items-center gap-1.5">
-                          {/* Jika Stok Masuk Pending dan Login sebagai Direktur: Tombol Approval / Reject */}
-                          {isInflow && isPending && isDirector ? (
+                          {/* Otorisasi Manajemen (Manager & Direktur) untuk Stok Masuk & Stok Keluar */}
+                          {canAuthorizeLogistics && isPending && (
                             <>
                               <button
-                                onClick={() => handleApproveInflow(tx.id)}
+                                onClick={() => handleApproveTransaction(tx)}
                                 className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-bold shadow-xs transition flex items-center gap-1 cursor-pointer"
-                                title="Setujui dan masukkan ke saldo stok aktif"
+                                title="Verifikasi & Setujui transaksi mutasi stok ini"
                               >
                                 <Check className="w-3 h-3" />
                                 <span>Setujui</span>
@@ -968,14 +984,13 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
                                 <span>Tolak</span>
                               </button>
                             </>
-                          ) : (
-                            <button
-                              onClick={() => setDetailTx(tx)}
-                              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[10px] font-bold border border-slate-300 transition cursor-pointer"
-                            >
-                              Detail
-                            </button>
                           )}
+                          <button
+                            onClick={() => setDetailTx(tx)}
+                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[10px] font-bold border border-slate-300 transition cursor-pointer"
+                          >
+                            Detail
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -1513,58 +1528,67 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
         </div>
       )}
 
-      {/* MODAL 3: PENOLAKAN OLEH DIREKTUR (Catatan Keterangan Penolakan Wajib) */}
-      {rejectingTxId && (
-        <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
-            <div className="border-b border-rose-100 pb-3 flex items-start gap-3">
-              <div className="p-2 bg-rose-100 rounded-xl text-rose-700">
-                <AlertTriangle className="w-6 h-6" />
+      {/* MODAL 3: PENOLAKAN DENGAN CATATAN (OTORISASI MANAGER & DIREKTUR) */}
+      {rejectingTxId && (() => {
+        const targetTx = transactions.find((t) => t.id === rejectingTxId);
+        const isTargetIn = targetTx?.type === 'in';
+
+        return (
+          <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+              <div className="border-b border-rose-100 pb-3 flex items-start gap-3">
+                <div className="p-2 bg-rose-100 rounded-xl text-rose-700">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-rose-900">
+                    Konfirmasi Penolakan {isTargetIn ? 'Stok Masuk' : 'Stok Keluar'}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Sebagai {isManager ? 'Manager Operasional' : 'Direktur'}, berikan catatan alasan penolakan mutasi {targetTx?.itemName} ({targetTx?.quantity} {targetTx?.unit}) yang wajib dibaca oleh Pengawas Lapangan.
+                  </p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-base font-black text-rose-900">
-                  Konfirmasi Penolakan Stok Masuk
-                </h3>
-                <p className="text-xs text-slate-500">
-                  Sebagai Direktur, berikan catatan keterangan penolakan yang wajib dibaca oleh Pengawas Lapangan.
-                </p>
-              </div>
+
+              <form onSubmit={handleConfirmReject} className="space-y-3.5 text-xs">
+                <div>
+                  <label className="block font-bold text-slate-800 mb-1">
+                    Catatan / Alasan Penolakan {isManager ? 'Manager' : 'Direktur'}: <span className="text-rose-600">*</span>
+                  </label>
+                  <textarea
+                    required
+                    rows={4}
+                    placeholder={
+                      isTargetIn
+                        ? 'Contoh: No Surat Jalan tidak cocok dengan PO supplier pusat, atau tera volume tangki susut melebihi toleransi...'
+                        : 'Contoh: Pemakaian tidak wajar melebihi jam kerja HM alat, atau unit excavator tersebut sedang standby di posko...'
+                    }
+                    value={rejectionReasonInput}
+                    onChange={(e) => setRejectionReasonInput(e.target.value)}
+                    className="w-full px-3 py-2 border border-rose-300 rounded-xl font-medium focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setRejectingTxId(null)}
+                    className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl font-bold cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-xl shadow cursor-pointer"
+                  >
+                    Tolak {isTargetIn ? 'Stok Masuk' : 'Stok Keluar'}
+                  </button>
+                </div>
+              </form>
             </div>
-
-            <form onSubmit={handleConfirmReject} className="space-y-3.5 text-xs">
-              <div>
-                <label className="block font-bold text-slate-800 mb-1">
-                  Catatan / Alasan Penolakan Direktur: <span className="text-rose-600">*</span>
-                </label>
-                <textarea
-                  required
-                  rows={4}
-                  placeholder="Contoh: No Surat Jalan tidak cocok dengan PO pusat, atau volume tera solar berkurang saat dicek dipstick tangki..."
-                  value={rejectionReasonInput}
-                  onChange={(e) => setRejectionReasonInput(e.target.value)}
-                  className="w-full px-3 py-2 border border-rose-300 rounded-xl font-medium focus:ring-2 focus:ring-rose-500 focus:outline-none"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setRejectingTxId(null)}
-                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl font-bold cursor-pointer"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-xl shadow cursor-pointer"
-                >
-                  Tolak Stok Masuk
-                </button>
-              </div>
-            </form>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* MODAL 4: DETAIL TRANSAKSI */}
       {detailTx && (

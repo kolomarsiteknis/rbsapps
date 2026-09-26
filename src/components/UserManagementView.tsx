@@ -149,9 +149,10 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
   const stats = useMemo(() => {
     const total = users.length;
     const superadmins = users.filter((u) => u.userLevel === 'Superadmin').length;
+    const managers = users.filter((u) => u.userLevel === 'Manager').length;
     const supervisors = users.filter((u) => u.userLevel === 'Pengawas').length;
     const active = users.filter((u) => u.status === 'Aktif').length;
-    return { total, superadmins, supervisors, active };
+    return { total, superadmins, managers, supervisors, active };
   }, [users]);
 
   // Toggle Card Password View
@@ -475,9 +476,9 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
         </div>
 
         {/* METRICS ROW */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5 pt-5 border-t border-slate-800/80">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-5 pt-5 border-t border-slate-800/80">
           <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-3">
-            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Pengguna</div>
+            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total User</div>
             <div className="text-2xl font-black text-white mt-0.5">{stats.total}</div>
             <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
               <Users className="w-3 h-3 text-amber-400" /> Terdaftar di Sistem
@@ -485,7 +486,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
           </div>
 
           <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-3">
-            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Level Superadmin</div>
+            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Superadmin</div>
             <div className="text-2xl font-black text-amber-400 mt-0.5">{stats.superadmins}</div>
             <div className="text-[10px] text-amber-300/80 mt-0.5 flex items-center gap-1">
               <ShieldCheck className="w-3 h-3 text-amber-400" /> Otorisasi Penuh
@@ -493,7 +494,15 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
           </div>
 
           <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-3">
-            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Level Pengawas</div>
+            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Manager</div>
+            <div className="text-2xl font-black text-indigo-400 mt-0.5">{stats.managers}</div>
+            <div className="text-[10px] text-indigo-300/80 mt-0.5 flex items-center gap-1">
+              <CheckCircle2 className="w-3 h-3 text-indigo-400" /> Approval &amp; Audit
+            </div>
+          </div>
+
+          <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-3">
+            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Pengawas</div>
             <div className="text-2xl font-black text-sky-400 mt-0.5">{stats.supervisors}</div>
             <div className="text-[10px] text-sky-300/80 mt-0.5 flex items-center gap-1">
               <Briefcase className="w-3 h-3 text-sky-400" /> Lapangan
@@ -546,6 +555,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
               >
                 <option value="ALL">Semua Level</option>
                 <option value="Superadmin">Superadmin</option>
+                <option value="Manager">Manager</option>
                 <option value="Pengawas">Pengawas</option>
               </select>
             </div>
@@ -644,13 +654,17 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                       <div className="flex items-center gap-2">
                         <span
                           className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider ${
-                            isSuper
+                            user.userLevel === 'Superadmin'
                               ? 'bg-amber-500/15 text-amber-700 border border-amber-500/30'
+                              : user.userLevel === 'Manager'
+                              ? 'bg-indigo-500/15 text-indigo-700 border border-indigo-500/30'
                               : 'bg-sky-500/15 text-sky-700 border border-sky-500/30'
                           }`}
                         >
-                          {isSuper ? (
+                          {user.userLevel === 'Superadmin' ? (
                             <ShieldCheck className="w-3 h-3 text-amber-600" />
+                          ) : user.userLevel === 'Manager' ? (
+                            <CheckCircle2 className="w-3 h-3 text-indigo-600" />
                           ) : (
                             <Briefcase className="w-3 h-3 text-sky-600" />
                           )}
@@ -887,8 +901,10 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                           <div className="flex flex-col gap-1 items-start">
                             <span
                               className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
-                                isSuper
+                                user.userLevel === 'Superadmin'
                                   ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                  : user.userLevel === 'Manager'
+                                  ? 'bg-indigo-100 text-indigo-800 border border-indigo-300'
                                   : 'bg-sky-100 text-sky-800 border border-sky-300'
                               }`}
                             >
@@ -1190,12 +1206,13 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                       setFormData((prev) => ({
                         ...prev,
                         userLevel: newLvl,
-                        jobTitle: newLvl === 'Superadmin' && prev.jobTitle === 'Pengawas' ? 'Direktur' : prev.jobTitle,
+                        jobTitle: newLvl === 'Superadmin' && prev.jobTitle === 'Pengawas' ? 'Direktur' : newLvl === 'Manager' && prev.jobTitle === 'Pengawas' ? 'Manager Operasional' : prev.jobTitle,
                       }));
                     }}
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-amber-500 cursor-pointer"
                   >
                     <option value="Superadmin">👑 Superadmin (Akses Penuh Seluruh Sistem)</option>
+                    <option value="Manager">🏢 Manager (Akses Approval, Rekap, Audit &amp; Logistik)</option>
                     <option value="Pengawas">🚜 Pengawas (Akses Form &amp; Operasional Lapangan)</option>
                   </select>
                 </div>

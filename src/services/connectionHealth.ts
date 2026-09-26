@@ -1,5 +1,5 @@
 import { doc, getDocFromServer } from 'firebase/firestore';
-import { db, config } from './firebase';
+import { db, config, isFirebaseReady, firebaseInitError } from './firebase';
 
 export type HealthStatus = 'checking' | 'connected' | 'error';
 
@@ -72,6 +72,23 @@ export async function runConnectionHealthCheck(): Promise<HealthCheckState> {
       projectId: config.projectId || 'gen-lang-client-0997069506',
       databaseId: config.firestoreDatabaseId || 'ai-studio-suryalandapps-620aaec9-a67b-4df9-82c6-3c7cbc90551b',
       isOffline: true,
+    };
+    notifyListeners();
+    return currentState;
+  }
+
+  // If Firebase initialization failed or credentials invalid
+  if (!isFirebaseReady || firebaseInitError) {
+    currentState = {
+      status: 'error',
+      latencyMs: null,
+      testedAt: new Date().toLocaleTimeString('id-ID'),
+      errorMessage: 'Inisialisasi Firebase Database Gagal',
+      errorCode: 'INIT_FAILED',
+      errorDetails: firebaseInitError || 'Kredensial atau inisialisasi koneksi Cloud Firestore belum siap.',
+      projectId: config.projectId || 'gen-lang-client-0997069506',
+      databaseId: config.firestoreDatabaseId || 'ai-studio-suryalandapps-620aaec9-a67b-4df9-82c6-3c7cbc90551b',
+      isOffline: false,
     };
     notifyListeners();
     return currentState;

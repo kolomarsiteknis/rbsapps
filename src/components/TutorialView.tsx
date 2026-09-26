@@ -65,6 +65,7 @@ export const TutorialView: React.FC<TutorialViewProps> = ({ onNavigateTab }) => 
     'users': false,
     'activity': false,
     'firestore': false,
+    'manager-access': false,
   });
 
   const toggleSection = (id: string) => {
@@ -393,6 +394,42 @@ export const TutorialView: React.FC<TutorialViewProps> = ({ onNavigateTab }) => 
         'Penyimpanan lokal menggunakan persistentLocalCache Firestore berteknologi multi-tab.',
         'Jangan menghapus riwayat data peramban (Clear Site Data) saat masih terdapat antrean pending sync offline.'
       ]
+    },
+    {
+      id: 'manager-access',
+      tabKey: 'approval',
+      title: 'Portal Akses Khusus Manager & Approval Pengawas',
+      badge: 'Level Manager',
+      icon: ShieldCheck,
+      description: 'Halaman kerja terisolasi bagi peran Manager Operasional untuk memvalidasi seluruh inputan kerja lapangan, stok BBM & pelumas, hasil inspeksi alat berat, dan cetak PDF resmi.',
+      targetRole: 'Khusus Akun Manager',
+      steps: [
+        {
+          title: 'Rekapitulasi Laporan Harian Land Clearing',
+          desc: 'Manager memiliki akses rekap laporan setara Direktur: memantau semua blok kerja, melihat histori pembukaan lahan, memeriksa detail alat dan cuaca, serta mengekspor berkas ke format CSV/Excel.',
+        },
+        {
+          title: 'Audit Hasil Pengawas Lapangan (Read-Only)',
+          desc: 'Akses audit read-only ke Field Operational Suite untuk meninjau checklist P2H alat berat harian, verifikasi foto dokumentasi lapangan ber-watermark GPS dan tanggal, audit deviasi HM mesin, penerimaan fuel bowser, serta pemantauan log insiden K3.',
+        },
+        {
+          title: 'Otoritas Otorisasi Logistik & BBM (Stok Masuk & Stok Keluar)',
+          desc: 'Manager berwenang penuh untuk memverifikasi dan menyetujui mutasi stok masuk maupun stok keluar (pemakaian alat), serta menolak pengajuan stok masuk/keluar dengan catatan alasan penolakan tertulis.',
+          tips: 'Setiap penolakan stok keluar secara otomatis mengembalikan kuantitas barang ke saldo inventaris aktif sistem.'
+        },
+        {
+          title: 'Halaman Approval Pekerjaan Pengawas Terpadu',
+          desc: 'Satu pintu verifikasi bagi Manager dan Direktur untuk memeriksa antrean laporan harian, mutasi logistik BBM, peringatan kerusakan P2H, dan insiden lapangan dengan fitur 1-klik Approve atau Reject ber-catatan.',
+        },
+        {
+          title: 'Cetak Lembar Laporan PDF Resmi',
+          desc: 'Mencetak rekapitulasi operasional harian berstandar format resmi perusahaan dengan stempel digital, koordinat lokasi lahan, dan ringkasan tim mekanik/operator.',
+        }
+      ],
+      keyRules: [
+        'Hanya pengguna dengan level Manager atau Superadmin yang dapat mengakses modul Approval Pekerjaan Pengawas.',
+        'Penolakan stok BBM atau laporan wajib disertai catatan alasan yang jelas agar pengawas dapat melakukan revisi lapangan.'
+      ]
     }
   ];
 
@@ -405,7 +442,7 @@ export const TutorialView: React.FC<TutorialViewProps> = ({ onNavigateTab }) => 
       section.keyRules.some(kr => kr.toLowerCase().includes(searchQuery.toLowerCase()));
 
     if (activeCategory === 'all') return matchesSearch;
-    if (activeCategory === 'core') return matchesSearch && ['overview', 'dashboard', 'master'].includes(section.id);
+    if (activeCategory === 'core') return matchesSearch && ['overview', 'dashboard', 'master', 'manager-access'].includes(section.id);
     if (activeCategory === 'field') return matchesSearch && ['audit', 'logistics', 'reports'].includes(section.id);
     if (activeCategory === 'admin') return matchesSearch && ['users', 'activity', 'pdf', 'firestore'].includes(section.id);
     return matchesSearch;

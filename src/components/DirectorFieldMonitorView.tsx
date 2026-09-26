@@ -58,14 +58,15 @@ export const DirectorFieldMonitorView: React.FC<DirectorFieldMonitorViewProps> =
   showToast,
   onOpenReport,
 }) => {
-  // STRICT ACCESS CONTROL: Direktur Only
-  if (authUser?.role !== 'director') {
+  // STRICT ACCESS CONTROL: Direktur & Manager Only
+  const isAuthorized = authUser?.role === 'director' || authUser?.role === 'manager' || authUser?.userLevel === 'Superadmin' || authUser?.userLevel === 'Manager';
+  if (!isAuthorized) {
     return (
       <div className="max-w-xl mx-auto my-12 p-6 bg-white rounded-2xl border border-rose-200 text-center space-y-3 shadow-lg">
         <ShieldAlert className="w-12 h-12 text-rose-500 mx-auto" />
-        <h3 className="font-black text-slate-900 text-base">Akses Khusus Direktur / Superadmin</h3>
+        <h3 className="font-black text-slate-900 text-base">Akses Khusus Direktur & Manager</h3>
         <p className="text-xs text-slate-600">
-          Halaman Audit & Monitoring Hasil Inputan Fitur Cepat Pengawas hanya dapat diakses oleh akun Direktur.
+          Halaman Audit & Monitoring Hasil Inputan Fitur Cepat Pengawas hanya dapat diakses oleh akun Direktur dan Manager.
         </p>
       </div>
     );

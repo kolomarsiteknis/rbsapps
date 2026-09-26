@@ -7,7 +7,8 @@ import {
   Menu, 
   HardHat, 
   Database,
-  ClipboardCheck
+  ClipboardCheck,
+  ShieldCheck
 } from 'lucide-react';
 import { UserRole } from '../types';
 import { TabKey } from './Header';
@@ -26,6 +27,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   onOpenSidebar,
 }) => {
   const isDirector = userRole === 'director';
+  const isManager = userRole === 'manager';
 
   const items = isDirector
     ? [
@@ -43,6 +45,29 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
           key: 'reports' as TabKey,
           label: 'Rekap',
           icon: FileText,
+        },
+        {
+          key: 'logistics' as TabKey,
+          label: 'Logistik',
+          icon: Fuel,
+        },
+      ]
+    : isManager
+    ? [
+        {
+          key: 'approval' as TabKey,
+          label: 'Approval',
+          icon: ShieldCheck,
+        },
+        {
+          key: 'reports' as TabKey,
+          label: 'Rekap',
+          icon: FileText,
+        },
+        {
+          key: 'director-field-monitor' as TabKey,
+          label: 'Audit P2H/K3',
+          icon: ClipboardCheck,
         },
         {
           key: 'logistics' as TabKey,

@@ -1,6 +1,6 @@
-export type UserRole = 'supervisor' | 'director' | 'client';
+export type UserRole = 'supervisor' | 'director' | 'manager' | 'client';
 
-export type ManagedUserLevel = 'Superadmin' | 'Pengawas';
+export type ManagedUserLevel = 'Superadmin' | 'Manager' | 'Pengawas';
 
 export interface ManagedUser {
   id: string;
@@ -9,7 +9,7 @@ export interface ManagedUser {
   whatsappNumber: string;    // no WA aktif
   email: string;             // Email aktif
   jobTitle: string;          // Jabatan: Direktur, Manager, Pengawas, atau custom jabatan baru
-  userLevel: ManagedUserLevel; // Level User: Superadmin, Pengawas
+  userLevel: ManagedUserLevel; // Level User: Superadmin, Manager, Pengawas
   username: string;          // Username untuk login
   password: string;          // Password
   assignedClientId: string;  // Penempatan Proyek (hanya boleh satu klien)
@@ -25,7 +25,7 @@ export interface AuthUser {
   id?: string;
   username: string;
   displayName: string;
-  role: 'supervisor' | 'director';
+  role: 'supervisor' | 'director' | 'manager';
   roleTitle: string;
   email?: string;
   loginTime: string;
@@ -245,8 +245,9 @@ export interface LogisticsTransaction {
   // Otorisasi & Verifikasi
   submittedByRole: 'supervisor';
   submittedByName: string;
-  approvalStatus: LogisticsApprovalStatus; // For 'in': 'pending' (menunggu verifikasi direktur), 'approved', 'rejected'. For 'out': 'approved'
+  approvalStatus: LogisticsApprovalStatus; // For 'in' & 'out': 'pending', 'approved', 'rejected'
   approvedByDirectorName?: string;
+  approvedByRole?: 'director' | 'manager';
   approvedAt?: string;
   rejectionReason?: string;
   notes?: string;
@@ -359,7 +360,7 @@ export interface DailyReport {
   supervisorGeneralNotes: string;
 
   // Validation & Approval
-  status: 'Draft' | 'Diajukan' | 'Diverifikasi Mandor' | 'Disetujui Direktur' | 'Ditolak Direktur';
+  status: 'Draft' | 'Diajukan' | 'Diverifikasi Mandor' | 'Disetujui Manager' | 'Disetujui Direktur' | 'Ditolak Manager' | 'Ditolak Direktur';
   rejectionReason?: string;
   rejectedBy?: string;
   rejectedAt?: string;

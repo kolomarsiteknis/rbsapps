@@ -41,7 +41,8 @@ export type TabKey =
   | 'user-activity-log'
   | 'tutorial'
   | 'wizard' 
-  | 'supervisor-tools';
+  | 'supervisor-tools'
+  | 'approval';
 
 interface HeaderProps {
   activeTab: TabKey;
@@ -86,7 +87,8 @@ export const Header: React.FC<HeaderProps> = ({
 
   const activeClientObj = clients.find((c) => c.id === selectedClientId);
   const isSupervisor = authUser?.role === 'supervisor';
-  const isDirector = authUser?.role === 'director';
+  const isDirector = authUser?.role === 'director' || authUser?.userLevel === 'Superadmin';
+  const isManager = authUser?.role === 'manager' || authUser?.userLevel === 'Manager';
 
   // Close sidebar on Escape key or route change
   useEffect(() => {
@@ -116,7 +118,7 @@ export const Header: React.FC<HeaderProps> = ({
     setIsSidebarOpen(false);
   };
 
-  // Nav item list configurations with exact user-requested sequence for Superadmin
+  // Nav item list configurations with exact user-requested sequence for Superadmin, Manager, and Pengawas
   const navItems = isDirector
     ? [
         {
@@ -180,6 +182,51 @@ export const Header: React.FC<HeaderProps> = ({
           label: 'Tutorial',
           subtitle: 'Panduan Fitur & SOP Superadmin',
           icon: BookOpen,
+          visible: true,
+        },
+        {
+          key: 'approval' as TabKey,
+          label: 'Approval Pengawas',
+          subtitle: 'Verifikasi & Otorisasi Pekerjaan',
+          icon: ShieldCheck,
+          visible: true,
+        },
+      ]
+    : isManager
+    ? [
+        {
+          key: 'approval' as TabKey,
+          label: 'Approval Pengawas',
+          subtitle: 'Verifikasi & Otorisasi Lapangan',
+          icon: ShieldCheck,
+          visible: true,
+        },
+        {
+          key: 'reports' as TabKey,
+          label: 'Rekap Laporan',
+          subtitle: 'Rekap Laporan Harian Land Clearing',
+          icon: FileText,
+          visible: true,
+        },
+        {
+          key: 'director-field-monitor' as TabKey,
+          label: 'Audit Lapangan',
+          subtitle: 'Read-Only Field Operational Suite',
+          icon: ClipboardCheck,
+          visible: true,
+        },
+        {
+          key: 'logistics' as TabKey,
+          label: 'Logistik & BBM',
+          subtitle: 'Verifikasi Stok Masuk & Keluar',
+          icon: Fuel,
+          visible: true,
+        },
+        {
+          key: 'official-pdf' as TabKey,
+          label: 'Cetak PDF',
+          subtitle: 'Format Dokumen Resmi Cetak',
+          icon: Printer,
           visible: true,
         },
       ]
@@ -247,7 +294,7 @@ export const Header: React.FC<HeaderProps> = ({
               {/* Logo & Brand Name */}
               <button
                 type="button"
-                onClick={() => handleSelectTab(isDirector ? 'dashboard' : 'wizard')}
+                onClick={() => handleSelectTab(isDirector ? 'dashboard' : isManager ? 'approval' : 'wizard')}
                 className="flex items-center gap-2.5 text-left group cursor-pointer focus:outline-none"
               >
                 <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center text-slate-950 font-black shadow-md shadow-amber-500/20 group-hover:scale-105 transition-transform duration-200 shrink-0">
@@ -343,6 +390,8 @@ export const Header: React.FC<HeaderProps> = ({
                     <div className="w-6 h-6 rounded-md bg-slate-700 flex items-center justify-center text-slate-200 font-bold shrink-0">
                       {isSupervisor ? (
                         <HardHat className="w-3.5 h-3.5 text-amber-400" />
+                      ) : isManager ? (
+                        <ShieldCheck className="w-3.5 h-3.5 text-sky-400" />
                       ) : (
                         <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
                       )}
@@ -426,6 +475,8 @@ export const Header: React.FC<HeaderProps> = ({
                   <div className="w-10 h-10 rounded-xl bg-slate-700 border border-slate-600 flex items-center justify-center font-black text-white shrink-0">
                     {isSupervisor ? (
                       <HardHat className="w-5 h-5 text-amber-400" />
+                    ) : isManager ? (
+                      <ShieldCheck className="w-5 h-5 text-sky-400" />
                     ) : (
                       <ShieldCheck className="w-5 h-5 text-emerald-400" />
                     )}
@@ -435,7 +486,7 @@ export const Header: React.FC<HeaderProps> = ({
                       {authUser.displayName || authUser.username}
                     </div>
                     <div className="text-[10px] text-slate-400 font-medium mt-0.5">
-                      {isSupervisor ? 'Pengawas Lapangan' : 'Direktur (Superadmin)'}
+                      {isSupervisor ? 'Pengawas Lapangan' : isManager ? 'Manager Operasional' : 'Direktur (Superadmin)'}
                     </div>
                     <div className="text-[9px] text-emerald-400 flex items-center gap-1 mt-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>

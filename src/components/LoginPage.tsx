@@ -56,23 +56,32 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
         // Validate password
         if (user.password === trimmedPass) {
-          const isSuper = user.userLevel === 'Superadmin';
+          const isSuper = user.userLevel === 'Superadmin' || user.jobTitle.toLowerCase().includes('direktur');
+          const isManager = user.userLevel === 'Manager' || user.jobTitle.toLowerCase().includes('manager');
+          const role: 'director' | 'manager' | 'supervisor' = isSuper ? 'director' : isManager ? 'manager' : 'supervisor';
+
           const authUserObj: AuthUser = {
             id: user.id,
             username: user.username,
             displayName: user.fullName,
-            role: isSuper ? 'director' : 'supervisor',
+            role,
             roleTitle: isSuper
               ? `${user.jobTitle} • Owner (Semua Proyek & Blok)`
+              : isManager
+              ? `${user.jobTitle} • Operasional Lapangan (Akses Approval & Audit)`
               : `${user.jobTitle} • ${user.assignedClientName} (${user.assignedBlockCodes.join(', ')})`,
             email: user.email,
             phoneNumber: user.whatsappNumber,
             address: user.address,
             jobTitle: user.jobTitle,
             userLevel: user.userLevel,
-            assignedClientId: isSuper ? 'all' : user.assignedClientId,
-            assignedClientName: isSuper ? 'Semua Proyek (Owner)' : user.assignedClientName,
-            assignedBlockCodes: isSuper ? ['Akses Semua Blok (Tanpa Batas)'] : user.assignedBlockCodes,
+            assignedClientId: (isSuper || isManager) ? 'all' : user.assignedClientId,
+            assignedClientName: isSuper 
+              ? 'Semua Proyek (Owner)' 
+              : isManager 
+              ? 'Semua Proyek (Manager Operasional)' 
+              : user.assignedClientName,
+            assignedBlockCodes: (isSuper || isManager) ? ['Akses Semua Blok'] : user.assignedBlockCodes,
             loginTime: new Date().toISOString(),
           };
 
@@ -88,6 +97,33 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
       // 2. Fallback checks for standard default usernames
       const upperUser = trimmedUser.toUpperCase();
+      if (upperUser === 'MANAGER') {
+        if (trimmedPass === 'manager123') {
+          const userObj: AuthUser = {
+            id: 'user-usr-03',
+            username: 'MANAGER',
+            displayName: 'Bambang Sugiarto, S.P.',
+            role: 'manager',
+            roleTitle: 'Manager Operasional • Wilayah Riau & Sumatera',
+            email: 'bambang.sugiarto@suryaland.co.id',
+            phoneNumber: '081388776655',
+            userLevel: 'Manager',
+            jobTitle: 'Manager Operasional',
+            assignedClientId: 'all',
+            assignedClientName: 'Semua Proyek (Manager Operasional)',
+            assignedBlockCodes: ['Akses Supervisi Semua Blok'],
+            loginTime: new Date().toISOString(),
+          };
+          onLoginSuccess(userObj);
+          setIsLoading(false);
+          return;
+        } else {
+          setErrorMsg('Password salah! Silakan periksa kembali kata sandi Anda.');
+          setIsLoading(false);
+          return;
+        }
+      }
+
       if (upperUser === 'PENGAWAS') {
         if (trimmedPass === 'satu2345') {
           const userObj: AuthUser = {
