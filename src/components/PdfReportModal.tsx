@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Printer, X, Download, AlertTriangle, CheckCircle2, ChevronDown, Calendar, Building2, MapPin } from 'lucide-react';
-import { DailyReport, CompanyIdentity } from '../types';
+import { DailyReport, CompanyProfile, CompanyStaff } from '../types';
 import { storageService } from '../services/storageService';
 
 interface PdfReportModalProps {
@@ -8,7 +8,7 @@ interface PdfReportModalProps {
   selectedReportId?: string;
   onClose?: () => void;
   isStandaloneView?: boolean;
-  companyIdentity?: CompanyIdentity;
+  companyProfileProp?: CompanyProfile;
 }
 
 export const PdfReportModal: React.FC<PdfReportModalProps> = ({
@@ -16,34 +16,29 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
   selectedReportId,
   onClose,
   isStandaloneView = false,
-  companyIdentity,
+  companyProfileProp,
 }) => {
-  const identity = companyIdentity || storageService.getCompanyIdentity();
-  const staffList = storageService.getCompanyStaff();
-
   const [currentId, setCurrentId] = useState<string>(
     selectedReportId || (reports.length > 0 ? reports[0].id : '')
   );
 
+  const companyProfile = companyProfileProp || storageService.getCompanyProfile();
+  const companyStaff = storageService.getCompanyStaff();
+
   const report = reports.find((r) => r.id === currentId) || reports[0];
 
-  // Resolve staff signatures
-  const supervisorStaff = staffList.find(
-    (s) => (report && s.fullName.toLowerCase() === report.supervisorName.toLowerCase()) || 
-           s.jobTitle.toLowerCase().includes('pengawas')
+  // Match staff for signatures
+  const supervisorStaff = companyStaff.find(
+    (s) => s.staffLevel === 'Pengawas' || 
+           (s.jobRole || '').toLowerCase().includes('pengawas') || 
+           ((s.fullName || '').toLowerCase().includes((report?.supervisorName || '').toLowerCase()))
   );
-  const managerStaff = staffList.find(
-    (s) => (report?.signatures?.siteManager?.name && s.fullName.toLowerCase() === report.signatures.siteManager.name.toLowerCase()) ||
-           s.jobTitle.toLowerCase().includes('manager')
+  const managerStaff = companyStaff.find(
+    (s) => s.staffLevel === 'Manager' || (s.jobRole || '').toLowerCase().includes('manager')
   );
-  const directorStaff = staffList.find(
-    (s) => (report?.signatures?.director?.name && s.fullName.toLowerCase() === report.signatures.director.name.toLowerCase()) ||
-           s.jobTitle.toLowerCase().includes('direktur')
+  const directorStaff = companyStaff.find(
+    (s) => s.staffLevel === 'Direktur' || (s.jobRole || '').toLowerCase().includes('direktur')
   );
-
-  const supervisorSig = report?.signatures?.supervisor?.signatureUrl || supervisorStaff?.signatureUrl;
-  const managerSig = report?.signatures?.siteManager?.signatureUrl || managerStaff?.signatureUrl || identity.managerSignatureUrl;
-  const directorSig = report?.signatures?.director?.signatureUrl || directorStaff?.signatureUrl || identity.directorSignatureUrl;
 
   if (!report) {
     return (
@@ -59,8 +54,8 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
 
   const handleDownloadTxt = () => {
     const textReport = `====================================================================================================
-                                      PT. C LOGISTIK & KONTRAKTOR
-                           Jl. Perkebunan Perdana No. 88, Pekanbaru | Telp: (0761) 554321
+                                      ${companyProfile.officialName || 'PT. SURYALAND GROUP'}
+                           ${companyProfile.headOfficeAddress} | Telp: ${companyProfile.phone}
 ====================================================================================================
                                 LAPORAN HARIAN OPERASIONAL LAND CLEARING
                                       No. Dokumen: ${report.reportNumber}
@@ -71,7 +66,7 @@ INFORMASI PROYEK & KLIEN
 Klien / Pemilik Lahan : ${report.clientName.padEnd(36)} Tanggal Laporan  : ${report.date}
 Nama Proyek           : ${report.projectName.padEnd(36)} Lokasi Kerja     : ${report.blockCode}
 No. Kontrak           : ${report.contractNumber.padEnd(36)} Kondisi Cuaca    : ${report.weather}
-Pengawas Lapangan     : ${report.supervisorName} (PT. RBS GROUP)    Jam Efektif Keja : ${report.effectiveWorkShift}
+Pengawas Lapangan     : ${report.supervisorName} (${companyProfile.shortName || 'SURYALAND'})    Jam Efektif Keja : ${report.effectiveWorkShift}
 
 ----------------------------------------------------------------------------------------------------
 I. HASIL KERJA HARIAN (CAPAIAN FISIK)
@@ -191,24 +186,25 @@ ${report.equipmentWorkLogs
         <div id="official-pdf-sheet" className="p-6 sm:p-10 font-sans text-xs sm:text-sm bg-white print:p-4">
           {/* Header Kop Surat */}
           <div className="text-center pb-3 border-b-2 border-slate-900 mb-3">
-            <div className="flex items-center justify-center gap-2.5">
-              <img
-                src={identity.logoUrl || '/Logo RBS.png'}
-                alt="Logo Perusahaan"
-                className="w-8 h-8 rounded-lg object-contain"
-                onError={(e) => {
-                  (e.currentTarget as HTMLElement).style.display = 'none';
-                }}
-              />
-              <h1 className="text-base sm:text-lg font-black tracking-widest text-slate-900 uppercase">
-                {identity.fullName || 'PT. RBS GROUP'}
-              </h1>
-            </div>
-            <p className="text-[11px] sm:text-xs text-slate-600 mt-0.5">
-              {identity.address || 'Jl. Soekarno-Hatta No. 88, Pekanbaru - Riau'} | Telp: {identity.phone || '(0761) 841290'} • Email: {identity.email || 'operasional@rbs.co.id'}
-            </p>
-            <div className="text-[10px] text-emerald-800 font-bold uppercase tracking-wider mt-0.5">
-              Mitra Pelaksana {identity.fullName || 'PT. RBS GROUP'} • {identity.tagline || 'Land Clearing Heavy Equipment'}
+            <div className="flex items-center justify-center gap-3">
+              <div className="w-12 h-12 flex items-center justify-center shrink-0">
+                {companyProfile.logoUrl ? (
+                  <img src={companyProfile.logoUrl} alt="Logo Perusahaan" className="max-h-full max-w-full object-contain" />
+                ) : (
+                  <span className="text-amber-600 text-2xl font-black">🚜</span>
+                )}
+              </div>
+              <div>
+                <h1 className="text-base sm:text-lg font-black tracking-widest text-slate-900 uppercase">
+                  {companyProfile.officialName || 'PT. SURYALAND GROUP'}
+                </h1>
+                <p className="text-[11px] sm:text-xs text-slate-600">
+                  {companyProfile.headOfficeAddress} | Telp: {companyProfile.phone} • Email: {companyProfile.email}
+                </p>
+                <div className="text-[10px] text-emerald-800 font-bold uppercase tracking-wider mt-0.5">
+                  {companyProfile.tagline || 'Heavy Equipment & Plantation Land Clearing Contractor • Zero Burning Method'}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -260,7 +256,7 @@ ${report.equipmentWorkLogs
               <div className="flex">
                 <span className="w-36 text-slate-600">Pengawas Lapangan</span>
                 <span className="w-3 text-slate-400">:</span>
-                <span className="font-semibold text-slate-900">{report.supervisorName} (PT. RBS)</span>
+                <span className="font-semibold text-slate-900">{report.supervisorName} (PT. SURYALAND)</span>
               </div>
               <div className="flex">
                 <span className="w-32 text-slate-600">Jam Efektif Kerja</span>
@@ -529,71 +525,98 @@ ${report.equipmentWorkLogs
               Lembar Pengesahan Tiga Pihak (Supervisor - Site Manager - Direktur)
             </div>
             <div className="grid grid-cols-3 gap-4 text-[11px]">
-              <div>
-                <div className="text-slate-600 mb-1">Dibuat Oleh,</div>
-                <div className="font-bold text-slate-800 mb-2">Pengawas Lapangan</div>
-                <div className="h-14 flex items-center justify-center mb-1">
-                  {supervisorSig ? (
-                    <img
-                      src={supervisorSig}
-                      alt="TTD Pengawas"
-                      className="max-h-12 max-w-[120px] object-contain mx-auto"
+              {/* Supervisor Signature Column */}
+              <div className="flex flex-col justify-between">
+                <div>
+                  <div className="text-slate-600 mb-0.5">Dibuat Oleh,</div>
+                  <div className="font-bold text-slate-800">Pengawas Lapangan</div>
+                </div>
+
+                <div className="h-16 flex items-center justify-center my-1">
+                  {supervisorStaff?.signatureUrl ? (
+                    <img 
+                      src={supervisorStaff.signatureUrl} 
+                      alt="TTD Pengawas" 
+                      className="max-h-14 max-w-full object-contain"
                     />
                   ) : (
-                    <div className="text-[10px] text-slate-400 italic">TTD Digital Terotorisasi</div>
+                    <div className="h-12 border-b border-dashed border-slate-300 w-32 mx-auto"></div>
                   )}
                 </div>
-                <div className="font-bold text-slate-900 border-t border-slate-400 pt-1">
-                  ( {report.signatures.supervisor.name} )
+
+                <div>
+                  <div className="font-bold text-slate-900 border-t border-slate-400 pt-1">
+                    ( {supervisorStaff?.fullName || report.signatures.supervisor.name} )
+                  </div>
+                  <div className="text-[10px] text-slate-500 font-medium">
+                    {companyProfile.officialName || 'PT. SURYALAND GROUP'}
+                  </div>
                 </div>
-                <div className="text-[10px] text-slate-500">{identity.fullName || 'PT. RBS GROUP'}</div>
               </div>
 
-              <div>
-                <div className="text-slate-600 mb-1">Diperiksa Oleh,</div>
-                <div className="font-bold text-slate-800 mb-2">Site Manager Proyek</div>
-                <div className="h-14 flex items-center justify-center mb-1">
-                  {managerSig ? (
-                    <img
-                      src={managerSig}
-                      alt="TTD Manager"
-                      className="max-h-12 max-w-[120px] object-contain mx-auto"
+              {/* Site Manager Signature Column */}
+              <div className="flex flex-col justify-between">
+                <div>
+                  <div className="text-slate-600 mb-0.5">Diperiksa Oleh,</div>
+                  <div className="font-bold text-slate-800">Site Manager Proyek</div>
+                </div>
+
+                <div className="h-16 flex items-center justify-center my-1">
+                  {managerStaff?.signatureUrl ? (
+                    <img 
+                      src={managerStaff.signatureUrl} 
+                      alt="TTD Manager" 
+                      className="max-h-14 max-w-full object-contain"
                     />
                   ) : (
-                    <div className="text-[10px] text-slate-400 italic">TTD Digital Terotorisasi</div>
+                    <div className="h-12 border-b border-dashed border-slate-300 w-32 mx-auto"></div>
                   )}
                 </div>
-                <div className="font-bold text-slate-900 border-t border-slate-400 pt-1">
-                  ( {report.signatures.siteManager?.name || identity.managerName || 'Bambang Sugiarto, S.P.'} )
+
+                <div>
+                  <div className="font-bold text-slate-900 border-t border-slate-400 pt-1">
+                    ( {managerStaff?.fullName || report.signatures.siteManager?.name || 'Bambang Sugiarto, S.P.'} )
+                  </div>
+                  <div className="text-[10px] text-slate-500 font-medium">
+                    {companyProfile.officialName || 'PT. SURYALAND GROUP'}
+                  </div>
                 </div>
-                <div className="text-[10px] text-slate-500">{identity.fullName || 'PT. RBS GROUP'}</div>
               </div>
 
-              <div>
-                <div className="text-slate-600 mb-1">Disetujui Oleh,</div>
-                <div className="font-bold text-slate-800 mb-2">Direktur Operasional</div>
-                <div className="h-14 flex items-center justify-center mb-1">
-                  {directorSig ? (
-                    <img
-                      src={directorSig}
-                      alt="TTD Direktur"
-                      className="max-h-12 max-w-[120px] object-contain mx-auto"
+              {/* Direktur Signature Column */}
+              <div className="flex flex-col justify-between">
+                <div>
+                  <div className="text-slate-600 mb-0.5">Disetujui Oleh,</div>
+                  <div className="font-bold text-slate-800">Direktur Utama</div>
+                </div>
+
+                <div className="h-16 flex items-center justify-center my-1">
+                  {directorStaff?.signatureUrl ? (
+                    <img 
+                      src={directorStaff.signatureUrl} 
+                      alt="TTD Direktur" 
+                      className="max-h-14 max-w-full object-contain"
                     />
                   ) : (
-                    <div className="text-[10px] text-slate-400 italic">TTD Digital Terotorisasi</div>
+                    <div className="h-12 border-b border-dashed border-slate-300 w-32 mx-auto"></div>
                   )}
                 </div>
-                <div className="font-bold text-slate-900 border-t border-slate-400 pt-1">
-                  ( {report.signatures.director?.name || identity.directorName || 'Ir. Hendra Wijaya, M.Si'} )
+
+                <div>
+                  <div className="font-bold text-slate-900 border-t border-slate-400 pt-1">
+                    ( {directorStaff?.fullName || report.signatures.director?.name || 'Ir. Hendra Wijaya, M.Si'} )
+                  </div>
+                  <div className="text-[10px] text-slate-500 font-medium">
+                    {companyProfile.officialName || 'PT. SURYALAND GROUP'}
+                  </div>
                 </div>
-                <div className="text-[10px] text-slate-500">{identity.fullName || 'PT. RBS GROUP'}</div>
               </div>
             </div>
           </div>
 
           {/* Footer note */}
           <div className="text-[9px] text-slate-400 mt-4 text-center">
-            Dokumen ini dicetak otomatis dari {identity.shortName || 'RBS'} APPS ({identity.fullName || 'PT. RBS GROUP'}). Data tervalidasi dengan sistem GPS dan kalkulasi jam kerja efektif terpusat.
+            Dokumen ini dicetak otomatis dari {companyProfile.shortName || 'SURYALAND'} APPS. Data tervalidasi dengan sistem GPS dan kalkulasi jam kerja efektif terpusat.
           </div>
         </div>
 

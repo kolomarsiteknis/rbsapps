@@ -5,23 +5,30 @@ import {
   Eye, 
   EyeOff, 
   AlertCircle,
-  Truck
+  Truck,
+  ShieldAlert
 } from 'lucide-react';
-import { AuthUser, CompanyIdentity } from '../types';
+import { AuthUser } from '../types';
 import { storageService } from '../services/storageService';
 
 interface LoginPageProps {
   onLoginSuccess: (user: AuthUser) => void;
-  companyIdentity?: CompanyIdentity;
+  idleNotice?: string | null;
+  onDismissNotice?: () => void;
 }
 
-export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, companyIdentity }) => {
-  const identity = companyIdentity || storageService.getCompanyIdentity();
+export const LoginPage: React.FC<LoginPageProps> = ({ 
+  onLoginSuccess,
+  idleNotice,
+  onDismissNotice
+}) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  const companyProfile = storageService.getCompanyProfile();
 
   // Validate credentials on submit
   const handleSubmit = (e: React.FormEvent) => {
@@ -107,7 +114,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, companyIde
             displayName: 'Bambang Sugiarto, S.P.',
             role: 'manager',
             roleTitle: 'Manager Operasional • Wilayah Riau & Sumatera',
-            email: 'bambang.sugiarto@rbs.co.id',
+            email: 'bambang.sugiarto@suryaland.co.id',
             phoneNumber: '081388776655',
             userLevel: 'Manager',
             jobTitle: 'Manager Operasional',
@@ -134,7 +141,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, companyIde
             displayName: 'Ahmad Rizky Pratama, S.T.',
             role: 'supervisor',
             roleTitle: 'Pengawas Lapangan • PT. A (Blok AB, Blok AA)',
-            email: 'pengawas@rbs.co.id',
+            email: 'pengawas@suryaland.co.id',
             phoneNumber: '081276543210',
             userLevel: 'Pengawas',
             assignedClientId: 'client-1',
@@ -159,7 +166,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, companyIde
             displayName: 'Ir. Hendra Wijaya, M.Si',
             role: 'director',
             roleTitle: 'Direktur Utama (Superadmin)',
-            email: 'hendra.wijaya@rbs.co.id',
+            email: 'hendra.wijaya@suryaland.co.id',
             loginTime: new Date().toISOString(),
           };
           onLoginSuccess(userObj);
@@ -189,22 +196,23 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, companyIde
       <header className="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md px-6 py-4 z-10">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-900 border border-amber-500/40 flex items-center justify-center shadow-lg shadow-amber-500/20 shrink-0">
-              <img
-                src={identity.logoUrl || '/Logo RBS.png'}
-                alt="Logo Perusahaan"
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  (e.currentTarget as HTMLElement).style.display = 'none';
-                }}
-              />
+            <div className="w-10 h-10 rounded-xl bg-slate-900 border border-amber-500/40 p-1 flex items-center justify-center text-slate-950 font-black shadow-lg shadow-amber-500/20 overflow-hidden shrink-0">
+              {companyProfile.logoUrl ? (
+                <img 
+                  src={companyProfile.logoUrl} 
+                  alt={companyProfile.shortName} 
+                  className="w-full h-full object-contain"
+                />
+              ) : (
+                <Truck className="w-6 h-6 text-amber-400" />
+              )}
             </div>
             <div>
               <div className="font-black text-base text-amber-400 tracking-wider">
-                {identity.shortName || 'RBS'} APPS
+                {companyProfile.shortName || 'SURYALAND'} APPS
               </div>
-              <div className="text-[11px] text-slate-400">
-                {identity.fullName || 'PT. RBS GROUP'} • {identity.tagline || 'Land Clearing Heavy Equipment'}
+              <div className="text-[11px] text-slate-400 truncate max-w-[280px]">
+                {companyProfile.officialName || 'PT. SURYALAND GROUP'} • Land Clearing Heavy Equipment
               </div>
             </div>
           </div>
@@ -231,6 +239,29 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, companyIde
                 Sistem Pengawasan Land Clearing (Zero Burning Method).
               </p>
             </div>
+
+            {/* Idle Timeout Security Notice Banner */}
+            {idleNotice && (
+              <div className="mb-5 p-3.5 bg-amber-950/80 border border-amber-600/80 rounded-xl flex items-start justify-between gap-2.5 text-xs text-amber-200 shadow-md">
+                <div className="flex items-start gap-2.5">
+                  <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="block font-bold text-amber-300 mb-0.5">Sesi Berakhir Otomatis (Idle Timeout)</strong>
+                    <span className="leading-relaxed">{idleNotice}</span>
+                  </div>
+                </div>
+                {onDismissNotice && (
+                  <button 
+                    type="button" 
+                    onClick={onDismissNotice}
+                    className="text-amber-400 hover:text-white cursor-pointer font-bold px-1"
+                    title="Tutup pesan"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Error Message Banner */}
             {errorMsg && (
@@ -318,7 +349,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, companyIde
       <footer className="border-t border-slate-800/80 bg-slate-900/60 backdrop-blur-md px-6 py-4 text-center z-10">
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2">
           <div>
-            {identity.fullName || 'PT. RBS GROUP'} • {identity.tagline || 'Land Clearing Heavy Equipment'}
+            PT. SURYALAND GROUP • Heavy Equipment Plantation Land Clearing
           </div>
           <div>
             Hak Cipta © 2026. Hak Akses Terproteksi.

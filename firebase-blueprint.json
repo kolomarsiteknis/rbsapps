@@ -32,6 +32,42 @@
         "status": { "type": "string" }
       },
       "required": ["id", "username", "password", "userLevel", "status"]
+    },
+    "CompanyProfile": {
+      "title": "CompanyProfile",
+      "type": "object",
+      "description": "Profil identitas resmi perusahaan dan branding aplikasi",
+      "properties": {
+        "id": { "type": "string" },
+        "officialName": { "type": "string" },
+        "shortName": { "type": "string" },
+        "tagline": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "npwp": { "type": "string" },
+        "nib": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "headOfficeAddress": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "officialName", "shortName", "updatedAt"]
+    },
+    "CompanyStaff": {
+      "title": "CompanyStaff",
+      "type": "object",
+      "description": "Informasi data staff perusahaan dengan tanda tangan digital",
+      "properties": {
+        "id": { "type": "string" },
+        "fullName": { "type": "string" },
+        "jobRole": { "type": "string" },
+        "staffLevel": { "type": "string" },
+        "employeeIdNumber": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "signatureUrl": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "fullName", "jobRole", "staffLevel", "status"]
     }
   },
   "firestore": {
@@ -42,6 +78,14 @@
     "/managedUsers/{userId}": {
       "schema": "ManagedUser",
       "description": "Koleksi kredensial dan penugasan user"
+    },
+    "/companyProfile/{docId}": {
+      "schema": "CompanyProfile",
+      "description": "Profil dan identitas resmi perusahaan"
+    },
+    "/companyStaff/{staffId}": {
+      "schema": "CompanyStaff",
+      "description": "Data staff perusahaan dan tanda tangan digital"
     }
   }
 }

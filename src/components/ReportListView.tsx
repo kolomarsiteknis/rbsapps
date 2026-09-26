@@ -161,7 +161,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `Rekap_Laporan_RBS_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `Rekap_Laporan_SURYALAND_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

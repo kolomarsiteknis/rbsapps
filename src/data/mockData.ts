@@ -1,4 +1,4 @@
-import { Client, Project, Block, Equipment, Worker, InventoryItem, DailyReport, LogisticsTransaction, DailyLocationTarget, ManagedUser, WorkAssignment, CompanyIdentity, CompanyStaff } from '../types';
+import { Client, Project, Block, Equipment, Worker, InventoryItem, DailyReport, LogisticsTransaction, DailyLocationTarget, ManagedUser, WorkAssignment, CompanyProfile, CompanyStaff } from '../types';
 
 // Helper to generate simulated SVG photographic base64 for initial seed photos
 function createSimulatedFieldPhoto(title: string, subtitle: string, color: string, lat: string, lng: string, time: string, clientName: string = 'PT. A'): string {
@@ -21,14 +21,14 @@ function createSimulatedFieldPhoto(title: string, subtitle: string, color: strin
     
     <!-- Icon or subject -->
     <circle cx="400" cy="180" r="70" fill="rgba(255,255,255,0.08)" stroke="#fbbf24" stroke-width="2"/>
-    <text x="400" y="175" fill="#f59e0b" font-family="system-ui, sans-serif" font-size="26" font-weight="bold" text-anchor="middle">🚜 RBS</text>
+    <text x="400" y="175" fill="#f59e0b" font-family="system-ui, sans-serif" font-size="26" font-weight="bold" text-anchor="middle">🚜 SURYALAND</text>
     <text x="400" y="210" fill="#ffffff" font-family="system-ui, sans-serif" font-size="18" font-weight="600" text-anchor="middle">${title}</text>
     <text x="400" y="235" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="13" text-anchor="middle">KLIEN: ${clientName} • ${subtitle}</text>
     
     <!-- Watermark Banner -->
     <rect x="0" y="405" width="800" height="95" fill="url(#bannerGrad)"/>
     <rect x="0" y="405" width="800" height="3" fill="#f59e0b"/>
-    <text x="24" y="432" fill="#ffffff" font-family="system-ui, sans-serif" font-size="14" font-weight="bold">PT. RBS GROUP • PROYEK KLIEN: ${clientName} (ZERO BURNING)</text>
+    <text x="24" y="432" fill="#ffffff" font-family="system-ui, sans-serif" font-size="14" font-weight="bold">PT. SURYALAND GROUP • PROYEK KLIEN: ${clientName} (ZERO BURNING)</text>
     <text x="24" y="456" fill="#fbbf24" font-family="system-ui, sans-serif" font-size="12" font-weight="600">LOKASI: ${subtitle}</text>
     <text x="24" y="480" fill="#e2e8f0" font-family="monospace" font-size="11">📍 GPS: ${lat}, ${lng}    🕒 WAKTU: ${time} WIB</text>
     
@@ -1423,7 +1423,7 @@ export const initialManagedUsers: ManagedUser[] = [
     fullName: 'Ir. Hendra Wijaya, M.Si',
     address: 'Jl. Jenderal Sudirman No. 18, Pekanbaru, Riau',
     whatsappNumber: '081175218899',
-    email: 'hendra.wijaya@rbs.co.id',
+    email: 'hendra.wijaya@suryaland.co.id',
     jobTitle: 'Direktur',
     userLevel: 'Superadmin',
     username: 'DIREKTUR',
@@ -1433,14 +1433,14 @@ export const initialManagedUsers: ManagedUser[] = [
     assignedBlockCodes: ['Akses Semua Blok (Tanpa Batas)'],
     status: 'Aktif',
     createdAt: '2026-07-01T08:00:00.000Z',
-    notes: 'Owner & Superadmin Utama Direksi PT. RBS GROUP (Akses Pemilik Tanpa Batasan)',
+    notes: 'Owner & Superadmin Utama Direksi PT. SURYALAND GROUP (Akses Pemilik Tanpa Batasan)',
   },
   {
     id: 'user-usr-02',
     fullName: 'Ahmad Rizky Pratama, S.T.',
     address: 'Mess Karyawan Camp 1, Perkebunan PT. A, Kampar, Riau',
     whatsappNumber: '081276543210',
-    email: 'ahmad.rizky@rbs.co.id',
+    email: 'ahmad.rizky@suryaland.co.id',
     jobTitle: 'Pengawas',
     userLevel: 'Pengawas',
     username: 'PENGAWAS',
@@ -1457,7 +1457,7 @@ export const initialManagedUsers: ManagedUser[] = [
     fullName: 'Bambang Sugiarto, S.P.',
     address: 'Kompleks Perumahan Sawit Mandiri Blok C-12, Siak, Riau',
     whatsappNumber: '081388776655',
-    email: 'bambang.sugiarto@rbs.co.id',
+    email: 'bambang.sugiarto@suryaland.co.id',
     jobTitle: 'Manager Operasional',
     userLevel: 'Manager',
     username: 'MANAGER',
@@ -1474,7 +1474,7 @@ export const initialManagedUsers: ManagedUser[] = [
     fullName: 'Dedi Kurniawan',
     address: 'Jl. Lintas Timur KM 42, Pangkalan Kerinci, Pelalawan, Riau',
     whatsappNumber: '085265438901',
-    email: 'dedi.kurniawan@rbs.co.id',
+    email: 'dedi.kurniawan@suryaland.co.id',
     jobTitle: 'Pengawas',
     userLevel: 'Pengawas',
     username: 'dedi_pengawas',
@@ -1587,97 +1587,151 @@ export const initialWorkAssignments: WorkAssignment[] = [
   },
 ];
 
-export const initialCompanyIdentity: CompanyIdentity = {
-  shortName: 'RBS',
-  fullName: 'PT. RBS GROUP',
-  tagline: 'Land Clearing Heavy Equipment',
-  logoUrl: '/Logo RBS.png',
-  businessType: 'Kontraktor Pembukaan Lahan, Heavy Equipment & Perkebunan Kelapa Sawit (Zero Burning Method)',
-  description: 'Penyedia jasa pembukaan lahan skala besar berstandar Zero Burning, manajemen operasional alat berat komprehensif, dan logistik bahan bakar presisi tinggi.',
-  address: 'Jl. Soekarno-Hatta No. 88, Pekanbaru - Riau',
-  phone: '(0761) 841290 / 081175218899',
-  email: 'operasional@rbs.co.id',
-  website: 'https://rbs.co.id',
-  taxId: '01.234.567.8-216.000',
-  directorName: 'Ir. Hendra Wijaya, M.Si',
-  directorSignatureUrl: '',
-  managerName: 'Bambang Sugiarto, S.P.',
-  managerSignatureUrl: '',
-  updatedAt: '2026-09-24T08:00:00.000Z',
+// Helper to generate a crisp, scalable Company Logo SVG (Data URL)
+export function createDefaultCompanyLogoSvg(shortName: string = 'SURYALAND', officialName: string = 'PT. SURYALAND GROUP'): string {
+  const displayShort = shortName || 'SURYALAND';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300">
+    <defs>
+      <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#f59e0b"/>
+        <stop offset="50%" stop-color="#d97706"/>
+        <stop offset="100%" stop-color="#b45309"/>
+      </linearGradient>
+      <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#0f172a"/>
+        <stop offset="100%" stop-color="#1e293b"/>
+      </linearGradient>
+    </defs>
+    <rect width="300" height="300" rx="48" fill="url(#bgGrad)"/>
+    <rect x="10" y="10" width="280" height="280" rx="40" fill="none" stroke="#f59e0b" stroke-width="4" stroke-opacity="0.3"/>
+    
+    <!-- Shield Symbol -->
+    <path d="M150 40 L220 75 V140 C220 190 150 230 150 230 C150 230 80 190 80 140 V75 Z" fill="url(#shieldGrad)" />
+    
+    <!-- Heavy Equipment Silhouette inside shield -->
+    <!-- Tractor body & tracks -->
+    <path d="M110 140 H190 V165 H110 Z" fill="#0f172a" rx="4" />
+    <circle cx="125" cy="152" r="7" fill="#f59e0b" />
+    <circle cx="150" cy="152" r="7" fill="#f59e0b" />
+    <circle cx="175" cy="152" r="7" fill="#f59e0b" />
+    <!-- Cabin -->
+    <path d="M125 110 H160 V140 H125 Z" fill="#0f172a" />
+    <rect x="130" y="115" width="22" height="15" fill="#38bdf8" rx="2" />
+    <!-- Arm / Blade -->
+    <path d="M160 120 L185 105 L195 130" fill="none" stroke="#0f172a" stroke-width="6" stroke-linecap="round" />
+    
+    <!-- Company Short Name on Badge -->
+    <rect x="35" y="240" width="230" height="36" rx="10" fill="#0f172a" stroke="#f59e0b" stroke-width="2"/>
+    <text x="150" y="264" fill="#fbbf24" font-family="system-ui, sans-serif" font-size="18" font-weight="900" letter-spacing="2" text-anchor="middle">${displayShort}</text>
+  </svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+// Helper to generate simulated authentic digital signature SVG
+export function createSimulatedSignatureSvg(name: string, roleTitle: string): string {
+  const cleanName = name.replace(/^(Ir\.|Dr\.|Drs\.|H\.|Hj\.)\s*/i, '').split(',')[0].trim();
+  const initial = cleanName.charAt(0) || 'S';
+  const rest = cleanName.slice(1) || 'ignature';
+  
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="120" viewBox="0 0 300 120">
+    <defs>
+      <linearGradient id="inkGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#1e3a8a"/>
+        <stop offset="100%" stop-color="#0f172a"/>
+      </linearGradient>
+    </defs>
+    <!-- Digital Cursive Stroke Simulation -->
+    <path d="M30,85 Q45,25 70,30 T90,95 Q105,40 140,55 T190,80 Q215,60 250,75 Q270,85 240,95 Q200,105 130,100" 
+          fill="none" stroke="url(#inkGrad)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M50,60 Q90,65 180,60 T270,68" 
+          fill="none" stroke="url(#inkGrad)" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="85" cy="45" r="2.5" fill="#1e3a8a" />
+    <circle cx="160" cy="48" r="2.5" fill="#1e3a8a" />
+    
+    <!-- Verified Security Tag -->
+    <text x="290" y="112" fill="#64748b" font-family="monospace" font-size="8" text-anchor="end">DIGITALLY VERIFIED • ID: ${Math.random().toString(36).substring(2, 8).toUpperCase()}</text>
+  </svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+// Initial Company Profile (Identitas Resmi Perusahaan)
+export const initialCompanyProfile: CompanyProfile = {
+  id: 'company_profile_main',
+  officialName: 'PT. SURYALAND GROUP',
+  shortName: 'SURYALAND',
+  tagline: 'Heavy Equipment & Plantation Land Clearing Contractor • Zero Burning Method',
+  logoUrl: createDefaultCompanyLogoSvg('SURYALAND', 'PT. SURYALAND GROUP'),
+  npwp: '01.234.567.8-216.000',
+  nib: '9120304561234',
+  phone: '(0761) 554321',
+  whatsapp: '0812-7654-3210',
+  email: 'corporate@suryaland.co.id',
+  website: 'https://suryaland.co.id',
+  headOfficeAddress: 'Jl. Jenderal Sudirman Kav. 88, Gedung Surya Graha Lt. 4, Pekanbaru, Riau 28282',
+  siteOfficeAddress: 'Basecamp Operasional Proyek Land Clearing Estate Siak & Pelalawan, Riau',
+  bankAccountInfo: 'Bank Mandiri Cabang Pekanbaru: 108-00-1234567-8 a/n PT. SURYALAND GROUP',
+  legalNotice: 'Kontraktor Spesialis Land Clearing Perkebunan Berizin Resmi & Ramah Lingkungan Tanpa Bakar',
+  updatedAt: '2026-09-01T08:00:00Z',
 };
 
+// Initial Company Staff Information with Digital Signatures
 export const initialCompanyStaff: CompanyStaff[] = [
   {
-    id: 'staff-01',
+    id: 'staff-1',
     fullName: 'Ir. Hendra Wijaya, M.Si',
-    employeeId: 'RBS-DIR-001',
-    jobTitle: 'Direktur',
-    department: 'Direksi Eksekutif',
-    email: 'hendra.wijaya@rbs.co.id',
-    phone: '081175218899',
+    jobRole: 'Direktur Utama',
+    staffLevel: 'Direktur',
+    employeeIdNumber: 'DIR-001',
+    email: 'hendra.wijaya@suryaland.co.id',
+    phone: '0811-7654-001',
+    signatureUrl: createSimulatedSignatureSvg('Hendra Wijaya', 'Direktur Utama'),
     status: 'Aktif',
-    notes: 'Direktur Utama & Penanggung Jawab Operasional',
-    hasUserAccount: true,
-    userId: 'user-usr-01',
-    createdAt: '2026-07-01T08:00:00.000Z',
+    linkedUserId: 'user-usr-01',
+    notes: 'Penanggung Jawab Tertinggi Operasional & Finansial Perusahaan',
+    createdAt: '2026-01-10T08:00:00Z',
   },
   {
-    id: 'staff-02',
+    id: 'staff-2',
     fullName: 'Bambang Sugiarto, S.P.',
-    employeeId: 'RBS-MGR-002',
-    jobTitle: 'Manager Operasional',
-    department: 'Operasional Lapangan',
-    email: 'bambang.sugiarto@rbs.co.id',
-    phone: '081388776655',
+    jobRole: 'Manager Operasional',
+    staffLevel: 'Manager',
+    employeeIdNumber: 'MGR-002',
+    email: 'bambang.sugiarto@suryaland.co.id',
+    phone: '0812-7654-002',
+    signatureUrl: createSimulatedSignatureSvg('Bambang Sugiarto', 'Manager Operasional'),
     status: 'Aktif',
-    notes: 'Manager Operasional Wilayah Riau & Sumatera',
-    hasUserAccount: true,
-    userId: 'user-usr-03',
-    createdAt: '2026-08-01T08:00:00.000Z',
+    linkedUserId: 'user-usr-03',
+    notes: 'Koordinator Lapangan & Verifikasi Persetujuan Harian Mandor',
+    createdAt: '2026-01-15T08:00:00Z',
   },
   {
-    id: 'staff-03',
+    id: 'staff-3',
     fullName: 'Ahmad Rizky Pratama, S.T.',
-    employeeId: 'RBS-SPV-003',
-    jobTitle: 'Pengawas',
-    department: 'Pengawasan Lapangan & Proyek',
-    email: 'ahmad.rizky@rbs.co.id',
-    phone: '081276543210',
+    jobRole: 'Pengawas Lapangan',
+    staffLevel: 'Pengawas',
+    employeeIdNumber: 'SUP-003',
+    email: 'pengawas@suryaland.co.id',
+    phone: '0812-7654-3210',
+    signatureUrl: createSimulatedSignatureSvg('Ahmad Rizky', 'Pengawas Lapangan'),
     status: 'Aktif',
-    notes: 'Pengawas Lapangan Proyek Estate PT. A',
-    hasUserAccount: true,
-    userId: 'user-usr-02',
-    createdAt: '2026-07-15T08:00:00.000Z',
+    linkedUserId: 'user-usr-02',
+    notes: 'Pengawas Fisik Lahan, Alat Berat & Safety K3 Blok AA/AB',
+    createdAt: '2026-02-01T08:00:00Z',
   },
   {
-    id: 'staff-04',
-    fullName: 'Dedi Kurniawan',
-    employeeId: 'RBS-SPV-004',
-    jobTitle: 'Pengawas',
-    department: 'Pengawasan Lapangan & Proyek',
-    email: 'dedi.kurniawan@rbs.co.id',
-    phone: '085265438901',
-    status: 'Aktif',
-    notes: 'Pengawas Lapangan Estate PT. D',
-    hasUserAccount: true,
-    userId: 'user-usr-04',
-    createdAt: '2026-08-10T08:00:00.000Z',
-  },
-  {
-    id: 'staff-05',
+    id: 'staff-4',
     fullName: 'Siti Rahmawati, S.E., Ak.',
-    employeeId: 'RBS-FIN-005',
-    jobTitle: 'Akuntan',
-    department: 'Keuangan & Logistik',
-    email: 'siti.rahma@rbs.co.id',
-    phone: '081234567890',
+    jobRole: 'Akuntan & Finance',
+    staffLevel: 'Akuntan',
+    employeeIdNumber: 'ACC-004',
+    email: 'finance@suryaland.co.id',
+    phone: '0813-9876-004',
+    signatureUrl: createSimulatedSignatureSvg('Siti Rahmawati', 'Finance & Accounting'),
     status: 'Aktif',
-    notes: 'Kepala Bagian Akuntansi & Verifikasi Pengeluaran BBM Solar',
-    hasUserAccount: false,
-    createdAt: '2026-08-20T08:00:00.000Z',
+    notes: 'Verifikasi Biaya Operasional BBM & Rekonsiliasi Kas Lapangan',
+    createdAt: '2026-02-15T08:00:00Z',
   },
 ];
-
 
 
 

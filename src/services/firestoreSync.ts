@@ -9,7 +9,8 @@ import {
   cleanForFirestore,
   writeBatch,
   enableNetwork,
-  disableNetwork
+  disableNetwork,
+  isFirebaseReady
 } from './firebase';
 import { 
   initialDailyReports, 
@@ -24,9 +25,7 @@ import {
   initialFuelBowserReceipts,
   initialSoilIncidents,
   initialJobTitles,
-  initialManagedUsers,
-  initialCompanyIdentity,
-  initialCompanyStaff
+  initialManagedUsers
 } from '../data/mockData';
 
 export const FIRESTORE_COLLECTIONS = {
@@ -45,7 +44,7 @@ export const FIRESTORE_COLLECTIONS = {
   USERS: 'managedUsers',
   JOB_TITLES: 'jobTitles',
   ACTIVITIES: 'userActivities',
-  COMPANY_IDENTITY: 'companyIdentity',
+  COMPANY_PROFILE: 'companyProfile',
   COMPANY_STAFF: 'companyStaff',
 } as const;
 
@@ -65,8 +64,8 @@ export const LOCAL_STORAGE_KEYS = {
   USERS: 'suryaland_managed_users_v1',
   JOB_TITLES: 'suryaland_job_titles_v1',
   ACTIVITIES: 'suryaland_user_activities_v1',
-  COMPANY_IDENTITY: 'rbs_company_identity_v1',
-  COMPANY_STAFF: 'rbs_company_staff_v1',
+  COMPANY_PROFILE: 'suryaland_company_profile_v1',
+  COMPANY_STAFF: 'suryaland_company_staff_v1',
 } as const;
 
 export type SyncStatus = 'connected' | 'offline' | 'syncing';
@@ -114,7 +113,7 @@ export async function syncDocWrite<T extends { id: string }>(
   collectionName: string, 
   item: T
 ): Promise<void> {
-  if (!item || !item.id) return;
+  if (!item || !item.id || !isFirebaseReady || !db) return;
   try {
     const cleaned = cleanForFirestore(item);
     const docRef = doc(db, collectionName, String(item.id));
@@ -129,7 +128,7 @@ export async function syncDocDelete(
   collectionName: string, 
   id: string
 ): Promise<void> {
-  if (!id) return;
+  if (!id || !isFirebaseReady || !db) return;
   try {
     const docRef = doc(db, collectionName, String(id));
     await deleteDoc(docRef);
@@ -143,6 +142,7 @@ async function seedCollectionIfEmpty(
   collectionName: string, 
   initialItems: Array<{ id: string }>
 ) {
+  if (!isFirebaseReady || !db) return;
   try {
     const colRef = collection(db, collectionName);
     const snap = await getDocs(colRef);
@@ -165,7 +165,7 @@ async function seedCollectionIfEmpty(
 
 // Initialize Firestore listeners & initial seeding
 export function initFirestoreSync() {
-  if (isInitialized) return;
+  if (isInitialized || !isFirebaseReady || !db) return;
   isInitialized = true;
 
   if (typeof window !== 'undefined') {
@@ -188,10 +188,6 @@ export function initFirestoreSync() {
       await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.BOWSER, initialFuelBowserReceipts);
       await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.SOIL, initialSoilIncidents);
       await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.USERS, initialManagedUsers);
-      await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.COMPANY_STAFF, initialCompanyStaff);
-
-      // Seed company identity as single document
-      await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.COMPANY_IDENTITY, [{ id: 'main', ...initialCompanyIdentity }]);
       
       // Seed job titles
       const jobTitlesItems = initialJobTitles.map((t, idx) => ({ id: `job-${idx + 1}`, title: t }));
@@ -256,27 +252,23 @@ export function initFirestoreSync() {
   attachSync(FIRESTORE_COLLECTIONS.ACTIVITIES, LOCAL_STORAGE_KEYS.ACTIVITIES);
   attachSync(FIRESTORE_COLLECTIONS.COMPANY_STAFF, LOCAL_STORAGE_KEYS.COMPANY_STAFF);
 
-  // Company identity listener (single object document 'main')
+  // Company Profile single doc listener
   try {
-    const compDocRef = collection(db, FIRESTORE_COLLECTIONS.COMPANY_IDENTITY);
-    onSnapshot(compDocRef, (snapshot) => {
-      if (!snapshot.empty) {
-        let compData = null;
-        snapshot.forEach((d) => {
-          if (d.id === 'main' || !compData) compData = d.data();
-        });
-        if (compData) {
-          localStorage.setItem(LOCAL_STORAGE_KEYS.COMPANY_IDENTITY, JSON.stringify(compData));
+    const profileDocRef = doc(db, FIRESTORE_COLLECTIONS.COMPANY_PROFILE, 'main_profile');
+    onSnapshot(profileDocRef, (snap) => {
+      if (snap.exists()) {
+        try {
+          localStorage.setItem(LOCAL_STORAGE_KEYS.COMPANY_PROFILE, JSON.stringify(snap.data()));
           if (typeof window !== 'undefined') {
             window.dispatchEvent(
-              new CustomEvent('suryaland_firestore_sync', { detail: { collection: FIRESTORE_COLLECTIONS.COMPANY_IDENTITY } })
+              new CustomEvent('suryaland_firestore_sync', { detail: { collection: FIRESTORE_COLLECTIONS.COMPANY_PROFILE } })
             );
           }
-        }
+        } catch {}
       }
     });
   } catch (err) {
-    console.warn('[Firestore] Company identity sync error:', err);
+    console.warn('[Firestore] Company Profile sync warning:', err);
   }
   
   // Job titles listener (string array format in localStorage)

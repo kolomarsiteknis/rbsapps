@@ -17,15 +17,42 @@ import {
 } from 'firebase/firestore';
 import rawConfig from '../../firebase-applet-config.json';
 
-// Safe environment variable & config resolution to avoid undefined values
+// Safe environment variable & config resolution to avoid undefined or malformed values
+const env = (typeof import.meta !== 'undefined' && (import.meta as any).env) || {};
+
+// Helper to sanitize Firestore database ID (must not contain slashes, schemes, or URLs)
+function sanitizeDbId(id?: unknown): string | undefined {
+  if (!id || typeof id !== 'string') return undefined;
+  const trimmed = id.trim();
+  if (
+    trimmed.includes('//') || 
+    trimmed.includes('firebaseio.com') || 
+    trimmed.startsWith('http://') || 
+    trimmed.startsWith('https://') ||
+    trimmed.includes('/')
+  ) {
+    return undefined;
+  }
+  if (trimmed === '(default)') return undefined;
+  return trimmed;
+}
+
+const rawDbId = sanitizeDbId(rawConfig?.firestoreDatabaseId);
+const envDbId = sanitizeDbId(env.VITE_FIREBASE_FIRESTORE_DATABASE_ID);
+const defaultDbId = 'ai-studio-suryalandapps-620aaec9-a67b-4df9-82c6-3c7cbc90551b';
+
 export const config = {
-  projectId: (import.meta as any).env?.VITE_FIREBASE_PROJECT_ID || rawConfig?.projectId || 'gen-lang-client-0997069506',
-  appId: (import.meta as any).env?.VITE_FIREBASE_APP_ID || rawConfig?.appId || '1:1087063289204:web:65111991e36041a44c9021',
-  apiKey: (import.meta as any).env?.VITE_FIREBASE_API_KEY || rawConfig?.apiKey || 'AIzaSyC7xN-qa1NEXGjUx544rvtk3FhwTvMTccE',
-  authDomain: (import.meta as any).env?.VITE_FIREBASE_AUTH_DOMAIN || rawConfig?.authDomain || 'gen-lang-client-0997069506.firebaseapp.com',
-  firestoreDatabaseId: (import.meta as any).env?.VITE_FIREBASE_FIRESTORE_DATABASE_ID || rawConfig?.firestoreDatabaseId || 'ai-studio-suryalandapps-620aaec9-a67b-4df9-82c6-3c7cbc90551b',
-  storageBucket: (import.meta as any).env?.VITE_FIREBASE_STORAGE_BUCKET || rawConfig?.storageBucket || 'gen-lang-client-0997069506.firebasestorage.app',
-  messagingSenderId: (import.meta as any).env?.VITE_FIREBASE_MESSAGING_SENDER_ID || rawConfig?.messagingSenderId || '1087063289204',
+  projectId: rawConfig?.projectId || env.VITE_FIREBASE_PROJECT_ID || 'gen-lang-client-0997069506',
+  appId: rawConfig?.appId || env.VITE_FIREBASE_APP_ID || '1:1087063289204:web:65111991e36041a44c9021',
+  apiKey: rawConfig?.apiKey || env.VITE_FIREBASE_API_KEY || 'AIzaSyC7xN-qa1NEXGjUx544rvtk3FhwTvMTccE',
+  authDomain: rawConfig?.authDomain || env.VITE_FIREBASE_AUTH_DOMAIN || 'gen-lang-client-0997069506.firebaseapp.com',
+  firestoreDatabaseId: rawDbId || envDbId || defaultDbId,
+  storageBucket: (rawConfig?.storageBucket && rawConfig.storageBucket !== 'FALSE')
+    ? rawConfig.storageBucket
+    : (env.VITE_FIREBASE_STORAGE_BUCKET && env.VITE_FIREBASE_STORAGE_BUCKET !== 'FALSE'
+        ? env.VITE_FIREBASE_STORAGE_BUCKET
+        : 'gen-lang-client-0997069506.firebasestorage.app'),
+  messagingSenderId: rawConfig?.messagingSenderId || env.VITE_FIREBASE_MESSAGING_SENDER_ID || '1087063289204',
 };
 
 export let isFirebaseReady = false;
@@ -53,10 +80,8 @@ try {
   app = getApps().length > 0 ? getApp() : ({} as FirebaseApp);
 }
 
-// Database ID specified in firebase-applet-config.json
-const dbDatabaseId = config.firestoreDatabaseId && config.firestoreDatabaseId !== '(default)'
-  ? config.firestoreDatabaseId
-  : undefined;
+// Database ID validated and sanitized
+const dbDatabaseId = sanitizeDbId(config.firestoreDatabaseId);
 
 // Enable Offline Persistence with persistentLocalCache & multi-tab manager
 let db: Firestore;
@@ -80,7 +105,12 @@ try {
   } catch (fsErr: any) {
     console.warn('[Firestore Initialization Warning] Offline local fallback activated:', fsErr?.message || fsErr);
     firebaseInitError = fsErr?.message || 'Gagal inisialisasi Firestore.';
-    db = {} as Firestore;
+    try {
+      db = getFirestore(app);
+      isFirebaseReady = true;
+    } catch {
+      db = {} as Firestore;
+    }
   }
 }
 

@@ -93,7 +93,7 @@ export const TutorialView: React.FC<TutorialViewProps> = ({ onNavigateTab }) => 
       title: 'Arsitektur Sistem & Peran Pengguna (RBAC)',
       badge: 'Prinsip Dasar',
       icon: ShieldCheck,
-      description: 'RBS Land Clearing membagi hak akses secara ketat antara Superadmin (Direktur/Owner) dan Pengawas Lapangan untuk memastikan integritas data dan keamanan operasional.',
+      description: 'Suryaland Land Clearing membagi hak akses secara ketat antara Superadmin (Direktur/Owner) dan Pengawas Lapangan untuk memastikan integritas data dan keamanan operasional.',
       targetRole: 'Superadmin & Direktur',
       steps: [
         {
@@ -284,7 +284,7 @@ export const TutorialView: React.FC<TutorialViewProps> = ({ onNavigateTab }) => 
       title: '6. Cetak PDF Resmi & Dokumen Berita Acara',
       badge: 'Output Cetak',
       icon: Printer,
-      description: 'Penerbitan dokumen resmi berformat standar A4 berlogo PT. RBS Group siap cetak atau simpan ke PDF.',
+      description: 'Penerbitan dokumen resmi berformat standar A4 berlogo PT. Suryaland Group siap cetak atau simpan ke PDF.',
       targetRole: 'Superadmin & Pengawas',
       steps: [
         {
@@ -293,7 +293,7 @@ export const TutorialView: React.FC<TutorialViewProps> = ({ onNavigateTab }) => 
         },
         {
           title: 'Struktur Tata Letak Dokumen Resmi',
-          desc: 'Lembar PDF mencakup: Kop Surat Resmi PT. RBS GROUP, Ringkasan Proyek & Blok, Tabel Jam Kerja Tiap Alat (HM Start, HM End, HM Efektif, Downtime), Konsumsi Solar & Rasio L/HM, Daftar Operator Hadir, Kondisi Cuaca, serta Dokumentasi Foto Geotagging Ber-GPS.',
+          desc: 'Lembar PDF mencakup: Kop Surat Resmi PT. SURYALAND GROUP, Ringkasan Proyek & Blok, Tabel Jam Kerja Tiap Alat (HM Start, HM End, HM Efektif, Downtime), Konsumsi Solar & Rasio L/HM, Daftar Operator Hadir, Kondisi Cuaca, serta Dokumentasi Foto Geotagging Ber-GPS.',
         },
         {
           title: 'Kolom Tanda Tangan Pengawas & Direktur',
@@ -771,7 +771,7 @@ export const TutorialView: React.FC<TutorialViewProps> = ({ onNavigateTab }) => 
               Butuh Penjelasan Teknis Tambahan?
             </h4>
             <p className="text-[11px] text-slate-500">
-              Hubungi Tim TI & Operasional Kantor Pusat PT. RBS Group untuk panduan konfigurasi lanjutan.
+              Hubungi Tim TI & Operasional Kantor Pusat PT. Suryaland Group untuk panduan konfigurasi lanjutan.
             </p>
           </div>
         </div>

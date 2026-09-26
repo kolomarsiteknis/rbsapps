@@ -1,5 +1,5 @@
 {
-  "name": "RBS APPS - Land Clearing Heavy Equipment Supervisor & Executive Dashboard",
+  "name": "SURYALAND APPS - Land Clearing Heavy Equipment Supervisor & Executive Dashboard",
   "description": "Sistem aplikasi pelaporan harian pengawas lapangan dan dashboard direktur untuk pengawasan proyek land clearing perkebunan dengan metode zero burning, pencatatan downtime cuaca vs breakdown, rasio efisiensi BBM, dan foto ber-watermark GPS.",
   "requestFramePermissions": ["geolocation", "camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

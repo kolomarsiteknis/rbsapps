@@ -343,12 +343,12 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
         targetList = transactions.filter((t) => t.type === 'out');
       }
 
-      let filename = `Laporan_Mutasi_Stok_Logistik_RBS_${todayStr}.csv`;
+      let filename = `Laporan_Mutasi_Stok_Logistik_Suryaland_${todayStr}.csv`;
       let headers: string[] = [];
       let rows: string[][] = [];
 
       if (mode === 'in') {
-        filename = `Laporan_Stok_Masuk_Logistik_RBS_${todayStr}.csv`;
+        filename = `Laporan_Stok_Masuk_Logistik_Suryaland_${todayStr}.csv`;
         headers = [
           'No',
           'ID Transaksi',
@@ -390,7 +390,7 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
           `"${(t.rejectionReason || t.notes || '').replace(/"/g, '""')}"`
         ]);
       } else if (mode === 'out') {
-        filename = `Laporan_Stok_Keluar_Pemakaian_RBS_${todayStr}.csv`;
+        filename = `Laporan_Stok_Keluar_Pemakaian_Suryaland_${todayStr}.csv`;
         headers = [
           'No',
           'ID Transaksi',
@@ -426,7 +426,7 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
           `"${(t.notes || '').replace(/"/g, '""')}"`
         ]);
       } else {
-        filename = `Rekap_Mutasi_Stok_Logistik_RBS_${todayStr}.csv`;
+        filename = `Rekap_Mutasi_Stok_Logistik_Suryaland_${todayStr}.csv`;
         headers = [
           'No',
           'ID Transaksi',
@@ -497,7 +497,7 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
               <span className="px-2.5 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-amber-500 text-slate-950">
                 Logistik Lapangan & Basecamp
               </span>
-              <span className="text-xs text-slate-500 font-mono">PT. RBS GROUP</span>
+              <span className="text-xs text-slate-500 font-mono">PT. SURYALAND GROUP</span>
               {pendingInflowCount > 0 && (
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300 animate-pulse">
                   {pendingInflowCount} Menunggu Approval Direktur

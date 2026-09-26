@@ -41,6 +41,7 @@ interface DashboardViewProps {
   onNavigateFieldMonitor?: () => void;
   onNavigateActivityLog?: () => void;
   onNavigateUserManagement?: () => void;
+  onNavigateCompanyProfile?: () => void;
   onApproveReport: (reportId: string) => void;
   userRole: UserRole;
   clients: Client[];
@@ -59,6 +60,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onNavigateFieldMonitor,
   onNavigateActivityLog,
   onNavigateUserManagement,
+  onNavigateCompanyProfile,
   onApproveReport,
   userRole,
   clients,
@@ -302,13 +304,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <span className="text-slate-600">·</span>
                   <span>Lokasi: <strong className="text-slate-200">{activeClient.location}</strong></span>
                   <span className="text-slate-600">·</span>
-                  <span>Pelaksana: <strong className="text-slate-200">PT. RBS GROUP</strong></span>
+                  <span>Pelaksana: <strong className="text-slate-200">PT. SURYALAND GROUP</strong></span>
                 </>
               ) : (
                 <>
                   <span>Konsolidasi: <strong className="text-amber-300">{metrics.targetAreaTotal} Ha</strong> di berbagai perkebunan</span>
                   <span className="text-slate-600">·</span>
-                  <span>Pelaksana Utama: <strong className="text-slate-200">PT. RBS GROUP</strong></span>
+                  <span>Pelaksana Utama: <strong className="text-slate-200">PT. SURYALAND GROUP</strong></span>
                 </>
               )}
             </div>
@@ -378,6 +380,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               >
                 <Users className="w-3.5 h-3.5 text-indigo-400" />
                 <span>Manajemen User</span>
+              </button>
+            )}
+
+            {onNavigateCompanyProfile && (
+              <button
+                type="button"
+                onClick={onNavigateCompanyProfile}
+                className="flex items-center gap-1.5 px-3 py-2 bg-amber-500/20 hover:bg-amber-500/30 active:scale-95 text-amber-300 font-bold rounded-xl text-xs border border-amber-500/40 transition-all duration-200 cursor-pointer"
+              >
+                <Building2 className="w-3.5 h-3.5 text-amber-400" />
+                <span>Identitas Perusahaan</span>
               </button>
             )}
           </div>
@@ -639,7 +652,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               Daftar Proyek Klien Aktif (Perbandingan Capaian Ha)
             </h3>
             <p className="text-xs text-slate-500">
-              Memantau seluruh proyek klien dalam satu layar pengawasan terpadu PT. RBS GROUP. Klik kartu klien untuk memfilter analisis.
+              Memantau seluruh proyek klien dalam satu layar pengawasan terpadu PT. SURYALAND GROUP. Klik kartu klien untuk memfilter analisis.
             </p>
           </div>
           {isFiltered && (
@@ -898,7 +911,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </span>
             </div>
             <p className="text-slate-500 text-[11px]">
-              Toleransi target operasional PT. RBS GROUP adalah downtime kerusakan &lt; 5%.
+              Toleransi target operasional PT. SURYALAND GROUP adalah downtime kerusakan &lt; 5%.
             </p>
           </div>
         </div>

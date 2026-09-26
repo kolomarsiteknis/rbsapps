@@ -1,10 +1,10 @@
 /**
- * RBS APPS - Heavy Equipment Land Clearing Plantation Project
+ * SURYALAND APPS - Heavy Equipment Land Clearing Plantation Project
  * Zero Burning Method (Metode Tanpa Bakar)
- * PT. RBS GROUP
+ * PT. SURYALAND GROUP
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Header, TabKey } from './components/Header';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { DashboardView } from './components/DashboardView';
@@ -18,32 +18,42 @@ import { DirectorFieldMonitorView } from './components/DirectorFieldMonitorView'
 import { ManagerApprovalView } from './components/ManagerApprovalView';
 import { UserActivityAuditLogView } from './components/UserActivityAuditLogView';
 import { UserManagementView } from './components/UserManagementView';
+import { CompanyProfileView } from './components/CompanyProfileView';
 import { TutorialView } from './components/TutorialView';
-import { SupervisorTutorialView } from './components/SupervisorTutorialView';
 import { LoginPage } from './components/LoginPage';
 import { storageService } from './services/storageService';
 import { initFirestoreSync, onSyncStatusChange, toggleFirestoreNetwork, SyncStatus } from './services/firestoreSync';
 import { recordUserActivity } from './utils/activityLogger';
-import { DailyReport, Equipment, UserRole, Client, AuthUser } from './types';
-import { CheckCircle2, AlertCircle, ShieldAlert } from 'lucide-react';
+import { DailyReport, Equipment, UserRole, Client, AuthUser, CompanyProfile, CompanyStaff } from './types';
+import { CheckCircle2, AlertCircle, ShieldAlert, Clock, RotateCcw, LogOut } from 'lucide-react';
 
-const AUTH_STORAGE_KEY = 'rbs_auth_user_v1';
-const LEGACY_AUTH_STORAGE_KEY = 'suryaland_auth_user_v1';
+const AUTH_STORAGE_KEY = 'suryaland_auth_user_v1';
+const IDLE_STORAGE_KEY = 'suryaland_last_activity_v1';
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes of inactivity
+const IDLE_WARNING_MS = 28 * 60 * 1000; // Warning displayed at 28 minutes (last 2 minutes)
 
 export default function App() {
   // Authentication State
   const [authUser, setAuthUser] = useState<AuthUser | null>(() => {
     try {
-      const saved = localStorage.getItem(AUTH_STORAGE_KEY) || localStorage.getItem(LEGACY_AUTH_STORAGE_KEY);
+      const saved = localStorage.getItem(AUTH_STORAGE_KEY);
       return saved ? JSON.parse(saved) : null;
     } catch {
       return null;
     }
   });
 
+  // Company Profile & Dynamic Branding State
+  const [companyProfile, setCompanyProfile] = useState<CompanyProfile>(() => storageService.getCompanyProfile());
+  const [preloadStaffForUserManagement, setPreloadStaffForUserManagement] = useState<CompanyStaff | null>(null);
+
+  // Idle timeout state for shared tablet security
+  const [idleWarningSeconds, setIdleWarningSeconds] = useState<number | null>(null);
+  const [idleNotice, setIdleNotice] = useState<string | null>(null);
+
   const [activeTab, setActiveTab] = useState<TabKey>(() => {
     try {
-      const saved = localStorage.getItem(AUTH_STORAGE_KEY) || localStorage.getItem(LEGACY_AUTH_STORAGE_KEY);
+      const saved = localStorage.getItem(AUTH_STORAGE_KEY);
       if (saved) {
         const u = JSON.parse(saved);
         if (u.role === 'manager') return 'approval';
@@ -90,10 +100,16 @@ export default function App() {
       loadData();
     };
 
+    const handleCompanySync = () => {
+      setCompanyProfile(storageService.getCompanyProfile());
+    };
+
     window.addEventListener('suryaland_firestore_sync', handleFirestoreSync);
+    window.addEventListener('suryaland_company_profile_sync', handleCompanySync);
     return () => {
       unsubSyncStatus();
       window.removeEventListener('suryaland_firestore_sync', handleFirestoreSync);
+      window.removeEventListener('suryaland_company_profile_sync', handleCompanySync);
     };
   }, [authUser?.username]);
 
@@ -115,6 +131,7 @@ export default function App() {
     setClients(storageService.getClients());
     setReports(storageService.getReports(undefined, authUser));
     setEquipments(storageService.getEquipments());
+    setCompanyProfile(storageService.getCompanyProfile());
   };
 
   const handleSetSelectedClientId = (id: string) => {
@@ -133,11 +150,128 @@ export default function App() {
     }, 4000);
   };
 
+  // Reset idle timer timestamp on active user interaction
+  const handleExtendSession = useCallback(() => {
+    try {
+      localStorage.setItem(IDLE_STORAGE_KEY, Date.now().toString());
+    } catch {}
+    setIdleWarningSeconds(null);
+    showToast('Sesi Anda telah diperpanjang.', 'success');
+  }, []);
+
+  // Idle timeout detector for shared tablets in the field (30 minutes inactivity)
+  useEffect(() => {
+    if (!authUser) {
+      setIdleWarningSeconds(null);
+      return;
+    }
+
+    // Set initial activity timestamp if not yet stored
+    try {
+      if (!localStorage.getItem(IDLE_STORAGE_KEY)) {
+        localStorage.setItem(IDLE_STORAGE_KEY, Date.now().toString());
+      }
+    } catch {}
+
+    let lastThrottleTime = 0;
+    const recordUserActivityEvent = () => {
+      // If warning modal is actively displayed, do not reset passively via background mouse moves;
+      // requires user to explicitly click "Lanjutkan Sesi"
+      if (idleWarningSeconds !== null) return;
+
+      const now = Date.now();
+      // Throttle storage writes to once every 3 seconds to preserve tablet CPU and battery
+      if (now - lastThrottleTime > 3000) {
+        lastThrottleTime = now;
+        try {
+          localStorage.setItem(IDLE_STORAGE_KEY, now.toString());
+        } catch {}
+      }
+    };
+
+    // Periodic check every 1 second
+    const checkIdleInterval = setInterval(() => {
+      try {
+        const lastActiveStr = localStorage.getItem(IDLE_STORAGE_KEY);
+        const lastActive = lastActiveStr ? parseInt(lastActiveStr, 10) : Date.now();
+        const elapsed = Date.now() - lastActive;
+
+        if (elapsed >= IDLE_TIMEOUT_MS) {
+          // Inactivity limit (30 minutes) reached -> Auto logout immediately
+          setIdleWarningSeconds(null);
+          handleLogout(true);
+        } else if (elapsed >= IDLE_WARNING_MS) {
+          // Warning threshold (28 minutes) reached -> Show 2-minute countdown
+          const remainingSec = Math.max(1, Math.ceil((IDLE_TIMEOUT_MS - elapsed) / 1000));
+          setIdleWarningSeconds(remainingSec);
+        } else {
+          setIdleWarningSeconds(null);
+        }
+      } catch (err) {
+        console.error('Idle timeout check failed', err);
+      }
+    }, 1000);
+
+    // Screen wake / tab visibility handler (vital for shared tablets sleeping in the field)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        try {
+          const lastActiveStr = localStorage.getItem(IDLE_STORAGE_KEY);
+          if (lastActiveStr) {
+            const elapsed = Date.now() - parseInt(lastActiveStr, 10);
+            if (elapsed >= IDLE_TIMEOUT_MS) {
+              setIdleWarningSeconds(null);
+              handleLogout(true);
+              return;
+            }
+          }
+          recordUserActivityEvent();
+        } catch {}
+      }
+    };
+
+    // Synchronize across multiple browser tabs on the same tablet
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === IDLE_STORAGE_KEY && e.newValue) {
+        setIdleWarningSeconds(null);
+      }
+    };
+
+    // User interaction events covering touches, gestures, keys, clicks, and scroll
+    const activityEvents: Array<keyof WindowEventMap> = [
+      'mousedown', 
+      'keydown', 
+      'touchstart', 
+      'touchmove', 
+      'touchend', 
+      'scroll', 
+      'click'
+    ];
+
+    activityEvents.forEach((evt) => {
+      window.addEventListener(evt, recordUserActivityEvent, { passive: true });
+    });
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      clearInterval(checkIdleInterval);
+      activityEvents.forEach((evt) => {
+        window.removeEventListener(evt, recordUserActivityEvent);
+      });
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [authUser, idleWarningSeconds]);
+
   // Login handler
   const handleLoginSuccess = (user: AuthUser) => {
     setAuthUser(user);
+    setIdleNotice(null);
+    setIdleWarningSeconds(null);
     try {
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
+      localStorage.setItem(IDLE_STORAGE_KEY, Date.now().toString());
     } catch (e) {
       console.error('Failed to save auth state', e);
     }
@@ -171,7 +305,7 @@ export default function App() {
   };
 
   // Logout handler
-  const handleLogout = () => {
+  const handleLogout = (isIdleTimeout: boolean = false) => {
     if (authUser) {
       recordUserActivity({
         userId: authUser.id,
@@ -179,19 +313,32 @@ export default function App() {
         userRole: authUser.role,
         userEmail: authUser.email,
         actionCategory: 'AUTH',
-        actionTitle: `Keluar Sesi: ${authUser.displayName}`,
-        actionDescription: `Pengguna keluar (logout) dari sistem aplikasi.`,
-        targetEntity: `Sesi ${authUser.role === 'director' ? 'Direksi' : 'Pengawas'}`,
+        actionTitle: isIdleTimeout 
+          ? `Sesi Berakhir Otomatis (Idle 30 Menit): ${authUser.displayName}` 
+          : `Keluar Sesi: ${authUser.displayName}`,
+        actionDescription: isIdleTimeout
+          ? `Pengguna otomatis logout dari sistem setelah 30 menit tidak ada aktivitas untuk proteksi keamanan tablet bersama.`
+          : `Pengguna keluar (logout) dari sistem aplikasi.`,
+        targetEntity: `Sesi ${authUser.role === 'director' ? 'Direksi' : authUser.role === 'manager' ? 'Manajemen Manager' : 'Mobile Pengawas'}`,
       });
     }
 
     setAuthUser(null);
+    setIdleWarningSeconds(null);
     try {
       localStorage.removeItem(AUTH_STORAGE_KEY);
+      localStorage.removeItem(IDLE_STORAGE_KEY);
     } catch (e) {
       console.error('Failed to remove auth state', e);
     }
-    showToast('Anda telah berhasil keluar dari sistem.', 'info');
+
+    if (isIdleTimeout) {
+      setIdleNotice('Sesi Anda telah berakhir secara otomatis setelah 30 menit tidak ada aktivitas. Hal ini diterapkan demi keamanan data proyek pada tablet bersama.');
+      showToast('Sesi otomatis berakhir setelah 30 menit tidak ada aktivitas (keamanan tablet bersama).', 'warning');
+    } else {
+      setIdleNotice(null);
+      showToast('Anda telah berhasil keluar dari sistem.', 'info');
+    }
   };
 
   const handleReportSaved = (newReport: DailyReport) => {
@@ -301,7 +448,7 @@ export default function App() {
     storageService.resetToDefault();
     loadData();
     setSelectedClientId('ALL');
-    showToast('Data berhasil di-reset ke data default multi-klien PT. RBS GROUP.');
+    showToast('Data berhasil di-reset ke data default multi-klien PT. SURYALAND GROUP.');
   };
 
   const handleOpenPdfModal = (reportId: string) => {
@@ -321,7 +468,7 @@ export default function App() {
 
     // Check permissions
     if (authUser?.role === 'supervisor') {
-      if (tab === 'dashboard' || tab === 'master' || tab === 'director-field-monitor' || tab === 'user-activity-log' || tab === 'user-management' || tab === 'approval' || tab === 'tutorial') {
+      if (tab === 'dashboard' || tab === 'master' || tab === 'company-profile' || tab === 'director-field-monitor' || tab === 'user-activity-log' || tab === 'user-management' || tab === 'approval' || tab === 'tutorial') {
         showToast('Akses Ditolak: Fitur ini hanya dapat diakses oleh Manajemen / Direksi.', 'warning');
         setActiveTab('wizard');
         return;
@@ -329,7 +476,7 @@ export default function App() {
     }
 
     if (authUser?.role === 'manager') {
-      if (tab === 'dashboard' || tab === 'master' || tab === 'wizard' || tab === 'supervisor-tools' || tab === 'user-management' || tab === 'user-activity-log' || tab === 'tutorial') {
+      if (tab === 'dashboard' || tab === 'master' || tab === 'company-profile' || tab === 'wizard' || tab === 'supervisor-tools' || tab === 'user-management' || tab === 'user-activity-log' || tab === 'tutorial') {
         showToast('Akses Ditolak: Fitur ini tidak termasuk dalam wewenang akun Manager.', 'warning');
         setActiveTab('approval');
         return;
@@ -354,7 +501,13 @@ export default function App() {
 
   // If user is not logged in, render the Welcome & Login page
   if (!authUser) {
-    return <LoginPage onLoginSuccess={handleLoginSuccess} />;
+    return (
+      <LoginPage 
+        onLoginSuccess={handleLoginSuccess}
+        idleNotice={idleNotice}
+        onDismissNotice={() => setIdleNotice(null)}
+      />
+    );
   }
 
   const effectiveRole: UserRole = authUser.role;
@@ -375,6 +528,7 @@ export default function App() {
         }}
         onResetData={handleResetData}
         clients={clients}
+        companyProfile={companyProfile}
         selectedClientId={authUser.role === 'supervisor' ? (authUser.assignedClientId || 'client-1') : selectedClientId}
         setSelectedClientId={handleSetSelectedClientId}
         isSidebarOpen={isSidebarOpen}
@@ -425,6 +579,7 @@ export default function App() {
               onNavigateFieldMonitor={() => setActiveTab('director-field-monitor')}
               onNavigateActivityLog={() => setActiveTab('user-activity-log')}
               onNavigateUserManagement={() => setActiveTab('user-management')}
+              onNavigateCompanyProfile={() => setActiveTab('company-profile')}
               onApproveReport={handleApproveReport}
               userRole={effectiveRole}
               clients={clients}
@@ -460,7 +615,6 @@ export default function App() {
             authUser={authUser}
             onNavigateToReports={() => setActiveTab('reports')}
             onNavigateToTools={() => setActiveTab('supervisor-tools')}
-            onNavigateToTutorial={() => setActiveTab('tutorial')}
           />
         )}
 
@@ -489,6 +643,7 @@ export default function App() {
                 : (selectedClientId === 'ALL' ? reports : reports.filter((r) => r.clientId === selectedClientId))
             }
             isStandaloneView={true}
+            companyProfileProp={companyProfile}
           />
         )}
 
@@ -513,7 +668,6 @@ export default function App() {
               onSelectClientId={handleSetSelectedClientId}
               showToast={showToast}
               onNavigateToWizard={() => setActiveTab('wizard')}
-              onNavigateToTutorial={() => setActiveTab('tutorial')}
             />
           ) : (
             <div className="max-w-xl mx-auto my-12 p-6 bg-white rounded-2xl border border-rose-200 text-center space-y-3 shadow-lg">
@@ -639,6 +793,8 @@ export default function App() {
             <UserManagementView
               authUser={authUser}
               showToast={showToast}
+              preloadStaff={preloadStaffForUserManagement}
+              onClearPreloadStaff={() => setPreloadStaffForUserManagement(null)}
             />
           ) : (
             <div className="max-w-xl mx-auto my-12 p-6 bg-white rounded-2xl border border-rose-200 text-center space-y-3 shadow-lg">
@@ -657,17 +813,60 @@ export default function App() {
           )
         )}
 
-        {/* Tab 11: Role-Specific Tutorial & SOP Documentation */}
+        {/* Tab: Identitas Perusahaan & Informasi Staff TTD - STRICT: ONLY FOR DIRECTOR */}
+        {activeTab === 'company-profile' && (
+          authUser.role === 'director' ? (
+            <CompanyProfileView
+              companyProfile={companyProfile}
+              onUpdateCompanyProfile={(updated) => {
+                setCompanyProfile(updated);
+                storageService.saveCompanyProfile(updated);
+                showToast(`Identitas Perusahaan berhasil diperbarui! Logo dan Nama Singkat (${updated.shortName}) otomatis diterapkan.`, 'success');
+              }}
+              authUser={authUser}
+              showToast={showToast}
+              onNavigateToUserManagement={(staff) => {
+                setPreloadStaffForUserManagement(staff || null);
+                setActiveTab('user-management');
+              }}
+            />
+          ) : (
+            <div className="max-w-xl mx-auto my-12 p-6 bg-white rounded-2xl border border-rose-200 text-center space-y-3 shadow-lg">
+              <ShieldAlert className="w-12 h-12 text-rose-500 mx-auto" />
+              <h3 className="font-black text-slate-900 text-base">Akses Khusus Direktur</h3>
+              <p className="text-xs text-slate-600">
+                Halaman Identitas Perusahaan & Database Tanda Tangan Digital Staff hanya dapat diakses oleh akun Direktur Utama (Superadmin).
+              </p>
+              <button
+                onClick={() => setActiveTab('wizard')}
+                className="px-4 py-2 bg-amber-500 text-slate-950 font-bold text-xs rounded-xl shadow cursor-pointer"
+              >
+                Kembali ke Form Laporan
+              </button>
+            </div>
+          )
+        )}
+
+        {/* Tab 11: Superadmin Tutorial & Documentation - STRICT: ONLY FOR SUPERADMIN */}
         {activeTab === 'tutorial' && (
           authUser.role === 'director' ? (
             <TutorialView
               onNavigateTab={(tab) => setActiveTab(tab)}
             />
           ) : (
-            <SupervisorTutorialView
-              onNavigateTab={(tab) => setActiveTab(tab)}
-              authUser={authUser}
-            />
+            <div className="max-w-xl mx-auto my-12 p-6 bg-white rounded-2xl border border-rose-200 text-center space-y-3 shadow-lg">
+              <ShieldAlert className="w-12 h-12 text-rose-500 mx-auto" />
+              <h3 className="font-black text-slate-900 text-base">Akses Khusus Superadmin</h3>
+              <p className="text-xs text-slate-600">
+                Halaman Panduan & Tutorial Penggunaan Fitur Komprehensif ini dikhususkan bagi Akun Superadmin / Direktur.
+              </p>
+              <button
+                onClick={() => setActiveTab('wizard')}
+                className="px-4 py-2 bg-amber-500 text-slate-950 font-bold text-xs rounded-xl shadow cursor-pointer"
+              >
+                Kembali ke Form Laporan
+              </button>
+            </div>
           )
         )}
       </main>
@@ -683,17 +882,80 @@ export default function App() {
           selectedReportId={selectedReportIdForModal}
           onClose={() => setSelectedReportIdForModal(null)}
           isStandaloneView={false}
+          companyProfileProp={companyProfile}
         />
+      )}
+
+      {/* Idle Timeout Warning Modal (Enhanced Security for Shared Tablets) */}
+      {idleWarningSeconds !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="bg-slate-900 border-2 border-amber-500 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl text-center space-y-5">
+            <div className="relative mx-auto w-16 h-16 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400">
+              <Clock className="w-8 h-8 animate-pulse text-amber-400" />
+              <span className="absolute -top-1 -right-1 flex h-4 w-4">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-4 w-4 bg-amber-500"></span>
+              </span>
+            </div>
+
+            <div>
+              <span className="px-3 py-1 rounded-full text-[10px] font-black tracking-wider uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                Keamanan Tablet Lapangan
+              </span>
+              <h3 className="text-xl font-black text-white mt-3">
+                Sesi Akan Berakhir Otomatis
+              </h3>
+              <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                Tidak ada aktivitas selama 28 menit. Demi menjaga keamanan data operasional pada perangkat tablet bersama, sesi Anda akan otomatis keluar dalam:
+              </p>
+            </div>
+
+            {/* Live Countdown Display */}
+            <div className="py-4 px-6 bg-slate-950/90 border border-amber-500/40 rounded-2xl flex items-center justify-center gap-3 shadow-inner">
+              <span className="text-4xl font-mono font-black text-amber-400 tracking-wider">
+                {`${Math.floor(idleWarningSeconds / 60).toString().padStart(2, '0')}:${(idleWarningSeconds % 60).toString().padStart(2, '0')}`}
+              </span>
+              <span className="text-xs text-slate-400 text-left font-medium leading-tight">
+                Menit:Detik<br />
+                <span className="text-amber-300 font-bold">({idleWarningSeconds} detik)</span>
+              </span>
+            </div>
+
+            <p className="text-[11px] text-slate-400 leading-tight">
+              Sentuh <strong>"Lanjutkan Sesi"</strong> jika Anda masih menggunakan tablet ini.
+            </p>
+
+            {/* Actions */}
+            <div className="flex flex-col sm:flex-row gap-3 pt-2">
+              <button
+                type="button"
+                onClick={handleExtendSession}
+                className="flex-1 py-3 px-4 bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 font-black rounded-xl text-sm transition shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>Lanjutkan Sesi</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleLogout(true)}
+                className="py-3 px-4 bg-slate-800 hover:bg-slate-700 active:bg-slate-850 text-slate-300 hover:text-white font-bold rounded-xl text-sm transition border border-slate-700 flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Keluar Sekarang</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Corporate Footer */}
       <footer className="bg-slate-900 border-t border-slate-800 text-slate-500 text-xs py-4 text-center mb-16 lg:mb-0">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
           <div>
-            <strong className="text-slate-300">RBS APPS</strong> • Sistem Pengawasan Proyek Land Clearing (Zero Burning Method)
+            <strong className="text-slate-300">SURYALAND APPS</strong> • Sistem Pengawasan Proyek Land Clearing (Zero Burning Method)
           </div>
           <div className="text-[11px] text-slate-400">
-            Hak Cipta © 2026 PT. RBS GROUP. Masuk sebagai: <span className="text-amber-400 font-bold">{authUser.username}</span> ({authUser.roleTitle})
+            Hak Cipta © 2026 PT. SURYALAND GROUP. Masuk sebagai: <span className="text-amber-400 font-bold">{authUser.username}</span> ({authUser.roleTitle})
           </div>
         </div>
       </footer>

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Users, 
   UserPlus, 
@@ -23,18 +23,22 @@ import {
   Grid,
   List
 } from 'lucide-react';
-import { ManagedUser, ManagedUserLevel, AuthUser } from '../types';
+import { ManagedUser, ManagedUserLevel, AuthUser, CompanyStaff } from '../types';
 import { storageService } from '../services/storageService';
 import { recordUserActivity } from '../utils/activityLogger';
 
 interface UserManagementViewProps {
   authUser: AuthUser | null;
   showToast: (message: string, type?: 'success' | 'warning' | 'error' | 'info') => void;
+  preloadStaff?: CompanyStaff | null;
+  onClearPreloadStaff?: () => void;
 }
 
 export const UserManagementView: React.FC<UserManagementViewProps> = ({
   authUser,
-  showToast
+  showToast,
+  preloadStaff,
+  onClearPreloadStaff,
 }) => {
   // Strict Role Check: Superadmin ONLY
   const isSuperadmin = authUser?.role === 'director' || authUser?.userLevel === 'Superadmin';
@@ -42,6 +46,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
   // Master Data State (Hanya User dan Master Jabatan)
   const [users, setUsers] = useState<ManagedUser[]>(() => storageService.getManagedUsers());
   const [jobTitles, setJobTitles] = useState<string[]>(() => storageService.getJobTitles());
+  const [companyStaff, setCompanyStaff] = useState<CompanyStaff[]>(() => storageService.getCompanyStaff());
 
   // Filter & Search State
   const [searchQuery, setSearchQuery] = useState('');
@@ -94,7 +99,47 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
   const reloadData = () => {
     setUsers(storageService.getManagedUsers());
     setJobTitles(storageService.getJobTitles());
+    setCompanyStaff(storageService.getCompanyStaff());
   };
+
+  // Helper: auto-fill user credentials from Company Staff
+  const handleSelectStaffToFill = (staff: CompanyStaff) => {
+    let suggestedLevel: ManagedUserLevel = 'Pengawas';
+    if (staff.staffLevel === 'Direktur' || staff.jobRole.toLowerCase().includes('direktur')) {
+      suggestedLevel = 'Superadmin';
+    } else if (staff.staffLevel === 'Manager' || staff.jobRole.toLowerCase().includes('manager')) {
+      suggestedLevel = 'Manager';
+    }
+
+    const cleanUsername = staff.fullName
+      .replace(/^(Ir\.|Dr\.|Drs\.|H\.|Hj\.)\s*/i, '')
+      .split(' ')[0]
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+
+    setFormData((prev) => ({
+      ...prev,
+      fullName: staff.fullName,
+      email: staff.email || prev.email,
+      whatsappNumber: staff.phone || prev.whatsappNumber,
+      jobTitle: staff.jobRole,
+      userLevel: suggestedLevel,
+      username: prev.username || `${cleanUsername}2026`,
+      password: prev.password || 'satu2345',
+      status: staff.status || 'Aktif',
+    }));
+    showToast(`Data staff "${staff.fullName}" (${staff.jobRole}) berhasil diisikan.`, 'info');
+  };
+
+  // Auto handle preloadStaff from Company Profile view
+  useEffect(() => {
+    if (preloadStaff) {
+      setEditingUserId(null);
+      handleSelectStaffToFill(preloadStaff);
+      setIsModalOpen(true);
+      if (onClearPreloadStaff) onClearPreloadStaff();
+    }
+  }, [preloadStaff]);
 
   // Guard: If not superadmin, render access denied
   if (!isSuperadmin) {
@@ -1046,6 +1091,39 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                 </div>
               </div>
 
+              {/* Quick Fill from Company Staff */}
+              {companyStaff.length > 0 && !editingUserId && (
+                <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-xl space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-black text-blue-900 uppercase tracking-wide flex items-center gap-1.5">
+                      <Users className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Pilih dari Informasi Staff Perusahaan (Isi Otomatis):</span>
+                    </label>
+                    <span className="text-[10px] text-blue-600 font-semibold">{companyStaff.length} Staff Terdaftar</span>
+                  </div>
+                  <select
+                    onChange={(e) => {
+                      const selected = companyStaff.find((s) => s.id === e.target.value);
+                      if (selected) {
+                        handleSelectStaffToFill(selected);
+                      }
+                    }}
+                    defaultValue=""
+                    className="w-full px-3 py-2 bg-white border border-blue-300 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="" disabled>-- Klik untuk memilih data staff perusahaan --</option>
+                    {companyStaff.map((st) => (
+                      <option key={st.id} value={st.id}>
+                        {st.fullName} — {st.jobRole} ({st.employeeIdNumber})
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-[10px] text-blue-700 block">
+                    Memilih staff akan otomatis mengisi Nama, Jabatan, Level Akses, No WA, dan Email.
+                  </span>
+                </div>
+              )}
+
               {/* 1. NAMA LENGKAP */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
@@ -1118,7 +1196,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                     <input
                       type="email"
                       required
-                      placeholder="Contoh: nama@rbs.co.id"
+                      placeholder="Contoh: nama@suryaland.co.id"
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                       className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"

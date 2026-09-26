@@ -140,7 +140,7 @@ export async function applyWatermark(
   // Row 1: Company & Project Brand & Client Name
   ctx.font = `bold ${fontSizePrimary}px 'Inter', sans-serif, system-ui`;
   ctx.fillStyle = '#ffffff';
-  const company = options.companyName || 'PT. RBS GROUP';
+  const company = options.companyName || 'PT. SURYALAND GROUP';
   const clientPart = options.clientName ? ` • KLIEN: ${options.clientName}` : '';
   const projectTag = 'PROYEK LAND CLEARING (ZERO BURNING)';
   ctx.fillText(`${company}${clientPart} • ${projectTag}`, paddingX, bannerY + bannerHeight * 0.24);

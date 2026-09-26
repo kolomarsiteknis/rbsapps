@@ -78,7 +78,7 @@ export async function runConnectionHealthCheck(): Promise<HealthCheckState> {
   }
 
   // If Firebase initialization failed or credentials invalid
-  if (!isFirebaseReady || firebaseInitError) {
+  if (!isFirebaseReady || firebaseInitError || !db || (!(db as any).app && (db as any).type !== 'firestore')) {
     currentState = {
       status: 'error',
       latencyMs: null,

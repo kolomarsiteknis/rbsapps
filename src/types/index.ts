@@ -578,39 +578,40 @@ export interface UserActivityLog {
   };
 }
 
-export interface CompanyStaff {
+// Identitas Perusahaan & Branding Aplikasi
+export interface CompanyProfile {
   id: string;
-  fullName: string;
-  employeeId?: string; // NIK / NIP
-  jobTitle: string; // Direktur, Manager, Pengawas, Akuntan, atau custom
-  department?: string; // Operasional, Keuangan, K3, dll
-  email: string;
-  phone: string;
-  signatureUrl?: string; // Data URL or Image URL TTD Digital
-  status: 'Aktif' | 'Nonaktif';
-  notes?: string;
-  hasUserAccount?: boolean; // apakah sudah terhubung dengan akun login di Manajemen User
-  userId?: string; // referensi ManagedUser.id
-  createdAt: string;
-  updatedAt?: string;
+  officialName: string;       // Nama Resmi: PT. SURYALAND GROUP atau PT. RIAU BARA SAMUDRA (RBS)
+  shortName: string;          // Nama Singkat / Singkatan: SURYALAND atau RBS (Otomatis jadi Nama Apps)
+  tagline: string;            // Slogan / Motto Perusahaan
+  logoUrl: string;            // Image Logo Perusahaan (Otomatis jadi Logo Apps & Kop Surat)
+  npwp: string;               // Nomor Pokok Wajib Pajak
+  nib: string;                // Nomor Induk Berusaha
+  phone: string;              // Telepon Kantor
+  whatsapp: string;           // No WA Operasional
+  email: string;              // Email Resmi Perusahaan
+  website?: string;           // Website Resmi
+  headOfficeAddress: string;  // Alamat Kantor Pusat
+  siteOfficeAddress: string;  // Alamat Basecamp / Site Operasional
+  bankAccountInfo?: string;   // Rekening Bank Perusahaan
+  legalNotice?: string;       // Catatan Legalitas / SOP
+  updatedAt: string;
 }
 
-export interface CompanyIdentity {
-  shortName: string; // e.g. "RBS" -> jadi nama apps "RBS APPS"
-  fullName: string; // e.g. "PT. RBS GROUP"
-  tagline: string; // e.g. "Land Clearing Heavy Equipment"
-  logoUrl: string; // URL / Data URL logo
-  businessType?: string; // Bidang usaha
-  description?: string;
-  address: string; // Alamat kantor pusat / operasional
-  phone: string; // No telepon / WA
-  email: string; // Email resmi
-  website?: string;
-  taxId?: string; // NPWP / NIB
-  directorName?: string;
-  directorSignatureUrl?: string;
-  managerName?: string;
-  managerSignatureUrl?: string;
+// Informasi Staff Perusahaan dengan TTD Digital
+export interface CompanyStaff {
+  id: string;
+  fullName: string;           // Nama Lengkap & Gelar
+  jobRole: string;            // Jabatan: Direktur, Manager, Pengawas, Akuntan, atau custom
+  staffLevel: 'Direktur' | 'Manager' | 'Pengawas' | 'Akuntan' | 'Staff';
+  employeeIdNumber: string;   // NIK / NIP Karyawan
+  email: string;              // Email Staff
+  phone: string;              // No HP / WA
+  signatureUrl?: string;      // Image Tanda Tangan Digital (Data URL)
+  status: 'Aktif' | 'Nonaktif';
+  notes?: string;
+  linkedUserId?: string;      // ID Akun Login jika sudah dibuatkan di Manajemen User
+  createdAt: string;
   updatedAt?: string;
 }
 
