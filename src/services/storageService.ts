@@ -158,9 +158,110 @@ export const storageService = {
     return true;
   },
 
+  // Helper: Ambil daftar SPK / Klien yang berhak diakses oleh user yang sedang login
+  getAuthorizedClientsForUser(authUser?: AuthUser | null): Client[] {
+    const allClients = this.getClients();
+    if (!authUser) return allClients;
+
+    if (
+      authUser.role === 'director' ||
+      authUser.role === 'manager' ||
+      authUser.userLevel === 'Superadmin' ||
+      authUser.userLevel === 'Site Manager' ||
+      authUser.userLevel === 'Manager'
+    ) {
+      return allClients;
+    }
+
+    if (authUser.role === 'supervisor' || authUser.userLevel === 'Pengawas') {
+      if (authUser.assignedClientId && authUser.assignedClientId !== 'all') {
+        return allClients.filter((c) => c.id === authUser.assignedClientId);
+      }
+      return allClients;
+    }
+
+    // Untuk Klien: Hanya berhak mengakses SPK milik mereka sendiri (1 Klien bisa punya banyak SPK)
+    if (authUser.role === 'client' || authUser.userLevel === 'Klien') {
+      const usernameLower = (authUser.username || '').trim().toLowerCase();
+      const rawUsers = loadFromStorage<ManagedUser[]>(STORAGE_KEYS.MANAGED_USERS, initialManagedUsers);
+      const managedUser = rawUsers.find((u) => (u.username || '').trim().toLowerCase() === usernameLower);
+
+      const allowedIds = new Set<string>();
+      if (authUser.assignedClientId && authUser.assignedClientId !== 'all') allowedIds.add(authUser.assignedClientId);
+      if (authUser.assignedClientIds) authUser.assignedClientIds.forEach((id) => id && id !== 'all' && allowedIds.add(id));
+      if (managedUser?.assignedClientId && managedUser.assignedClientId !== 'all') allowedIds.add(managedUser.assignedClientId);
+      if (managedUser?.assignedClientIds) managedUser.assignedClientIds.forEach((id) => id && id !== 'all' && allowedIds.add(id));
+
+      const allowedContracts = new Set<string>();
+      if (authUser.assignedContractNumbers) {
+        authUser.assignedContractNumbers.forEach((cn) => cn && allowedContracts.add(cn.trim().toLowerCase()));
+      }
+      if (managedUser?.assignedContractNumbers) {
+        managedUser.assignedContractNumbers.forEach((cn) => cn && allowedContracts.add(cn.trim().toLowerCase()));
+      }
+
+      const directMatches = allClients.filter((c) => {
+        if (usernameLower && c.username && c.username.trim().toLowerCase() === usernameLower) return true;
+        if (allowedIds.has(c.id)) return true;
+        if (c.contractNumber && allowedContracts.has(c.contractNumber.trim().toLowerCase())) return true;
+        if (c.linkedUserId && (c.linkedUserId === authUser.id || (managedUser && c.linkedUserId === managedUser.id))) return true;
+        return false;
+      });
+
+      // Jika klien memiliki lebih dari 1 SPK dengan nama perusahaan yang sama (dan tidak dikunci ke username klien lain)
+      const matchedCompanyNames = new Set(
+        directMatches.map((c) => (c.fullCompanyName || '').trim().toLowerCase()).filter(Boolean)
+      );
+      const matchedShortNames = new Set(
+        directMatches.map((c) => (c.name || '').trim().toLowerCase()).filter(Boolean)
+      );
+
+      return allClients.filter((c) => {
+        if (directMatches.some((dm) => dm.id === c.id)) return true;
+        const cUserLower = (c.username || '').trim().toLowerCase();
+        if (cUserLower && cUserLower !== usernameLower) return false;
+        const fullLower = (c.fullCompanyName || '').trim().toLowerCase();
+        const shortLower = (c.name || '').trim().toLowerCase();
+        if (fullLower && matchedCompanyNames.has(fullLower)) return true;
+        if (shortLower && matchedShortNames.has(shortLower)) return true;
+        return false;
+      });
+    }
+
+    return allClients;
+  },
+
   // Reports
   getReports(selectedClientId?: string, authUser?: AuthUser | null): DailyReport[] {
     const all = loadFromStorage<DailyReport[]>(STORAGE_KEYS.REPORTS, initialDailyReports);
+
+    // Filter ketat jika pengguna adalah Klien (Hanya bisa melihat laporan sesuai SPK milik mereka)
+    if (authUser && (authUser.role === 'client' || authUser.userLevel === 'Klien')) {
+      const authorizedClients = this.getAuthorizedClientsForUser(authUser);
+      const allowedClientIds = new Set(authorizedClients.map((c) => c.id));
+      const allowedContracts = new Set(
+        authorizedClients.map((c) => (c.contractNumber || '').trim().toLowerCase()).filter(Boolean)
+      );
+      if (authUser.assignedContractNumbers) {
+        authUser.assignedContractNumbers.forEach((cn) => cn && allowedContracts.add(cn.trim().toLowerCase()));
+      }
+      if (authUser.assignedClientId && authUser.assignedClientId !== 'all') {
+        allowedClientIds.add(authUser.assignedClientId);
+      }
+      if (authUser.assignedClientIds) {
+        authUser.assignedClientIds.forEach((id) => id && id !== 'all' && allowedClientIds.add(id));
+      }
+
+      return all.filter((r) => {
+        const matchId = allowedClientIds.has(r.clientId);
+        const matchContract = r.contractNumber && allowedContracts.has(r.contractNumber.trim().toLowerCase());
+        if (!matchId && !matchContract) return false;
+        if (selectedClientId && selectedClientId !== 'ALL') {
+          return r.clientId === selectedClientId;
+        }
+        return true;
+      });
+    }
 
     // Filter jika pengguna adalah Pengawas
     if (authUser && authUser.role === 'supervisor') {
@@ -201,6 +302,10 @@ export const storageService = {
   },
 
   saveReport(report: DailyReport, authUser?: AuthUser | null): DailyReport {
+    // Isolasi ketat: Klien hanya memiliki akses baca (read-only)
+    if (authUser && (authUser.role === 'client' || authUser.userLevel === 'Klien')) {
+      throw new Error('Akses Ditolak: Akun Klien hanya memiliki hak akses melihat Monitoring Progress & Laporan (Read-Only).');
+    }
     // Isolasi ketat: Pengawas tidak bisa CRUD data di luar penugasan proyek dan blok
     if (authUser && authUser.role === 'supervisor') {
       if (!this.canSupervisorAccess(report.clientId, report.blockCode, authUser)) {
@@ -242,6 +347,9 @@ export const storageService = {
   },
 
   deleteReport(id: string, authUser?: AuthUser | null): boolean {
+    if (authUser && (authUser.role === 'client' || authUser.userLevel === 'Klien')) {
+      return false;
+    }
     const reports = loadFromStorage<DailyReport[]>(STORAGE_KEYS.REPORTS, initialDailyReports);
     const target = reports.find((r) => r.id === id);
     if (!target) return false;
@@ -527,6 +635,24 @@ export const storageService = {
       };
     });
 
+    // Klien: Hanya blok untuk SPK milik klien yang bersangkutan
+    if (authUser && (authUser.role === 'client' || authUser.userLevel === 'Klien')) {
+      const authorizedClients = this.getAuthorizedClientsForUser(authUser);
+      const allowedClientIds = new Set(authorizedClients.map((c) => c.id));
+      if (authUser.assignedClientId && authUser.assignedClientId !== 'all') {
+        allowedClientIds.add(authUser.assignedClientId);
+      }
+      if (authUser.assignedClientIds) {
+        authUser.assignedClientIds.forEach((id) => id && id !== 'all' && allowedClientIds.add(id));
+      }
+
+      return all.filter((b) => {
+        if (!allowedClientIds.has(b.clientId)) return false;
+        if (clientId && clientId !== 'ALL') return b.clientId === clientId;
+        return true;
+      });
+    }
+
     // Pengawas: Hanya blok untuk 1 klien tugasnya dan terbatas pada lokasi kerja (blok-blok) tugasnya
     if (authUser && authUser.role === 'supervisor') {
       const allowedClientId = authUser.assignedClientId && authUser.assignedClientId !== 'all'
@@ -751,7 +877,35 @@ export const storageService = {
 
   // Clients & Projects CRUD
   getClients(): Client[] {
-    return loadFromStorage<Client[]>(STORAGE_KEYS.CLIENTS, initialClients);
+    const rawClients = loadFromStorage<Client[]>(STORAGE_KEYS.CLIENTS, initialClients);
+    const rawUsers = loadFromStorage<ManagedUser[]>(STORAGE_KEYS.MANAGED_USERS, initialManagedUsers);
+
+    return rawClients.map((c) => {
+      const cUserLower = (c.username || '').trim().toLowerCase();
+      const matchedUser = rawUsers.find(
+        (u) =>
+          u.userLevel === 'Klien' &&
+          ((c.linkedUserId && u.id === c.linkedUserId) ||
+            (cUserLower && u.username && u.username.trim().toLowerCase() === cUserLower) ||
+            u.assignedClientId === c.id ||
+            (u.assignedClientIds && u.assignedClientIds.includes(c.id)) ||
+            (c.contractNumber && u.assignedContractNumbers && u.assignedContractNumbers.includes(c.contractNumber)))
+      );
+
+      if (matchedUser) {
+        return {
+          ...c,
+          username: c.username || matchedUser.username,
+          password: c.password || matchedUser.password,
+          userLevel: 'Klien',
+          linkedUserId: c.linkedUserId || matchedUser.id,
+        };
+      }
+      return {
+        ...c,
+        userLevel: c.username ? 'Klien' : c.userLevel,
+      };
+    });
   },
 
   getClientById(id: string): Client | undefined {
@@ -759,26 +913,120 @@ export const storageService = {
   },
 
   saveClient(client: Client): Client {
-    const list = this.getClients();
-    const idx = list.findIndex((c) => c.id === client.id);
+    const list = loadFromStorage<Client[]>(STORAGE_KEYS.CLIENTS, initialClients);
+    const payload: Client = {
+      ...client,
+      userLevel: 'Klien',
+    };
+
+    const idx = list.findIndex((c) => c.id === payload.id);
     if (idx >= 0) {
-      list[idx] = client;
+      list[idx] = payload;
     } else {
-      list.push(client);
+      list.push(payload);
     }
+
+    // Auto-synchronize Kredensial Login Akun Resmi Klien (1 Klien bisa punya banyak SPK dalam 1 akun akses)
+    if (payload.username && payload.password) {
+      const cleanUsername = payload.username.trim().toLowerCase();
+      const cleanPassword = payload.password;
+      const users = this.getManagedUsers();
+
+      // Cari akun Klien yang sudah ada dengan username ini atau linkedUserId ini
+      const existingUser = users.find(
+        (u) =>
+          (payload.linkedUserId && u.id === payload.linkedUserId) ||
+          (u.username && u.username.trim().toLowerCase() === cleanUsername)
+      );
+
+      const userId = existingUser?.id || payload.linkedUserId || `user-klien-${Date.now()}`;
+      payload.linkedUserId = userId;
+
+      // Kumpulkan seluruh SPK (Client record) yang dimiliki oleh akun Klien ini
+      // (Baik yang memiliki username sama, linkedUserId sama, atau perusahaan yang sama dengan username ini)
+      const matchingSpkClients = list.filter((c) => {
+        if (c.id === payload.id) return true;
+        if (c.username && c.username.trim().toLowerCase() === cleanUsername) return true;
+        if (c.linkedUserId && c.linkedUserId === userId) return true;
+        if (existingUser?.assignedClientIds && existingUser.assignedClientIds.includes(c.id)) return true;
+        if (existingUser?.assignedClientId === c.id) return true;
+        return false;
+      });
+
+      // Pastikan semua SPK milik akun klien ini tersinkronisasi kredensialnya
+      matchingSpkClients.forEach((mc) => {
+        const mIdx = list.findIndex((item) => item.id === mc.id);
+        if (mIdx >= 0) {
+          list[mIdx] = {
+            ...list[mIdx],
+            username: cleanUsername,
+            password: cleanPassword,
+            userLevel: 'Klien',
+            linkedUserId: userId,
+          };
+          syncDocWrite(FIRESTORE_COLLECTIONS.CLIENTS, list[mIdx]);
+        }
+      });
+
+      const allAssignedClientIds = Array.from(new Set(matchingSpkClients.map((c) => c.id)));
+      const allAssignedContractNumbers = Array.from(
+        new Set(matchingSpkClients.map((c) => c.contractNumber).filter(Boolean))
+      );
+
+      const allBlocks = loadFromStorage<Block[]>(STORAGE_KEYS.BLOCKS, initialBlocks);
+      const clientBlockCodes = allBlocks
+        .filter((b) => allAssignedClientIds.includes(b.clientId))
+        .map((b) => b.code);
+
+      const userPayload: ManagedUser = {
+        id: userId,
+        fullName: payload.contactPerson
+          ? `${payload.contactPerson} (${payload.name})`
+          : `${payload.fullCompanyName || payload.name}`,
+        address: payload.address || payload.location || existingUser?.address || '-',
+        whatsappNumber: payload.phone || existingUser?.whatsappNumber || '-',
+        email: payload.email || existingUser?.email || '-',
+        jobTitle: 'Klien / Pemilik Proyek (Monitoring Progress & Laporan)',
+        userLevel: 'Klien', // Terkunci otomatis di Klien
+        username: cleanUsername,
+        password: cleanPassword,
+        signatureUrl: existingUser?.signatureUrl,
+        employeeIdNumber: existingUser?.employeeIdNumber || `KLN-${String(allAssignedClientIds.length).padStart(3, '0')}`,
+        assignedClientId: allAssignedClientIds[0] || payload.id,
+        assignedClientIds: allAssignedClientIds,
+        assignedContractNumbers: allAssignedContractNumbers,
+        assignedClientName:
+          allAssignedContractNumbers.length > 1
+            ? `${payload.name} - ${payload.fullCompanyName} (${allAssignedContractNumbers.length} SPK)`
+            : `${payload.name} - ${payload.fullCompanyName}`,
+        assignedBlockCodes:
+          clientBlockCodes.length > 0
+            ? clientBlockCodes
+            : existingUser?.assignedBlockCodes && existingUser.assignedBlockCodes.length > 0
+            ? existingUser.assignedBlockCodes
+            : ['Blok Sesuai SPK Klien'],
+        status: 'Aktif',
+        createdAt: existingUser?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        notes: `Akun Resmi Klien (${allAssignedContractNumbers.join(', ')}) • Level Akses Terkunci: Klien (Monitoring Progress & Laporan)`,
+      };
+
+      this.saveManagedUser(userPayload);
+    }
+
     saveToStorage(STORAGE_KEYS.CLIENTS, list);
-    syncDocWrite(FIRESTORE_COLLECTIONS.CLIENTS, client);
+    syncDocWrite(FIRESTORE_COLLECTIONS.CLIENTS, payload);
 
     // Also auto-create a project if not existing
     const projects = this.getProjects();
-    if (!projects.some((p) => p.clientId === client.id)) {
+    if (!projects.some((p) => p.clientId === payload.id)) {
       const newProj: Project = {
         id: `proj-${Date.now()}`,
-        clientId: client.id,
-        name: client.projectName || `Land Clearing ${client.name}`,
-        location: client.location || client.address || 'Riau',
+        clientId: payload.id,
+        name: payload.projectName || `Land Clearing ${payload.name}`,
+        location: payload.location || payload.address || 'Riau',
         method: 'Zero Burning Method (Metode Tanpa Bakar)',
-        totalTargetHa: client.totalAreaHa || 100,
+        totalTargetHa: payload.totalAreaHa || 100,
         startDate: new Date().toISOString().slice(0, 10),
         targetCompletionDate: new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10),
       };
@@ -787,7 +1035,7 @@ export const storageService = {
       syncDocWrite(FIRESTORE_COLLECTIONS.PROJECTS, newProj);
     }
 
-    return client;
+    return payload;
   },
 
   deleteClient(clientId: string): boolean {
@@ -2106,7 +2354,78 @@ export const storageService = {
 
   getManagedUserByUsername(username: string): ManagedUser | undefined {
     const trimmed = (username || '').trim().toLowerCase();
-    return this.getManagedUsers().find((u) => (u.username || '').trim().toLowerCase() === trimmed);
+    if (!trimmed) return undefined;
+
+    const existing = this.getManagedUsers().find((u) => (u.username || '').trim().toLowerCase() === trimmed);
+    const allClients = loadFromStorage<Client[]>(STORAGE_KEYS.CLIENTS, initialClients);
+    const matchingClients = allClients.filter(
+      (c) =>
+        (c.username && c.username.trim().toLowerCase() === trimmed) ||
+        (existing &&
+          existing.userLevel === 'Klien' &&
+          (c.id === existing.assignedClientId ||
+            (existing.assignedClientIds && existing.assignedClientIds.includes(c.id)) ||
+            (c.linkedUserId && c.linkedUserId === existing.id)))
+    );
+
+    if (existing) {
+      if (existing.userLevel === 'Klien' && matchingClients.length > 0) {
+        const clientIds = Array.from(
+          new Set([
+            ...(existing.assignedClientIds || []),
+            ...(existing.assignedClientId && existing.assignedClientId !== 'all' ? [existing.assignedClientId] : []),
+            ...matchingClients.map((c) => c.id),
+          ])
+        );
+        const contractNumbers = Array.from(
+          new Set([
+            ...(existing.assignedContractNumbers || []),
+            ...matchingClients.map((c) => c.contractNumber).filter(Boolean),
+          ])
+        );
+        return {
+          ...existing,
+          assignedClientId: clientIds[0] || existing.assignedClientId,
+          assignedClientIds: clientIds,
+          assignedContractNumbers: contractNumbers,
+        };
+      }
+      return existing;
+    }
+
+    // Fallback: jika kredensial tersimpan pada data Client (Master Data Proyek -> 1. Daftar Klien)
+    if (matchingClients.length > 0) {
+      const primaryClient = matchingClients[0];
+      const clientIds = Array.from(new Set(matchingClients.map((c) => c.id)));
+      const contractNumbers = Array.from(new Set(matchingClients.map((c) => c.contractNumber).filter(Boolean)));
+      const constructedUser: ManagedUser = {
+        id: primaryClient.linkedUserId || `user-klien-${primaryClient.id}`,
+        fullName: primaryClient.contactPerson
+          ? `${primaryClient.contactPerson} (${primaryClient.name})`
+          : `${primaryClient.fullCompanyName || primaryClient.name}`,
+        address: primaryClient.address || primaryClient.location || '-',
+        whatsappNumber: primaryClient.phone || '-',
+        email: primaryClient.email || '-',
+        jobTitle: 'Klien / Pemilik Proyek (Monitoring Progress & Laporan)',
+        userLevel: 'Klien',
+        username: trimmed,
+        password: primaryClient.password || 'Klien2026!',
+        assignedClientId: primaryClient.id,
+        assignedClientIds: clientIds,
+        assignedContractNumbers: contractNumbers,
+        assignedClientName:
+          contractNumbers.length > 1
+            ? `${primaryClient.name} - ${primaryClient.fullCompanyName} (${contractNumbers.length} SPK)`
+            : `${primaryClient.name} - ${primaryClient.fullCompanyName}`,
+        assignedBlockCodes: ['Blok Sesuai SPK Klien'],
+        status: 'Aktif',
+        createdAt: new Date().toISOString(),
+        notes: `Akun Resmi Klien (${contractNumbers.join(', ')})`,
+      };
+      return this.saveManagedUser(constructedUser);
+    }
+
+    return undefined;
   },
 
   saveManagedUser(user: ManagedUser): ManagedUser {

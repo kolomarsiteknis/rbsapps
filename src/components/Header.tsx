@@ -44,7 +44,8 @@ export type TabKey =
   | 'tutorial'
   | 'wizard' 
   | 'supervisor-tools'
-  | 'approval';
+  | 'approval'
+  | 'client-portal';
 
 interface HeaderProps {
   activeTab: TabKey;
@@ -92,7 +93,8 @@ export const Header: React.FC<HeaderProps> = ({
   const activeClientObj = clients.find((c) => c.id === selectedClientId);
   const isSupervisor = authUser?.role === 'supervisor';
   const isDirector = authUser?.role === 'director' || authUser?.userLevel === 'Superadmin';
-  const isManager = authUser?.role === 'manager' || authUser?.userLevel === 'Manager';
+  const isManager = authUser?.role === 'manager' || authUser?.userLevel === 'Manager' || authUser?.userLevel === 'Site Manager';
+  const isClient = authUser?.role === 'client' || authUser?.userLevel === 'Klien';
 
   // Close sidebar on Escape key or route change
   useEffect(() => {
@@ -123,7 +125,31 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   // Nav item list configurations strictly ordered as requested by user
-  const navItems = isDirector
+  const navItems = isClient
+    ? [
+        {
+          key: 'client-portal' as TabKey,
+          label: 'Monitoring & Laporan SPK',
+          subtitle: 'Progres Fisik & Laporan Sesuai SPK Anda',
+          icon: LayoutDashboard,
+          visible: true,
+        },
+        {
+          key: 'reports' as TabKey,
+          label: 'Arsip Laporan Harian',
+          subtitle: 'Daftar Laporan Harian Sesuai SPK',
+          icon: FileText,
+          visible: true,
+        },
+        {
+          key: 'official-pdf' as TabKey,
+          label: 'Cetak PDF Resmi',
+          subtitle: 'Dokumen Laporan Resmi Klien',
+          icon: Printer,
+          visible: true,
+        },
+      ]
+    : isDirector
     ? [
         {
           key: 'dashboard' as TabKey,
@@ -144,6 +170,13 @@ export const Header: React.FC<HeaderProps> = ({
           label: 'Master Data Proyek',
           subtitle: 'Klien, Lokasi, Unit, Penugasan & Target',
           icon: Database,
+          visible: true,
+        },
+        {
+          key: 'client-portal' as TabKey,
+          label: 'Portal Akses Klien',
+          subtitle: 'Monitoring Progress & Laporan per SPK Klien',
+          icon: Users,
           visible: true,
         },
         {
@@ -312,7 +345,7 @@ export const Header: React.FC<HeaderProps> = ({
               {/* Logo & Brand Name */}
               <button
                 type="button"
-                onClick={() => handleSelectTab(isDirector ? 'dashboard' : isManager ? 'approval' : 'wizard')}
+                onClick={() => handleSelectTab(isClient ? 'client-portal' : isDirector ? 'dashboard' : isManager ? 'approval' : 'wizard')}
                 className="flex items-center gap-2.5 text-left group cursor-pointer focus:outline-none"
               >
                 <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-900 border border-amber-500/40 p-1 flex items-center justify-center text-slate-950 font-black shadow-md shadow-amber-500/20 group-hover:scale-105 transition-transform duration-200 shrink-0 overflow-hidden">
@@ -348,7 +381,17 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="text-xs font-bold text-slate-200">
                 {navItems.find((item) => item.key === activeTab)?.label || (activeTab === 'company-profile' ? 'Identitas Perusahaan' : 'Aplikasi')}
               </span>
-              {isSupervisor ? (
+              {isClient ? (
+                <div className="flex items-center gap-1.5 border-l border-slate-700 pl-2">
+                  <span className="text-[11px] font-bold text-teal-400 flex items-center gap-1">
+                    <Lock className="w-3 h-3 text-teal-400 shrink-0" />
+                    {authUser?.assignedClientName || activeClientObj?.name || 'Klien SPK'}
+                  </span>
+                  <span className="text-[10px] bg-teal-500/20 text-teal-300 font-mono px-1.5 py-0.5 rounded border border-teal-500/30">
+                    Read-Only SPK
+                  </span>
+                </div>
+              ) : isSupervisor ? (
                 <div className="flex items-center gap-1.5 border-l border-slate-700 pl-2">
                   <span className="text-[11px] font-bold text-amber-400 flex items-center gap-1">
                     <Lock className="w-3 h-3 text-amber-400 shrink-0" />
@@ -516,7 +559,13 @@ export const Header: React.FC<HeaderProps> = ({
                       {authUser.displayName || authUser.username}
                     </div>
                     <div className="text-[10px] text-slate-400 font-medium mt-0.5">
-                      {isSupervisor ? 'Pengawas Lapangan' : isManager ? 'Manager Operasional' : 'Direktur (Superadmin)'}
+                      {isClient
+                        ? 'Klien (Monitoring Progress & Laporan)'
+                        : isSupervisor
+                        ? 'Pengawas Lapangan'
+                        : isManager
+                        ? 'Manager Operasional'
+                        : 'Direktur (Superadmin)'}
                     </div>
                     <div className="text-[9px] text-emerald-400 flex items-center gap-1 mt-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>

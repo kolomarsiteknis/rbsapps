@@ -87,8 +87,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({
             phoneNumber: user.whatsappNumber,
             address: user.address,
             jobTitle: user.jobTitle,
-            userLevel: user.userLevel,
+            userLevel: isClient ? 'Klien' : user.userLevel,
             assignedClientId: (isSuper || isSiteManager) ? 'all' : user.assignedClientId,
+            assignedClientIds: isClient ? user.assignedClientIds : undefined,
+            assignedContractNumbers: isClient ? user.assignedContractNumbers : undefined,
             assignedClientName: isSuper 
               ? 'Semua Proyek (Owner)' 
               : isSiteManager 

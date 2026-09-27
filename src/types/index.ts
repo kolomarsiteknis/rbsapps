@@ -14,7 +14,9 @@ export interface ManagedUser {
   password: string;          // Password
   signatureUrl?: string;     // Spesimen Tanda Tangan Digital
   employeeIdNumber?: string; // NIK / NIP Karyawan
-  assignedClientId?: string;  // Penempatan Proyek (hanya boleh satu klien)
+  assignedClientId?: string;  // Penempatan Proyek (utama)
+  assignedClientIds?: string[]; // Daftar ID SPK Klien (1 Klien bisa punya banyak SPK)
+  assignedContractNumbers?: string[]; // Daftar Nomor SPK yang dimiliki Klien
   assignedClientName?: string;
   assignedBlockCodes?: string[]; // Penempatan Lokasi Kerja (bisa lebih dari satu blok / bisa nambah blok)
   status: 'Aktif' | 'Nonaktif';
@@ -36,6 +38,8 @@ export interface AuthUser {
   jobTitle?: string;
   userLevel?: ManagedUserLevel;
   assignedClientId?: string;
+  assignedClientIds?: string[];
+  assignedContractNumbers?: string[];
   assignedClientName?: string;
   assignedBlockCodes?: string[];
 }
@@ -76,6 +80,11 @@ export interface Client {
   totalAreaHa: number;
   clearedAreaHa: number;
   status: 'Aktif' | 'Selesai' | 'Masa Tenggang';
+  // Kredensial Login Akun Resmi (Sistem Akses Klien)
+  username?: string;
+  password?: string;
+  userLevel?: ManagedUserLevel; // Terkunci otomatis di 'Klien'
+  linkedUserId?: string;
 }
 
 export interface Project {

@@ -33,6 +33,7 @@ import {
   Key,
   Clock,
   Eye,
+  EyeOff,
   Info,
   UserPlus,
   X
@@ -99,6 +100,8 @@ export const MasterDataView: React.FC = () => {
     setDailyTargets([]);
     setIsClearMasterModalOpen(false);
   };
+  const [showClientPassword, setShowClientPassword] = useState<boolean>(false);
+  const [visibleClientCardPasswords, setVisibleClientCardPasswords] = useState<Record<string, boolean>>({});
   const [clientForm, setClientForm] = useState<{
     name: string;
     fullCompanyName: string;
@@ -112,6 +115,10 @@ export const MasterDataView: React.FC = () => {
     totalAreaInput: string;
     clearedAreaHa?: number;
     status: 'Aktif' | 'Selesai' | 'Masa Tenggang';
+    username: string;
+    password: string;
+    userLevel: 'Klien';
+    linkedUserId?: string;
   }>({
     name: '',
     fullCompanyName: '',
@@ -125,6 +132,10 @@ export const MasterDataView: React.FC = () => {
     totalAreaInput: '',
     clearedAreaHa: 0,
     status: 'Aktif',
+    username: '',
+    password: '',
+    userLevel: 'Klien',
+    linkedUserId: undefined,
   });
 
   // Modal Dynamic Blocks list for "+ Tambah Klien Perusahaan Baru" & "Edit Klien"
@@ -1560,6 +1571,7 @@ export const MasterDataView: React.FC = () => {
   // Open Add Client Modal
   const handleOpenAddClient = () => {
     setEditingClientId(null);
+    setShowClientPassword(false);
     setClientForm({
       contractNumber: '',
       name: '',
@@ -1572,6 +1584,10 @@ export const MasterDataView: React.FC = () => {
       address: '',
       status: 'Aktif',
       clearedAreaHa: 0,
+      username: '',
+      password: '',
+      userLevel: 'Klien',
+      linkedUserId: undefined,
     });
     setModalBlocks([
       { code: '', targetAreaHa: '' },
@@ -1582,6 +1598,7 @@ export const MasterDataView: React.FC = () => {
   // Open Edit Client Modal
   const handleOpenEditClient = (c: Client) => {
     setEditingClientId(c.id);
+    setShowClientPassword(false);
     const clientBlocks = blocks.filter((b) => b.clientId === c.id);
     setClientForm({
       contractNumber: c.contractNumber || '',
@@ -1596,6 +1613,10 @@ export const MasterDataView: React.FC = () => {
       projectName: c.projectName || '',
       status: c.status || 'Aktif',
       clearedAreaHa: c.clearedAreaHa || 0,
+      username: c.username || '',
+      password: c.password || '',
+      userLevel: 'Klien',
+      linkedUserId: c.linkedUserId,
     });
 
     if (clientBlocks.length > 0) {
@@ -1635,7 +1656,6 @@ export const MasterDataView: React.FC = () => {
 
   const handleRemoveModalBlock = (index: number) => {
     if (modalBlocks.length <= 1) {
-      alert('Minimal harus ada 1 lokasi blok kerja untuk SPK ini.');
       return;
     }
     setModalBlocks((prev) => prev.filter((_, i) => i !== index));
@@ -1651,11 +1671,9 @@ export const MasterDataView: React.FC = () => {
   const handleSaveClient = (e: React.FormEvent) => {
     e.preventDefault();
     if (!clientForm.contractNumber?.trim()) {
-      alert('Mohon isi Nomor Kontrak / SPK terlebih dahulu. Klien dikunci berdasarkan Nomor SPK.');
       return;
     }
     if (!clientForm.name?.trim() || !clientForm.fullCompanyName?.trim()) {
-      alert('Mohon isi Nama Singkat Klien dan Nama Perusahaan Lengkap.');
       return;
     }
 
@@ -1663,30 +1681,15 @@ export const MasterDataView: React.FC = () => {
     const rawArea = String(clientForm.totalAreaInput || '').trim().replace(',', '.');
     const parsedArea = parseFloat(rawArea) || 0;
 
+    const cleanUsername = (clientForm.username || '').trim().toLowerCase();
+    const cleanPassword = (clientForm.password || '').trim() || 'klien123';
+
     const clientId = editingClientId || `client-${Date.now()}`;
-    const newClient: Client = {
-      id: clientId,
-      name: clientForm.name.trim(),
-      fullCompanyName: clientForm.fullCompanyName.trim(),
-      contractNumber: clientForm.contractNumber.trim(),
-      projectName: clientForm.projectName || `Land Clearing Perkebunan ${clientForm.name.trim()}`,
-      location: clientForm.location?.trim() || 'Provinsi Riau',
-      address: clientForm.address?.trim() || 'Riau',
-      contactPerson: clientForm.contactPerson?.trim() || 'PIC Lapangan',
-      phone: clientForm.phone?.trim() || '-',
-      email: clientForm.email?.trim() || '',
-      totalAreaHa: parsedArea,
-      clearedAreaHa: Number(clientForm.clearedAreaHa) || 0,
-      status: clientForm.status || 'Aktif',
-    };
 
-    storageService.saveClient(newClient);
-
-    // Sync blocks for this client and SPK
+    // Sync blocks for this client and SPK first so saveClient can include block codes in the Klien user account
     const currentStoredBlocks = storageService.getBlocks().filter((b) => b.clientId === clientId);
     const currentStoredBlockIds = new Set(currentStoredBlocks.map((b) => b.id));
 
-    // Valid blocks with non-empty code
     const validBlocks = modalBlocks
       .map((mb) => ({ ...mb, code: mb.code.trim() }))
       .filter((mb) => mb.code.length > 0);
@@ -1733,6 +1736,28 @@ export const MasterDataView: React.FC = () => {
         }
       });
     }
+
+    const newClient: Client = {
+      id: clientId,
+      name: clientForm.name.trim(),
+      fullCompanyName: clientForm.fullCompanyName.trim(),
+      contractNumber: clientForm.contractNumber.trim(),
+      projectName: clientForm.projectName || `Land Clearing Perkebunan ${clientForm.name.trim()}`,
+      location: clientForm.location?.trim() || 'Provinsi Riau',
+      address: clientForm.address?.trim() || 'Riau',
+      contactPerson: clientForm.contactPerson?.trim() || 'PIC Lapangan',
+      phone: clientForm.phone?.trim() || '-',
+      email: clientForm.email?.trim() || '',
+      totalAreaHa: parsedArea,
+      clearedAreaHa: Number(clientForm.clearedAreaHa) || 0,
+      status: clientForm.status || 'Aktif',
+      username: cleanUsername || undefined,
+      password: cleanUsername ? cleanPassword : undefined,
+      userLevel: 'Klien',
+      linkedUserId: clientForm.linkedUserId,
+    };
+
+    storageService.saveClient(newClient);
 
     setClients(storageService.getClients());
     setBlocks(storageService.getBlocks());
@@ -2117,6 +2142,89 @@ export const MasterDataView: React.FC = () => {
                             <span className="text-[11px] text-slate-400 italic">Belum ada blok kerja, klik Tambah Blok</span>
                           )}
                         </div>
+                      </div>
+
+                      {/* KREDENSIAL LOGIN AKUN RESMI KLIEN (SISTEM AKSES) */}
+                      <div className="p-3 bg-teal-50/70 rounded-xl border border-teal-200 space-y-1.5 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-black text-teal-950 flex items-center gap-1.5 uppercase text-[10px] tracking-wider">
+                            <Key className="w-3.5 h-3.5 text-teal-600" />
+                            Kredensial Login Akun Resmi
+                          </span>
+                          <span className="px-2 py-0.5 bg-teal-600 text-white rounded text-[9px] font-black uppercase flex items-center gap-1">
+                            <Lock className="w-2.5 h-2.5" />
+                            Level: Klien
+                          </span>
+                        </div>
+                        {c.username ? (
+                          <div className="space-y-1 pt-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-500 text-[11px]">Username Login:</span>
+                              <span className="font-mono font-black text-slate-900 bg-white px-2 py-0.5 rounded border border-teal-200 text-[11px]">
+                                {c.username}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-500 text-[11px]">Password Login:</span>
+                              <div className="flex items-center gap-1">
+                                <span className="font-mono font-bold text-slate-800 bg-white px-2 py-0.5 rounded border border-teal-200 text-[11px]">
+                                  {visibleClientCardPasswords[c.id] ? (c.password || '••••••') : '••••••••'}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setVisibleClientCardPasswords((prev) => ({
+                                      ...prev,
+                                      [c.id]: !prev[c.id],
+                                    }))
+                                  }
+                                  className="p-1 text-slate-500 hover:text-teal-700 cursor-pointer"
+                                  title="Lihat / Sembunyikan Password"
+                                >
+                                  {visibleClientCardPasswords[c.id] ? (
+                                    <EyeOff className="w-3.5 h-3.5" />
+                                  ) : (
+                                    <Eye className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                            <div className="text-[10px] text-teal-800 font-semibold pt-0.5 flex items-center justify-between">
+                              <span>🔒 Hak Akses: Monitoring Progress &amp; Laporan</span>
+                              {clients.filter(
+                                (other) =>
+                                  other.username &&
+                                  c.username &&
+                                  other.username.toLowerCase() === c.username.toLowerCase()
+                              ).length > 1 && (
+                                <span className="px-1.5 py-0.2 bg-amber-100 text-amber-900 border border-amber-300 rounded font-black text-[9px]">
+                                  {
+                                    clients.filter(
+                                      (other) =>
+                                        other.username &&
+                                        c.username &&
+                                        other.username.toLowerCase() === c.username.toLowerCase()
+                                    ).length
+                                  }{' '}
+                                  SPK Terhubung
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between pt-1">
+                            <span className="text-[11px] text-slate-500 italic">
+                              Belum ada kredensial login diatur
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditClient(c)}
+                              className="text-[10px] font-black text-teal-700 hover:underline cursor-pointer"
+                            >
+                              + Atur Akun Login
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -3736,18 +3844,32 @@ export const MasterDataView: React.FC = () => {
                 </div>
               </div>
 
-              {/* 6. NO. HP / TELEPON */}
-              <div>
-                <label className="block font-bold text-slate-800 mb-1">
-                  No. HP / Telepon:
-                </label>
-                <input
-                  type="text"
-                  placeholder="Contoh: +62 812-3456-7890"
-                  value={clientForm.phone}
-                  onChange={(e) => setClientForm({ ...clientForm, phone: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono text-sm text-slate-900 focus:outline-none focus:border-amber-500"
-                />
+              {/* 6 & 7. PIC PERWAKILAN KLIEN & NO. HP / TELEPON */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-800 mb-1">
+                    Nama PIC / Perwakilan Klien:
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Contoh: Ir. H. Budi Prasetyo (Estate Manager)"
+                    value={clientForm.contactPerson}
+                    onChange={(e) => setClientForm({ ...clientForm, contactPerson: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-800 mb-1">
+                    No. HP / Telepon:
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Contoh: +62 812-3456-7890"
+                    value={clientForm.phone}
+                    onChange={(e) => setClientForm({ ...clientForm, phone: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono text-sm text-slate-900 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
               </div>
 
               {/* 8 & STATUS. EMAIL & STATUS KONTRAK */}
@@ -3892,6 +4014,199 @@ export const MasterDataView: React.FC = () => {
                   <Plus className="w-4 h-4 text-amber-600" />
                   <span>+ Tambah Blok</span>
                 </button>
+              </div>
+
+              {/* 11. KREDENSIAL LOGIN AKUN RESMI (SISTEM AKSES) - OTOMATIS TERLOCK DI KLIEN */}
+              <div className="bg-gradient-to-br from-teal-50 via-emerald-50/50 to-slate-50 border-2 border-teal-400 rounded-xl p-4 space-y-3.5 shadow-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-teal-200">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-teal-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                      <Key className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-black text-slate-950 text-xs uppercase tracking-wide">
+                        Kredensial Login Akun Resmi (Sistem Akses)
+                      </h4>
+                      <p className="text-[11px] text-teal-900 font-medium">
+                        Akun otomatis terbuat saat data klien disimpan • 1 akun Klien bisa memiliki banyak SPK
+                      </p>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 bg-teal-600 text-white font-black text-[10px] uppercase rounded-full tracking-wider flex items-center gap-1 shrink-0 self-start sm:self-auto shadow-2xs">
+                    <Lock className="w-3 h-3" />
+                    Auto-Lock: Klien
+                  </span>
+                </div>
+
+                {/* Pilihan Cepat Gabung ke Akun Klien yang Sudah Ada (Multi-SPK dalam 1 Akun) */}
+                {clients.some((c) => c.username) && (
+                  <div className="bg-white/90 border border-teal-200 rounded-lg p-3 space-y-1.5">
+                    <label className="block font-black text-teal-950 text-[11px] uppercase tracking-wide">
+                      🔗 Opsi Multi-SPK: Gunakan Akun Klien yang Sudah Ada (Opsional)
+                    </label>
+                    <p className="text-[10px] text-slate-600">
+                      Jika klien ini sudah punya akun sebelumnya dan ingin menambahkan SPK baru ke dalam 1 akun akses yang sama, pilih akun di bawah atau ketik Username Login yang sama:
+                    </p>
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const chosenId = e.target.value;
+                        if (!chosenId) return;
+                        const existingClient = clients.find((c) => c.id === chosenId);
+                        if (existingClient) {
+                          setClientForm((prev) => ({
+                            ...prev,
+                            name: prev.name || existingClient.name,
+                            fullCompanyName: prev.fullCompanyName || existingClient.fullCompanyName,
+                            contactPerson: prev.contactPerson || existingClient.contactPerson,
+                            phone: prev.phone || existingClient.phone,
+                            email: prev.email || existingClient.email || '',
+                            address: prev.address || existingClient.address,
+                            username: existingClient.username || prev.username,
+                            password: existingClient.password || prev.password,
+                            userLevel: 'Klien',
+                            linkedUserId: existingClient.linkedUserId,
+                          }));
+                        }
+                      }}
+                      className="w-full px-3 py-2 bg-teal-50/50 border border-teal-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:border-teal-600 cursor-pointer"
+                    >
+                      <option value="">-- Buat Akun Klien Baru / Ketik Manual di Bawah --</option>
+                      {Array.from(
+                        new Map(
+                          clients
+                            .filter((c) => c.username)
+                            .map((c) => [c.username!.trim().toLowerCase(), c])
+                        ).values()
+                      ).map((c) => {
+                        const spkCount = clients.filter(
+                          (item) =>
+                            item.username &&
+                            c.username &&
+                            item.username.trim().toLowerCase() === c.username.trim().toLowerCase()
+                        ).length;
+                        return (
+                          <option key={c.id} value={c.id}>
+                            Gabung ke Akun @{c.username} — {c.name} ({c.fullCompanyName}) [{spkCount} SPK Aktif]
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Username Login */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-bold text-slate-900 text-xs">
+                        Username Login <span className="text-rose-600">*</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const base = (clientForm.name || clientForm.fullCompanyName || 'klien')
+                            .toLowerCase()
+                            .replace(/^pt\.?\s*/i, '')
+                            .replace(/[^a-z0-9]/g, '')
+                            .slice(0, 12);
+                          setClientForm({
+                            ...clientForm,
+                            username: `klien.${base || 'spk'}`,
+                            password: clientForm.password || 'klien123',
+                          });
+                        }}
+                        className="text-[10px] font-black text-teal-700 hover:text-teal-900 underline cursor-pointer"
+                      >
+                        ⚡ Buat Otomatis dari Nama PT
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Contoh: klien.pta atau klien.csm"
+                      value={clientForm.username}
+                      onChange={(e) =>
+                        setClientForm({
+                          ...clientForm,
+                          username: e.target.value.replace(/\s+/g, '').toLowerCase(),
+                        })
+                      }
+                      className="w-full px-3 py-2 bg-white border-2 border-teal-300 rounded-lg font-mono font-black text-sm text-slate-950 focus:outline-none focus:border-teal-600"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Gunakan username yang sama jika 1 Klien memiliki beberapa Nomor SPK.
+                    </p>
+                  </div>
+
+                  {/* Password Login */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-bold text-slate-900 text-xs">
+                        Password Login <span className="text-rose-600">*</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setClientForm({
+                            ...clientForm,
+                            password: `Klien${Math.floor(1000 + Math.random() * 9000)}!`,
+                          });
+                          setShowClientPassword(true);
+                        }}
+                        className="text-[10px] font-black text-teal-700 hover:text-teal-900 underline cursor-pointer"
+                      >
+                        🔑 Generate Password
+                      </button>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type={showClientPassword ? 'text' : 'password'}
+                        required
+                        placeholder="Masukkan password login klien..."
+                        value={clientForm.password}
+                        onChange={(e) => setClientForm({ ...clientForm, password: e.target.value })}
+                        className="w-full px-3 py-2 pr-9 bg-white border-2 border-teal-300 rounded-lg font-mono font-bold text-sm text-slate-950 focus:outline-none focus:border-teal-600"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowClientPassword(!showClientPassword)}
+                        className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-700 cursor-pointer"
+                        title={showClientPassword ? 'Sembunyikan Password' : 'Tampilkan Password'}
+                      >
+                        {showClientPassword ? (
+                          <EyeOff className="w-4 h-4" />
+                        ) : (
+                          <Eye className="w-4 h-4" />
+                        )}
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Password untuk login ke Portal Monitoring Klien.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Level Hak Akses (Otomatis Terkunci di Klien) */}
+                <div>
+                  <label className="block font-bold text-slate-900 text-xs mb-1">
+                    Level Hak Akses Sistem (Otomatis Ter-Lock):
+                  </label>
+                  <div className="w-full px-3.5 py-2.5 bg-teal-950 text-white border-2 border-teal-600 rounded-lg flex items-center justify-between gap-2 shadow-inner select-none">
+                    <div className="flex items-center gap-2">
+                      <Lock className="w-4 h-4 text-teal-400 shrink-0" />
+                      <span className="font-black text-xs sm:text-sm tracking-wide text-teal-300">
+                        Klien (Monitoring Progress &amp; Laporan)
+                      </span>
+                    </div>
+                    <span className="px-2 py-0.5 bg-teal-500/20 border border-teal-400/40 text-teal-200 rounded text-[10px] font-bold uppercase shrink-0">
+                      Terkunci Otomatis
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-teal-900 font-semibold mt-1.5 leading-relaxed">
+                    🔒 Hak akses akun ini dikunci khusus sebagai <strong>Klien (Monitoring Progress &amp; Laporan)</strong>. Klien hanya dapat melihat progress fisik &amp; laporan harian sesuai SPK milik akun ini dan tidak memiliki akses ke SPK klien lain.
+                  </p>
+                </div>
               </div>
 
               {/* Form Buttons */}

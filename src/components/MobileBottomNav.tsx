@@ -8,7 +8,8 @@ import {
   HardHat, 
   Database,
   ClipboardCheck,
-  ShieldCheck
+  ShieldCheck,
+  Printer
 } from 'lucide-react';
 import { UserRole } from '../types';
 import { TabKey } from './Header';
@@ -28,8 +29,27 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
 }) => {
   const isDirector = userRole === 'director';
   const isManager = userRole === 'manager';
+  const isClient = userRole === 'client';
 
-  const items = isDirector
+  const items = isClient
+    ? [
+        {
+          key: 'client-portal' as TabKey,
+          label: 'Monitoring SPK',
+          icon: LayoutDashboard,
+        },
+        {
+          key: 'reports' as TabKey,
+          label: 'Laporan',
+          icon: FileText,
+        },
+        {
+          key: 'official-pdf' as TabKey,
+          label: 'Cetak PDF',
+          icon: Printer,
+        },
+      ]
+    : isDirector
     ? [
         {
           key: 'dashboard' as TabKey,
@@ -103,7 +123,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
       className="fixed bottom-0 left-0 right-0 z-30 lg:hidden bg-slate-900/95 backdrop-blur-md border-t border-slate-800 shadow-2xl safe-area-bottom"
       aria-label="Navigasi Bawah Layar Sentuh"
     >
-      <div className="grid grid-cols-5 items-center h-14 max-w-lg mx-auto px-1">
+      <div className={`grid ${isClient ? 'grid-cols-4' : 'grid-cols-5'} items-center h-14 max-w-lg mx-auto px-1`}>
         {items.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.key;
