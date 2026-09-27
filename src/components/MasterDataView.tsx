@@ -64,12 +64,41 @@ export const MasterDataView: React.FC = () => {
   const [workAssignments, setWorkAssignments] = useState<WorkAssignment[]>(() => storageService.getWorkAssignments());
   const [companyStaffList, setCompanyStaffList] = useState<CompanyStaff[]>(() => storageService.getCompanyStaff());
 
+  // Real-time synchronization listener for master data
+  React.useEffect(() => {
+    const handleSync = () => {
+      setClients(storageService.getClients());
+      setBlocks(storageService.getBlocks());
+      setEquipments(storageService.getEquipments());
+      setWorkers(storageService.getWorkers());
+      setWorkAssignments(storageService.getWorkAssignments());
+      setDailyTargets(storageService.getDailyTargets());
+    };
+    window.addEventListener('suryaland_master_sync', handleSync);
+    window.addEventListener('suryaland_firestore_sync', handleSync);
+    return () => {
+      window.removeEventListener('suryaland_master_sync', handleSync);
+      window.removeEventListener('suryaland_firestore_sync', handleSync);
+    };
+  }, []);
+
   const [selectedClientForBlock, setSelectedClientForBlock] = useState<string>('ALL');
 
   // Client Modal & Filter State (SPK is Primary Key: 1 PT can have multiple SPKs with different blocks)
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
   const [editingClientId, setEditingClientId] = useState<string | null>(null);
   const [clientSearchQuery, setClientSearchQuery] = useState<string>('');
+  const [isClearMasterModalOpen, setIsClearMasterModalOpen] = useState(false);
+
+  const executeClearAllMasterData = () => {
+    storageService.clearMasterProjectData();
+    setClients([]);
+    setBlocks([]);
+    setEquipments([]);
+    setWorkAssignments([]);
+    setDailyTargets([]);
+    setIsClearMasterModalOpen(false);
+  };
   const [clientForm, setClientForm] = useState<{
     name: string;
     fullCompanyName: string;
@@ -88,23 +117,19 @@ export const MasterDataView: React.FC = () => {
     fullCompanyName: '',
     contractNumber: '',
     projectName: '',
-    location: 'Provinsi Riau',
+    location: '',
     address: '',
     contactPerson: '',
     phone: '',
     email: '',
-    totalAreaInput: '110,3',
+    totalAreaInput: '',
     clearedAreaHa: 0,
     status: 'Aktif',
   });
 
   // Modal Dynamic Blocks list for "+ Tambah Klien Perusahaan Baru" & "Edit Klien"
-  // Default blocks: BLOK AA, BLOK AB, BLOK AC, BLOK AD
   const [modalBlocks, setModalBlocks] = useState<Array<{ id?: string; code: string; targetAreaHa: string; status?: string }>>([
-    { code: 'BLOK AA', targetAreaHa: '27,5' },
-    { code: 'BLOK AB', targetAreaHa: '27,5' },
-    { code: 'BLOK AC', targetAreaHa: '27,5' },
-    { code: 'BLOK AD', targetAreaHa: '27,8' },
+    { code: '', targetAreaHa: '' },
   ]);
 
   // Filtered clients by search query (SPK, Nama PT, Lokasi, PIC, Email)
@@ -137,9 +162,9 @@ export const MasterDataView: React.FC = () => {
     customItemVolume: string;
     customItemUnit: string;
   }>({
-    clientId: clients[0]?.id || 'client-1',
-    code: 'BLOK AZ',
-    targetAreaInput: '35,5',
+    clientId: clients[0]?.id || '',
+    code: '',
+    targetAreaInput: '',
     status: 'Dalam Pengerjaan',
     workItems: DEFAULT_WORK_ITEMS_CATALOG.map((item, idx) => ({
       id: `wi-std-${idx + 1}`,
@@ -194,8 +219,13 @@ export const MasterDataView: React.FC = () => {
   };
 
   const handleOpenAddBlock = (presetClientId?: string) => {
+    if (clients.length === 0) {
+      alert('Belum ada data Klien / SPK. Silakan tambahkan Klien terlebih dahulu pada sub menu 1 sebelum menambahkan blok kerja.');
+      setActiveSubTab('client');
+      return;
+    }
     setEditingBlockId(null);
-    const targetClientId = presetClientId || (selectedClientForBlock !== 'ALL' ? selectedClientForBlock : clients[0]?.id || 'client-1');
+    const targetClientId = presetClientId || (selectedClientForBlock !== 'ALL' ? selectedClientForBlock : clients[0]?.id || '');
     const standardItems: BlockWorkItem[] = DEFAULT_WORK_ITEMS_CATALOG.map((item, idx) => ({
       id: `wi-std-${idx + 1}`,
       name: item.name,
@@ -217,8 +247,8 @@ export const MasterDataView: React.FC = () => {
 
     setBlockForm({
       clientId: targetClientId,
-      code: firstBlock ? firstBlock.code : 'BLOK AZ',
-      targetAreaInput: firstBlock && firstBlock.targetAreaHa ? String(firstBlock.targetAreaHa).replace('.', ',') : '35,5',
+      code: firstBlock ? firstBlock.code : '',
+      targetAreaInput: firstBlock && firstBlock.targetAreaHa ? String(firstBlock.targetAreaHa).replace('.', ',') : '',
       dailyTargetAreaHa: 4.0,
       status: 'Dalam Pengerjaan',
       workItems: initialItems,
@@ -255,7 +285,7 @@ export const MasterDataView: React.FC = () => {
         clientId: newClientId,
         selectedExistingBlockId: firstBlock.id,
         code: firstBlock.code,
-        targetAreaInput: firstBlock.targetAreaHa !== undefined ? String(firstBlock.targetAreaHa).replace('.', ',') : '35,5',
+        targetAreaInput: firstBlock.targetAreaHa !== undefined ? String(firstBlock.targetAreaHa).replace('.', ',') : '',
         status: firstBlock.status,
         workItems: items,
       }));
@@ -270,8 +300,8 @@ export const MasterDataView: React.FC = () => {
         ...prev,
         clientId: newClientId,
         selectedExistingBlockId: '__CUSTOM__',
-        code: 'BLOK AZ',
-        targetAreaInput: '35,5',
+        code: '',
+        targetAreaInput: '',
         status: 'Dalam Pengerjaan',
         workItems: standardItems,
       }));
@@ -504,8 +534,8 @@ export const MasterDataView: React.FC = () => {
   const [viewingTargetDetail, setViewingTargetDetail] = useState<DailyLocationTarget | null>(null);
 
   const [targetForm, setTargetForm] = useState<Partial<DailyLocationTarget>>({
-    clientId: clients[0]?.id || 'client-1',
-    blockId: blocks[0]?.id || 'blk-1',
+    clientId: clients[0]?.id || '',
+    blockId: blocks[0]?.id || '',
     date: new Date().toISOString().split('T')[0],
     dailyTargetAreaHa: 4.0,
     shift: 'Siang (07:00 - 17:00)',
@@ -517,8 +547,13 @@ export const MasterDataView: React.FC = () => {
   });
 
   const handleOpenAddTarget = (presetBlockId?: string, presetClientId?: string) => {
+    if (clients.length === 0) {
+      alert('Belum ada data Klien / SPK. Silakan tambahkan Klien terlebih dahulu pada sub menu 1 sebelum menetapkan target harian.');
+      setActiveSubTab('client');
+      return;
+    }
     setEditingTargetId(null);
-    const chosenClientId = presetClientId || (selectedClientForTarget !== 'ALL' ? selectedClientForTarget : clients[0]?.id || 'client-1');
+    const chosenClientId = presetClientId || (selectedClientForTarget !== 'ALL' ? selectedClientForTarget : clients[0]?.id || '');
     const availableBlocks = blocks.filter((b) => b.clientId === chosenClientId);
     const chosenBlock = presetBlockId 
       ? blocks.find((b) => b.id === presetBlockId) 
@@ -537,7 +572,7 @@ export const MasterDataView: React.FC = () => {
       const vol = (wi as any).targetVolume !== undefined ? (wi as any).targetVolume : (wi as any).defaultTargetVolume || 10;
       let defTarget = 5;
       if (wi.name.toUpperCase().includes('BATANG KUBUR')) {
-        defTarget = 10; // Contoh: BATANG KUBUR 25 pohon, target 10 pohon -> 3 hari
+        defTarget = 10;
       } else if (wi.name.toUpperCase().includes('MAINROAD')) {
         defTarget = 50;
       } else if (wi.name.toUpperCase().includes('COLLECTION')) {
@@ -565,11 +600,11 @@ export const MasterDataView: React.FC = () => {
     const { asgNumbers, personnel } = getPersonnelForBlockFromAssignments(chosenClientId, chosenBlock?.id);
 
     setTargetForm({
-      clientId: chosenBlock?.clientId || chosenClientId,
-      clientName: clientObj?.name || 'Klien',
-      contractNumber: clientObj?.contractNumber || '045/SPK-LC/PTA/VI/2026',
-      blockId: chosenBlock?.id || 'blk-1',
-      blockCode: chosenBlock?.code || 'Blok',
+      clientId: chosenBlock?.clientId || chosenClientId || '',
+      clientName: clientObj?.name || '',
+      contractNumber: clientObj?.contractNumber || '',
+      blockId: chosenBlock?.id || '',
+      blockCode: chosenBlock?.code || '',
       date: todayStr,
       dailyTargetAreaHa: chosenBlock?.dailyTargetAreaHa || 4.0,
       shift: 'Siang (07:00 - 17:00)',
@@ -578,8 +613,8 @@ export const MasterDataView: React.FC = () => {
       assignmentNumbers: asgNumbers,
       assignedPersonnel: personnel,
       itemTargets: initialRitmes,
-      assignedEquipmentCount: personnel.filter((a) => a.equipmentId).length || 3,
-      assignedWorkerCount: personnel.length || 8,
+      assignedEquipmentCount: personnel.filter((a) => a.equipmentId).length || 0,
+      assignedWorkerCount: personnel.length || 0,
     });
     setIsTargetModalOpen(true);
   };
@@ -1091,6 +1126,11 @@ export const MasterDataView: React.FC = () => {
   };
 
   const handleOpenAddAssignment = () => {
+    if (clients.length === 0) {
+      alert('Belum ada data Klien / SPK. Silakan tambahkan Klien terlebih dahulu pada sub menu 1 sebelum membuat penugasan kerja.');
+      setActiveSubTab('client');
+      return;
+    }
     setEditingAssignmentId(null);
     setManualWorkerInputMode({});
     const currentStaffList = storageService.getCompanyStaff();
@@ -1098,142 +1138,32 @@ export const MasterDataView: React.FC = () => {
     setWorkers(storageService.getWorkers());
     setEquipments(storageService.getEquipments());
 
-    const initialClientId = clients.some((c) => c.id === 'client-gudang')
-      ? 'client-gudang'
-      : (clients[0]?.id || 'client-1');
+    const initialClientId = clients[0]?.id || '';
     const targetClient = clients.find((c) => c.id === initialClientId) || clients[0];
     const todayStr = new Date().toISOString().slice(0, 10);
     const generatedNo = storageService.generateAssignmentNumber(targetClient, todayStr, workAssignments);
     const availableBlocks = blocks.filter((b) => b.clientId === initialClientId);
 
-    if (initialClientId === 'client-gudang') {
-      setAssignmentForm({
-        assignmentNumber: generatedNo,
-        clientId: 'client-gudang',
-        assignedDate: todayStr,
-        status: 'Aktif',
-        notes: 'Penugasan Tim Kerja Operasional Proyek Land Clearing 460 Ha. Seluruh tim wajib mematuhi SOP Zero Burning Method dan standar K3.',
-        siteManagerName: 'Bambang Sugiarto, S.P.',
-        siteManagerPhone: '+62 812-3456-7890',
-        supervisors: [
-          {
-            id: 'spv-1',
-            name: 'Ahmad Noor',
-            phone: '+62 813-1122-3344',
-            coverageType: 'CUSTOM',
-            assignedBlockIds: ['blk-i33', 'blk-j31', 'blk-j34'],
-            assignedBlockCodes: ['BLOK I33', 'BLOK J31', 'BLOK J34'],
-          },
-          {
-            id: 'spv-2',
-            name: 'Dedi Kurniawan',
-            phone: '+62 813-5566-7788',
-            coverageType: 'CUSTOM',
-            assignedBlockIds: ['blk-j35', 'blk-j36'],
-            assignedBlockCodes: ['BLOK J35', 'BLOK J36'],
-          },
-        ],
-        supportTeam: [
-          {
-            id: `sup-${Date.now()}-1`,
-            role: 'Operator',
-            workerName: 'Hendri Gunawan',
-            equipmentId: 'EX-04',
-            equipmentName: 'Excavator Kobelco SK200-10',
-          },
-          {
-            id: `sup-${Date.now()}-2`,
-            role: 'Operator',
-            workerName: 'Agus Santoso',
-            equipmentId: 'EX-01',
-            equipmentName: 'Excavator Komatsu PC200-8',
-          },
-          {
-            id: `sup-${Date.now()}-3`,
-            role: 'Operator',
-            workerName: 'Rian Hidayat',
-            equipmentId: 'EX-02',
-            equipmentName: 'Excavator Komatsu PC200-8',
-          },
-          {
-            id: `sup-${Date.now()}-4`,
-            role: 'Operator',
-            workerName: 'Bambang Supriyanto',
-            equipmentId: 'DZ-02',
-            equipmentName: 'Bulldozer CAT D6R',
-          },
-          {
-            id: `sup-${Date.now()}-5`,
-            role: 'Mekanik',
-            workerName: 'Anton',
-            notes: 'Maintenance & Service Unit',
-          },
-          {
-            id: `sup-${Date.now()}-6`,
-            role: 'Logistik',
-            workerName: 'Bowo',
-            notes: 'BBM & Sparepart',
-          },
-          {
-            id: `sup-${Date.now()}-7`,
-            role: 'Pendukung',
-            workerName: 'Jaya',
-            notes: 'Helper & Rintis Jalur',
-          },
-        ],
-      });
-    } else {
-      setAssignmentForm({
-        assignmentNumber: generatedNo,
-        clientId: initialClientId,
-        assignedDate: todayStr,
-        status: 'Aktif',
-        notes: 'Penugasan Tim Kerja Operasional Proyek Land Clearing.',
-        siteManagerName: 'Bambang Sugiarto, S.P.',
-        siteManagerPhone: '+62 812-3456-7890',
-        supervisors: [
-          {
-            id: `spv-${Date.now()}-1`,
-            name: 'Ahmad Noor',
-            phone: '+62 813-1122-3344',
-            coverageType: 'ALL',
-            assignedBlockIds: availableBlocks.map((b) => b.id),
-            assignedBlockCodes: availableBlocks.map((b) => b.code),
-          },
-        ],
-        supportTeam: [
-          {
-            id: `sup-${Date.now()}-1`,
-            role: 'Operator',
-            workerName: 'Hendri Gunawan',
-            equipmentId: 'EX-04',
-            equipmentName: 'Excavator Kobelco SK200-10',
-          },
-          {
-            id: `sup-${Date.now()}-2`,
-            role: 'Operator',
-            workerName: 'Agus Santoso',
-            equipmentId: 'EX-01',
-            equipmentName: 'Excavator Komatsu PC200-8',
-          },
-          {
-            id: `sup-${Date.now()}-3`,
-            role: 'Mekanik',
-            workerName: 'Anton',
-          },
-          {
-            id: `sup-${Date.now()}-4`,
-            role: 'Logistik',
-            workerName: 'Bowo',
-          },
-          {
-            id: `sup-${Date.now()}-5`,
-            role: 'Pendukung',
-            workerName: 'Jaya',
-          },
-        ],
-      });
-    }
+    setAssignmentForm({
+      assignmentNumber: generatedNo,
+      clientId: initialClientId,
+      assignedDate: todayStr,
+      status: 'Aktif',
+      notes: '',
+      siteManagerName: '',
+      siteManagerPhone: '',
+      supervisors: [
+        {
+          id: `spv-${Date.now()}-1`,
+          name: '',
+          phone: '',
+          coverageType: 'ALL',
+          assignedBlockIds: availableBlocks.map((b) => b.id),
+          assignedBlockCodes: availableBlocks.map((b) => b.code),
+        },
+      ],
+      supportTeam: [],
+    });
     setIsAssignmentModalOpen(true);
   };
 
@@ -1634,8 +1564,8 @@ export const MasterDataView: React.FC = () => {
       contractNumber: '',
       name: '',
       fullCompanyName: '',
-      totalAreaInput: '110,3',
-      location: 'Provinsi Riau',
+      totalAreaInput: '',
+      location: '',
       contactPerson: '',
       phone: '',
       email: '',
@@ -1644,10 +1574,7 @@ export const MasterDataView: React.FC = () => {
       clearedAreaHa: 0,
     });
     setModalBlocks([
-      { code: 'BLOK AA', targetAreaHa: '27,5' },
-      { code: 'BLOK AB', targetAreaHa: '27,5' },
-      { code: 'BLOK AC', targetAreaHa: '27,5' },
-      { code: 'BLOK AD', targetAreaHa: '27,8' },
+      { code: '', targetAreaHa: '' },
     ]);
     setIsClientModalOpen(true);
   };
@@ -1932,6 +1859,18 @@ export const MasterDataView: React.FC = () => {
               Pengaturan daftar klien perkebunan (Multi-Client), lokasi & pekerjaan, alat berat & batas BBM, penugasan kerja, dan target harian.
             </p>
           </div>
+
+          {(clients.length > 0 || blocks.length > 0 || equipments.length > 0 || workAssignments.length > 0 || dailyTargets.length > 0) && (
+            <button
+              type="button"
+              onClick={() => setIsClearMasterModalOpen(true)}
+              className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs rounded-xl border border-rose-200 flex items-center gap-1.5 transition cursor-pointer self-start sm:self-center shrink-0 shadow-xs"
+              title="Hapus / Kosongkan semua data inputan Master Data Proyek untuk pengisian data riil lapangan baru"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Kosongkan Semua Data Master Proyek</span>
+            </button>
+          )}
         </div>
 
         {/* Sub-tab navigation: Master Data Proyek (1. Klien, 2. Lokasi & Pekerjaan, 3. Alat Berat & BBM, 4. Penugasan Kerja, 5. Target Harian) */}
@@ -2049,8 +1988,26 @@ export const MasterDataView: React.FC = () => {
           </div>
 
           {filteredClients.length === 0 ? (
-            <div className="p-8 text-center bg-white rounded-2xl border border-slate-200 text-slate-500 text-sm">
-              Tidak ada data klien yang cocok dengan pencarian "{clientSearchQuery}".
+            <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 text-slate-500 text-sm space-y-3">
+              <Building2 className="w-10 h-10 text-slate-300 mx-auto" />
+              <h4 className="font-black text-slate-800 text-sm">
+                {clients.length === 0 ? 'Belum Ada Data Klien / SPK' : 'Tidak Ada Data Klien yang Cocok'}
+              </h4>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                {clients.length === 0 
+                  ? 'Data master klien telah dikosongkan. Silakan klik tombol di bawah untuk mulai menginput data riil SPK & Klien di lapangan.' 
+                  : `Tidak ada data klien yang cocok dengan pencarian "${clientSearchQuery}".`}
+              </p>
+              {clients.length === 0 && (
+                <button
+                  type="button"
+                  onClick={handleOpenAddClient}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs cursor-pointer shadow-xs transition inline-flex items-center gap-1.5"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Tambah Klien Perusahaan Baru</span>
+                </button>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -2290,8 +2247,26 @@ export const MasterDataView: React.FC = () => {
           </div>
 
           {filteredBlocks.length === 0 ? (
-            <div className="p-8 text-center bg-white rounded-2xl border border-slate-200 text-slate-500 text-sm">
-              Tidak ada data lokasi blok kerja yang cocok dengan filter / pencarian "{blockSearchQuery}".
+            <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 text-slate-500 text-sm space-y-3">
+              <Layers className="w-10 h-10 text-slate-300 mx-auto" />
+              <h4 className="font-black text-slate-800 text-sm">
+                {blocks.length === 0 ? 'Belum Ada Data Lokasi & Pekerjaan Blok' : 'Tidak Ada Data Blok yang Cocok'}
+              </h4>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                {blocks.length === 0
+                  ? 'Data master blok kerja telah dikosongkan. Silakan klik tombol di bawah untuk mulai menambahkan blok kerja riil di lapangan.'
+                  : `Tidak ada data lokasi blok kerja yang cocok dengan filter / pencarian "${blockSearchQuery}".`}
+              </p>
+              {blocks.length === 0 && (
+                <button
+                  type="button"
+                  onClick={() => handleOpenAddBlock()}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs cursor-pointer shadow-xs transition inline-flex items-center gap-1.5"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Tambah Lokasi Blok Baru</span>
+                </button>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -3596,6 +3571,44 @@ export const MasterDataView: React.FC = () => {
                         </td>
                       </tr>
                     ))}
+                  {equipments.filter((eq) => {
+                    const matchType = equipmentTypeFilter === 'ALL' || eq.type === equipmentTypeFilter;
+                    const matchStatus = equipmentStatusFilter === 'ALL' || eq.status === equipmentStatusFilter;
+                    const q = (equipmentSearch || '').toLowerCase();
+                    const matchSearch =
+                      !equipmentSearch ||
+                      (eq.id && eq.id.toLowerCase().includes(q)) ||
+                      (eq.name && eq.name.toLowerCase().includes(q)) ||
+                      eq.operatorName?.toLowerCase().includes(q) ||
+                      eq.serialNumber?.toLowerCase().includes(q);
+                    return matchType && matchStatus && matchSearch;
+                  }).length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="py-12 text-center text-slate-500 bg-slate-50/50">
+                        <div className="max-w-md mx-auto space-y-3">
+                          <Truck className="w-10 h-10 text-slate-300 mx-auto" />
+                          <h4 className="font-black text-slate-800 text-sm">
+                            {equipments.length === 0 ? 'Belum Ada Data Alat Berat' : 'Tidak Ada Alat Berat yang Sesuai Filter'}
+                          </h4>
+                          <p className="text-xs text-slate-500">
+                            {equipments.length === 0
+                              ? 'Data master unit alat berat telah dikosongkan. Silakan klik tombol di bawah untuk mulai menambahkan unit alat berat riil.'
+                              : 'Silakan ubah kata kunci pencarian atau filter kategori/status unit.'}
+                          </p>
+                          {equipments.length === 0 && (
+                            <button
+                              type="button"
+                              onClick={handleOpenAddEquipment}
+                              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs cursor-pointer shadow-xs transition inline-flex items-center gap-1.5"
+                            >
+                              <Plus className="w-4 h-4" />
+                              <span>Tambah Unit Alat Berat Baru</span>
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -6192,6 +6205,57 @@ export const MasterDataView: React.FC = () => {
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>Ya, Hapus Penugasan</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: KONFIRMASI KOSONGKAN SEMUA DATA MASTER PROYEK */}
+      {isClearMasterModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="p-3 bg-rose-50 rounded-2xl border border-rose-200">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-black text-slate-900 text-base">Kosongkan Semua Data Master Proyek?</h3>
+                <span className="text-xs text-slate-500">Persiapan Pengisian Data Real Lapangan</span>
+              </div>
+            </div>
+
+            <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-xs space-y-2 text-amber-950">
+              <p className="font-bold">
+                Tindakan ini akan mengosongkan seluruh data pada menu Master Data Proyek dan seluruh sub-sub menunya:
+              </p>
+              <ul className="list-disc list-inside space-y-1 text-[11px] font-medium text-amber-900">
+                <li>1. Data Klien / SPK ({clients.length} terdaftar)</li>
+                <li>2. Data Lokasi &amp; Pekerjaan Blok ({blocks.length} terdaftar)</li>
+                <li>3. Data Unit Alat Berat &amp; Batas BBM ({equipments.length} terdaftar)</li>
+                <li>4. Data Penugasan Kerja ({workAssignments.length} terdaftar)</li>
+                <li>5. Data Target Harian ({dailyTargets.length} terdaftar)</li>
+              </ul>
+              <p className="text-[11px] pt-1 border-t border-amber-200 text-slate-600 italic">
+                Setelah dikosongkan, Anda dapat langsung menginput data riil di lapangan satu per satu tanpa terganggu data dummy.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2.5 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsClearMasterModalOpen(false)}
+                className="px-4 py-2.5 text-xs text-slate-600 hover:bg-slate-100 rounded-xl font-bold cursor-pointer transition"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={executeClearAllMasterData}
+                className="px-5 py-2.5 text-xs bg-rose-600 hover:bg-rose-500 text-white font-black rounded-xl shadow-md cursor-pointer transition flex items-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Ya, Kosongkan Semua Data Proyek</span>
               </button>
             </div>
           </div>

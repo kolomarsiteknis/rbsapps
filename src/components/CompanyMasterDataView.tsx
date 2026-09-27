@@ -503,6 +503,14 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
   const [workerSearchQuery, setWorkerSearchQuery] = useState('');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('ALL');
   const [selectedClientFilter, setSelectedClientFilter] = useState('ALL');
+  const [isClearWorkersModalOpen, setIsClearWorkersModalOpen] = useState(false);
+
+  const executeClearWorkers = () => {
+    storageService.clearWorkers();
+    setWorkers([]);
+    setIsClearWorkersModalOpen(false);
+    showToast('Seluruh data Personil Tim Pendukung telah berhasil dikosongkan. Siap untuk pengisian data riil.', 'info');
+  };
 
   const DEFAULT_WORKER_CATEGORIES = ['Operator', 'Mekanik', 'Logistik', 'Pendukung'];
   const [customWorkerCategories, setCustomWorkerCategories] = useState<string[]>(() => {
@@ -1477,6 +1485,17 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
             </div>
 
             <div className="flex items-center gap-2">
+              {workers.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setIsClearWorkersModalOpen(true)}
+                  className="px-3.5 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs rounded-xl border border-rose-200 flex items-center gap-1.5 transition cursor-pointer"
+                  title="Hapus / Kosongkan semua data personil tim pendukung untuk input data real baru"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Kosongkan Personil ({workers.length})</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleOpenAddWorker}
@@ -1603,8 +1622,24 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
           {filteredWorkers.length === 0 && (
             <div className="p-12 text-center bg-white rounded-3xl border border-slate-200 space-y-3">
               <HardHat className="w-10 h-10 text-slate-300 mx-auto" />
-              <h4 className="font-bold text-slate-700">Tidak ada personil yang sesuai filter</h4>
-              <p className="text-xs text-slate-400">Silakan ubah kata kunci pencarian atau tambah personil baru.</p>
+              <h4 className="font-bold text-slate-700">
+                {workers.length === 0 ? 'Belum Ada Data Personil Tim Pendukung' : 'Tidak ada personil yang sesuai filter'}
+              </h4>
+              <p className="text-xs text-slate-400 max-w-md mx-auto">
+                {workers.length === 0
+                  ? 'Data personil tim pendukung (Operator, Mekanik, Logistik, Pendukung) telah dikosongkan. Silakan klik tombol di bawah untuk mulai menginput data personil riil di lapangan.'
+                  : 'Silakan ubah kata kunci pencarian atau filter kategori/lokasi SPK.'}
+              </p>
+              {workers.length === 0 && (
+                <button
+                  type="button"
+                  onClick={handleOpenAddWorker}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs cursor-pointer shadow-xs transition inline-flex items-center gap-1.5"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Tambah Personil Riil Pertama</span>
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -2144,6 +2179,50 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: KONFIRMASI KOSONGKAN PERSONIL TIM PENDUKUNG */}
+      {isClearWorkersModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="p-3 bg-rose-50 rounded-2xl border border-rose-200">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-black text-slate-900 text-base">Kosongkan Personil Tim Pendukung?</h3>
+                <span className="text-xs text-slate-500">Sub Menu 3: Personil Tim Pendukung</span>
+              </div>
+            </div>
+
+            <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-xs space-y-2 text-amber-950">
+              <p className="font-bold">
+                Tindakan ini akan menghapus seluruh data pada daftar personil tim pendukung ({workers.length} personil):
+              </p>
+              <p className="text-[11px] text-amber-900">
+                Mencakup personil Operator Alat Berat, Mekanik, Logistik, dan Pendukung Lapangan. Data staff/kredensial login Anda pada Sub Menu 2 tidak akan terpengaruh.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2.5 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsClearWorkersModalOpen(false)}
+                className="px-4 py-2.5 text-xs text-slate-600 hover:bg-slate-100 rounded-xl font-bold cursor-pointer transition"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={executeClearWorkers}
+                className="px-5 py-2.5 text-xs bg-rose-600 hover:bg-rose-500 text-white font-black rounded-xl shadow-md cursor-pointer transition flex items-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Ya, Kosongkan Personil</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

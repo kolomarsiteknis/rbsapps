@@ -46,6 +46,8 @@ export const FIRESTORE_COLLECTIONS = {
   ACTIVITIES: 'userActivities',
   COMPANY_PROFILE: 'companyProfile',
   COMPANY_STAFF: 'companyStaff',
+  WORK_ASSIGNMENTS: 'workAssignments',
+  DAILY_TARGETS: 'dailyTargets',
 } as const;
 
 export const LOCAL_STORAGE_KEYS = {
@@ -66,6 +68,8 @@ export const LOCAL_STORAGE_KEYS = {
   ACTIVITIES: 'suryaland_user_activities_v1',
   COMPANY_PROFILE: 'suryaland_company_profile_v1',
   COMPANY_STAFF: 'suryaland_company_staff_v1',
+  WORK_ASSIGNMENTS: 'suryaland_work_assignments_v1',
+  DAILY_TARGETS: 'suryaland_daily_targets_v1',
 } as const;
 
 export type SyncStatus = 'connected' | 'offline' | 'syncing';
@@ -173,17 +177,38 @@ export function initFirestoreSync() {
     window.addEventListener('offline', () => setSyncStatus('offline'));
   }
 
-  // Setup initial seeding in the background
+  // Setup initial seeding & one-time cleanup of dummy data in the background
   const runInitialSeed = async () => {
     try {
-      await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.REPORTS, initialDailyReports);
-      await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.EQUIPMENTS, initialEquipments);
-      await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.WORKERS, initialWorkers);
-      await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.BLOCKS, initialBlocks);
+      // Purge dummy collections in Firestore so user can enter real field data
+      const FIRESTORE_PURGE_FLAG = 'rbs_firestore_master_purged_v2026_09';
+      if (typeof window !== 'undefined' && localStorage.getItem(FIRESTORE_PURGE_FLAG) !== 'done') {
+        const collectionsToWipe = [
+          FIRESTORE_COLLECTIONS.CLIENTS,
+          FIRESTORE_COLLECTIONS.BLOCKS,
+          FIRESTORE_COLLECTIONS.EQUIPMENTS,
+          FIRESTORE_COLLECTIONS.WORKERS,
+          FIRESTORE_COLLECTIONS.PROJECTS,
+          FIRESTORE_COLLECTIONS.WORK_ASSIGNMENTS,
+          FIRESTORE_COLLECTIONS.DAILY_TARGETS,
+        ];
+        for (const colName of collectionsToWipe) {
+          try {
+            const colRef = collection(db, colName);
+            const snap = await getDocs(colRef);
+            if (!snap.empty) {
+              const batch = writeBatch(db);
+              snap.forEach((d) => batch.delete(d.ref));
+              await batch.commit();
+            }
+          } catch (err) {
+            console.warn(`[Firestore Purge] Notice on ${colName}:`, err);
+          }
+        }
+        localStorage.setItem(FIRESTORE_PURGE_FLAG, 'done');
+      }
+
       await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.INVENTORY, initialInventory);
-      await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.CLIENTS, initialClients);
-      await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.PROJECTS, initialProjects);
-      await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.LOGISTICS, initialLogisticsTransactions);
       await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.P2H, initialP2HChecklists);
       await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.BOWSER, initialFuelBowserReceipts);
       await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.SOIL, initialSoilIncidents);
@@ -207,25 +232,25 @@ export function initFirestoreSync() {
     try {
       const colRef = collection(db, colName);
       onSnapshot(colRef, (snapshot) => {
+        const items: T[] = [];
         if (!snapshot.empty) {
-          const items: T[] = [];
           snapshot.forEach((d) => {
             items.push(d.data() as T);
           });
-          const finalList = transformList ? transformList(items) : items;
-          try {
-            localStorage.setItem(storageKey, JSON.stringify(finalList));
-          } catch {
-            // local storage quota or error
-          }
-          // Notify components across the application
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(
-              new CustomEvent('suryaland_firestore_sync', { 
-                detail: { collection: colName, count: finalList.length } 
-              })
-            );
-          }
+        }
+        const finalList = transformList ? transformList(items) : items;
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(finalList));
+        } catch {
+          // local storage quota or error
+        }
+        // Notify components across the application
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('suryaland_firestore_sync', { 
+              detail: { collection: colName, count: finalList.length } 
+            })
+          );
         }
       }, (error) => {
         console.warn(`[Firestore] Snapshot error on ${colName}:`, error.message);
@@ -251,6 +276,8 @@ export function initFirestoreSync() {
   attachSync(FIRESTORE_COLLECTIONS.USERS, LOCAL_STORAGE_KEYS.USERS);
   attachSync(FIRESTORE_COLLECTIONS.ACTIVITIES, LOCAL_STORAGE_KEYS.ACTIVITIES);
   attachSync(FIRESTORE_COLLECTIONS.COMPANY_STAFF, LOCAL_STORAGE_KEYS.COMPANY_STAFF);
+  attachSync(FIRESTORE_COLLECTIONS.WORK_ASSIGNMENTS, LOCAL_STORAGE_KEYS.WORK_ASSIGNMENTS);
+  attachSync(FIRESTORE_COLLECTIONS.DAILY_TARGETS, LOCAL_STORAGE_KEYS.DAILY_TARGETS);
 
   // Company Profile single doc listener
   try {

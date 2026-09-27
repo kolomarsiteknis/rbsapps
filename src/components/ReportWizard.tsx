@@ -192,69 +192,27 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
 
   // Step 3: Equipment Work Logs
   const [equipmentLogs, setEquipmentLogs] = useState<EquipmentWorkLog[]>(() => {
-    // Default 3 primary equipments active
-    return [
-      {
-        equipmentId: 'EX-01',
-        equipmentName: 'Exca PC200-8 #01',
-        type: 'Excavator PC200-8',
-        hmStart: 2158.5,
-        hmEnd: 2166.5,
-        totalHm: 8.0,
-        downtimeWeatherHours: 1.5,
-        downtimeWeatherNote: 'Hujan siang',
-        downtimeBreakdownHours: 0.0,
-        downtimeBreakdownNote: '',
-        downtimeOtherHours: 0.0,
-        downtimeOtherNote: '',
-        effectiveWorkHours: 6.5,
-        fuelAddedLiters: 110,
-        fuelHmAtRefuel: 2166.0,
-        fuelRatio: 16.92,
-        fuelStandardLimit: 18.0,
-        isFuelAlert: false,
-      },
-      {
-        equipmentId: 'EX-02',
-        equipmentName: 'Exca PC200-8 #02',
-        type: 'Excavator PC200-8',
-        hmStart: 1845.0,
-        hmEnd: 1852.0,
-        totalHm: 7.0,
-        downtimeWeatherHours: 1.5,
-        downtimeWeatherNote: 'Hujan siang',
-        downtimeBreakdownHours: 0.0,
-        downtimeBreakdownNote: '',
-        downtimeOtherHours: 0.0,
-        downtimeOtherNote: '',
-        effectiveWorkHours: 5.5,
-        fuelAddedLiters: 95,
-        fuelHmAtRefuel: 1851.5,
-        fuelRatio: 17.27,
-        fuelStandardLimit: 18.0,
-        isFuelAlert: false,
-      },
-      {
-        equipmentId: 'DZ-01',
-        equipmentName: 'Dozer D65PX',
-        type: 'Dozer D65PX',
-        hmStart: 3118.0,
-        hmEnd: 3126.0,
-        totalHm: 8.0,
-        downtimeWeatherHours: 1.5,
-        downtimeWeatherNote: 'Hujan siang',
-        downtimeBreakdownHours: 0.0,
-        downtimeBreakdownNote: '',
-        downtimeOtherHours: 0.0,
-        downtimeOtherNote: '',
-        effectiveWorkHours: 6.5,
-        fuelAddedLiters: 138,
-        fuelHmAtRefuel: 3125.5,
-        fuelRatio: 21.23,
-        fuelStandardLimit: 22.0,
-        isFuelAlert: false,
-      },
-    ];
+    const savedEquips = storageService.getEquipments();
+    return savedEquips.map((eq) => ({
+      equipmentId: eq.id,
+      equipmentName: eq.name,
+      type: eq.type,
+      hmStart: eq.currentHm || 0,
+      hmEnd: eq.currentHm || 0,
+      totalHm: 0,
+      downtimeWeatherHours: 0,
+      downtimeWeatherNote: '',
+      downtimeBreakdownHours: 0,
+      downtimeBreakdownNote: '',
+      downtimeOtherHours: 0,
+      downtimeOtherNote: '',
+      effectiveWorkHours: 0,
+      fuelAddedLiters: 0,
+      fuelHmAtRefuel: eq.currentHm || 0,
+      fuelRatio: 0,
+      fuelStandardLimit: eq.standardFuelRatio || 18.0,
+      isFuelAlert: false,
+    }));
   });
 
   // Step 4: Simple Physical Progress
@@ -262,8 +220,8 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
     const initBlk = allBlocks.find((b) => b.id === selectedBlockId);
     return initBlk?.dailyTargetAreaHa || 4.0;
   });
-  const [realizedAreaHa, setRealizedAreaHa] = useState<number>(3.9);
-  const [progressNotes, setProgressNotes] = useState<string>('Pekerjaan perumpukan jalur tanam Blok AB berjalan baik.');
+  const [realizedAreaHa, setRealizedAreaHa] = useState<number>(0);
+  const [progressNotes, setProgressNotes] = useState<string>('');
 
   // Sinkronisasi Target Harian (Ha) yang telah ditentukan Direktur untuk blok kerja ini
   useEffect(() => {

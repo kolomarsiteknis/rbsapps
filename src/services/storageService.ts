@@ -72,6 +72,25 @@ const STORAGE_KEYS = {
   COMPANY_STAFF: 'suryaland_company_staff_v1',
 };
 
+// Migration & purge flag: Purge dummy data from Master Data Proyek & Personil Tim Pendukung so user can fill real field data
+const REAL_DATA_PURGE_FLAG = 'rbs_clean_dummy_master_data_v2026_09';
+if (typeof window !== 'undefined') {
+  try {
+    if (localStorage.getItem(REAL_DATA_PURGE_FLAG) !== 'done') {
+      localStorage.setItem(STORAGE_KEYS.CLIENTS, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.BLOCKS, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.EQUIPMENTS, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.WORK_ASSIGNMENTS, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.DAILY_TARGETS, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.WORKERS, JSON.stringify([]));
+      localStorage.setItem(REAL_DATA_PURGE_FLAG, 'done');
+    }
+  } catch (err) {
+    console.warn('Initial storage purge notice:', err);
+  }
+}
+
 // Safe JSON parser helper
 function loadFromStorage<T>(key: string, defaultValue: T): T {
   try {
@@ -597,6 +616,7 @@ export const storageService = {
       syncDocWrite(FIRESTORE_COLLECTIONS.BLOCKS, block);
     }
 
+    syncDocWrite(FIRESTORE_COLLECTIONS.DAILY_TARGETS, target);
     return target;
   },
 
@@ -605,6 +625,7 @@ export const storageService = {
     const filtered = list.filter((t) => t.id !== targetId);
     if (filtered.length !== list.length) {
       saveToStorage(STORAGE_KEYS.DAILY_TARGETS, filtered);
+      syncDocDelete(FIRESTORE_COLLECTIONS.DAILY_TARGETS, targetId);
       return true;
     }
     return false;
@@ -699,6 +720,7 @@ export const storageService = {
       }
     }
 
+    syncDocWrite(FIRESTORE_COLLECTIONS.WORK_ASSIGNMENTS, finalAssignment);
     return finalAssignment;
   },
 
@@ -707,6 +729,7 @@ export const storageService = {
     const filtered = list.filter((a) => a.id !== id);
     if (filtered.length !== list.length) {
       saveToStorage(STORAGE_KEYS.WORK_ASSIGNMENTS, filtered);
+      syncDocDelete(FIRESTORE_COLLECTIONS.WORK_ASSIGNMENTS, id);
       return true;
     }
     return false;
@@ -2379,6 +2402,29 @@ export const storageService = {
       window.dispatchEvent(new CustomEvent('suryaland_company_staff_sync', { detail: { deletedId: id } }));
     }
     return true;
+  },
+
+  // Clear all data in Master Data Proyek (Clients, Blocks, Equipments, Work Assignments, Daily Targets)
+  clearMasterProjectData(): void {
+    saveToStorage(STORAGE_KEYS.CLIENTS, []);
+    saveToStorage(STORAGE_KEYS.PROJECTS, []);
+    saveToStorage(STORAGE_KEYS.BLOCKS, []);
+    saveToStorage(STORAGE_KEYS.EQUIPMENTS, []);
+    saveToStorage(STORAGE_KEYS.WORK_ASSIGNMENTS, []);
+    saveToStorage(STORAGE_KEYS.DAILY_TARGETS, []);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('suryaland_master_sync'));
+      window.dispatchEvent(new CustomEvent('suryaland_firestore_sync', { detail: { collection: 'all_master' } }));
+    }
+  },
+
+  // Clear sub menu 3 (Personil Tim pendukung: Operator, Mekanik, Logistik, Pendukung)
+  clearWorkers(): void {
+    saveToStorage(STORAGE_KEYS.WORKERS, []);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('suryaland_workers_sync'));
+      window.dispatchEvent(new CustomEvent('suryaland_firestore_sync', { detail: { collection: 'workers' } }));
+    }
   },
 
   // Reset database to initial seed
