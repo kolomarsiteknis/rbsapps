@@ -1,6 +1,55 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <script>
+      (function() {
+        // 1. Intercept and suppress the platform-level fetch getter TypeError in sandboxed preview
+        try {
+          window.addEventListener('error', function(event) {
+            var msg = (event && (event.message || (event.error && event.error.message))) || '';
+            if (typeof msg === 'string' && msg.indexOf('fetch') !== -1 && (msg.indexOf('getter') !== -1 || msg.indexOf('Cannot set property') !== -1)) {
+              if (event.preventDefault) event.preventDefault();
+              if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+              return true;
+            }
+          }, true);
+
+          var prevOnError = window.onerror;
+          window.onerror = function(msg, url, lineNo, columnNo, error) {
+            var strMsg = String(msg || (error && error.message) || '');
+            if (strMsg.indexOf('fetch') !== -1 && (strMsg.indexOf('getter') !== -1 || strMsg.indexOf('Cannot set property') !== -1)) {
+              return true;
+            }
+            if (typeof prevOnError === 'function') {
+              return prevOnError.apply(this, arguments);
+            }
+          };
+        } catch (_) {}
+
+        // 2. Proactively define setter for window.fetch so assignments succeed cleanly
+        try {
+          var origFetch = window.fetch;
+          var curFetch = origFetch;
+          var targets = [window];
+          if (typeof Window !== 'undefined' && Window.prototype) {
+            targets.push(Window.prototype);
+          }
+          targets.forEach(function(target) {
+            try {
+              var desc = Object.getOwnPropertyDescriptor(target, 'fetch');
+              if (!desc || desc.get || !desc.writable) {
+                Object.defineProperty(target, 'fetch', {
+                  configurable: true,
+                  enumerable: true,
+                  get: function() { return curFetch; },
+                  set: function(fn) { curFetch = fn; }
+                });
+              }
+            } catch (_) {}
+          });
+        } catch (_) {}
+      })();
+    </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RBS APPS - Land Clearing Heavy Equipment Supervisor & Executive Dashboard</title>

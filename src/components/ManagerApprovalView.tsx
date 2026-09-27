@@ -983,7 +983,14 @@ export const ManagerApprovalView: React.FC<ManagerApprovalViewProps> = ({
                 <div>
                   <span className="text-[10px] uppercase font-bold text-slate-400 block">Tanggal &amp; Cuaca</span>
                   <span className="font-bold text-slate-800">{viewingReport.date}</span>
-                  <span className="text-[11px] text-slate-500 block">Kondisi: {viewingReport.weather}</span>
+                  <span className="text-[11px] text-slate-600 block">
+                    Kondisi: <strong>{viewingReport.weather}</strong>
+                    {viewingReport.weatherStartTime && (
+                      <span className="text-[10px] text-slate-500 ml-1">
+                        ({viewingReport.weatherStartTime} - {viewingReport.weatherEndTime || ''} WIB)
+                      </span>
+                    )}
+                  </span>
                 </div>
                 <div>
                   <span className="text-[10px] uppercase font-bold text-slate-400 block">Klien &amp; Blok</span>
@@ -1025,6 +1032,39 @@ export const ManagerApprovalView: React.FC<ManagerApprovalViewProps> = ({
                     <div className="text-base font-black text-amber-700 font-mono mt-0.5">{viewingReport.physicalProgress?.progressPercentage?.toFixed(1) ?? '0.0'}%</div>
                   </div>
                 </div>
+
+                {/* Rincian Capaian Item Pekerjaan Berdasarkan Target Direktur */}
+                {viewingReport.physicalProgress?.itemProgress && viewingReport.physicalProgress.itemProgress.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-amber-200">
+                    <span className="text-[10px] font-black uppercase text-amber-900 block mb-1.5">
+                      Rincian Capaian Item Kerja (Target Direktur vs Realisasi Pengawas):
+                    </span>
+                    <div className="overflow-x-auto border border-amber-200 rounded-lg bg-white">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-amber-100/60 uppercase text-[9px] font-black text-amber-950">
+                          <tr>
+                            <th className="p-2">Item Pekerjaan</th>
+                            <th className="p-2 text-center">Target Direktur</th>
+                            <th className="p-2 text-center">Realisasi Hari Ini</th>
+                            <th className="p-2 text-center">Capaian (%)</th>
+                            <th className="p-2">Keterangan / Sektor</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {viewingReport.physicalProgress.itemProgress.map((item, idx) => (
+                            <tr key={idx} className="hover:bg-slate-50">
+                              <td className="p-2 font-bold text-slate-900">{item.itemName}</td>
+                              <td className="p-2 text-center font-mono text-slate-700">{item.targetDailyVolume} {item.unit}</td>
+                              <td className="p-2 text-center font-mono font-bold text-emerald-700">{item.realizedDailyVolume} {item.unit}</td>
+                              <td className="p-2 text-center font-mono font-black text-amber-700">{item.achievementPercentage}%</td>
+                              <td className="p-2 text-slate-500 text-[11px]">{item.notes || '-'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Operasional Unit Alat Berat */}

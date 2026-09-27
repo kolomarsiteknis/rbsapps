@@ -181,7 +181,7 @@ export const TutorialView: React.FC<TutorialViewProps> = ({ onNavigateTab }) => 
       badge: 'Menu 3',
       icon: Database,
       description: 'Katalog proyek: 1. Daftar Klien, 2. Lokasi & Pekerjaan, 3. Alat Berat & Batas BBM, 4. Penugasan Kerja, 5. Target Harian.',
-      targetRole: 'Direktur & Manager',
+      targetRole: 'Direktur (Superadmin)',
       steps: [
         {
           title: 'Sub-Tab 1: Daftar Klien (Multi-Client & Multi-SPK)',
@@ -215,7 +215,7 @@ export const TutorialView: React.FC<TutorialViewProps> = ({ onNavigateTab }) => 
       title: '4. Audit Pengawas',
       badge: 'Menu 4',
       icon: ClipboardCheck,
-      description: 'Audit hasil pemeriksaan harian pengawas: P2H Alat Berat, Galeri Foto Geotagging, HM Kerja, Solar Bowser & Log K3 Lapangan.',
+      description: 'Audit hasil pemeriksaan harian pengawas: P2H Alat Berat, Audit HM & Discrepancy BBM, Solar Bowser & Log K3 Lapangan.',
       targetRole: 'Direktur & Manager',
       steps: [
         {
@@ -223,16 +223,16 @@ export const TutorialView: React.FC<TutorialViewProps> = ({ onNavigateTab }) => 
           desc: 'Periksa kondisi oli, hidrolik, air radiator, track undercarriage, rem, dan APAR sebelum unit beroperasi.',
         },
         {
-          title: 'Audit Foto Geotagging Satelit',
-          desc: 'Periksa foto dokumentasi lapangan ber-watermark koordinat GPS, tanggal jam, akurasi satelit, dan aktivitas pekerjaan.',
+          title: 'Audit HM & Discrepancy Alert',
+          desc: 'Audit sinkronisasi total putaran jam kerja mesin fisik (HM) vs jam kerja catatan pengawas serta rasio efisiensi konsumsi solar (L/HM).',
         },
         {
-          title: 'Monitoring HM & Solar Bowser Keliling',
-          desc: 'Cek transaksi pengisian bahan bakar lapangan dan rasio konsumsi solar per jam kerja.',
+          title: 'Monitoring Solar Bowser & Log K3',
+          desc: 'Cek transaksi pengisian bahan bakar lapangan keliling dan rekap mitigasi insiden tanah amblas.',
         }
       ],
       keyRules: [
-        'Foto tanpa koordinat GPS akan mendapatkan bendera peringatan risiko tinggi.',
+        'Discrepancy HM >= 0.2 Jam akan mendapatkan bendera peringatan warna merah.',
         'Unit rusak pada P2H wajib diservis mekanik sebelum dioperasikan.'
       ]
     },

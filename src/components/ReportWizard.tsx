@@ -27,7 +27,8 @@ import {
   UserPlus,
   Info,
   Search,
-  Lock
+  Lock,
+  Target
 } from 'lucide-react';
 import { 
   DailyReport, 
@@ -42,7 +43,9 @@ import {
   BreakdownCategory,
   Client,
   UserRole,
-  AuthUser
+  AuthUser,
+  DailyLocationTarget,
+  BlockWorkItem
 } from '../types';
 import { storageService } from '../services/storageService';
 import { applyWatermark, getCurrentGpsLocation } from '../utils/watermark';
@@ -124,6 +127,9 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
     return initBlocks[0]?.id || 'blk-1';
   });
   const [weather, setWeather] = useState<WeatherCondition>('Cerah');
+  const [weatherStartTime, setWeatherStartTime] = useState<string>('08.00');
+  const [weatherEndTime, setWeatherEndTime] = useState<string>('14.15');
+  const [weatherNotes, setWeatherNotes] = useState<string>('');
   const [workShift, setWorkShift] = useState<string>('07.00 - 17.00 WIB');
   const [supervisorName, setSupervisorName] = useState<string>(() => authUser?.displayName || 'Budi Santoso');
 
@@ -215,21 +221,91 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
     }));
   });
 
-  // Step 4: Simple Physical Progress
-  const [targetAreaHa, setTargetAreaHa] = useState<number>(() => {
-    const initBlk = allBlocks.find((b) => b.id === selectedBlockId);
-    return initBlk?.dailyTargetAreaHa || 4.0;
-  });
+  // Step 4: Capaian Hasil Kerja Berdasarkan Target Harian Direktur (Master Data Proyek -> Submenu Target Harian)
+  interface WorkItemProgressEntry {
+    id: string;
+    name: string;
+    unit: string;
+    targetDailyVolume: number;
+    totalVolume?: number;
+    realizedDailyVolume: number;
+    notes?: string;
+  }
+
+  const [directorTarget, setDirectorTarget] = useState<DailyLocationTarget | undefined>(undefined);
+  const [workItemEntries, setWorkItemEntries] = useState<WorkItemProgressEntry[]>([]);
+  const [targetAreaHa, setTargetAreaHa] = useState<number>(4.0);
   const [realizedAreaHa, setRealizedAreaHa] = useState<number>(0);
   const [progressNotes, setProgressNotes] = useState<string>('');
 
-  // Sinkronisasi Target Harian (Ha) yang telah ditentukan Direktur untuk blok kerja ini
+  // Sinkronisasi data dari SPK terpilih, Blok terpilih, dan Target Harian yang ditetapkan Direktur
   useEffect(() => {
-    const currentBlock = allBlocks.find((b) => b.id === selectedBlockId);
-    if (currentBlock && currentBlock.dailyTargetAreaHa !== undefined) {
-      setTargetAreaHa(currentBlock.dailyTargetAreaHa);
+    // 1. Ambil target harian dari Direktur untuk Blok & SPK pada tanggal laporan
+    const targetForDate = storageService.getDailyTargetForDate(selectedBlockId, date);
+    const targetForBlock = targetForDate || storageService.getDailyTargets(selectedClientId, selectedBlockId)[0];
+    setDirectorTarget(targetForBlock);
+
+    // 2. Set targetAreaHa pokok dari Target Harian Direktur (atau konfigurasi blok)
+    const block = allBlocks.find((b) => b.id === selectedBlockId);
+    const resolvedTargetHa = targetForBlock?.dailyTargetAreaHa ?? block?.dailyTargetAreaHa ?? 4.0;
+    setTargetAreaHa(resolvedTargetHa);
+
+    // 3. Bangun daftar item kerja yang bersumber dari Target Harian Direktur / Blok SPK terpilih
+    let initialItems: WorkItemProgressEntry[] = [];
+    if (targetForBlock?.itemTargets && targetForBlock.itemTargets.length > 0) {
+      initialItems = targetForBlock.itemTargets.map((it, idx) => ({
+        id: it.id || `target-it-${idx}`,
+        name: it.name,
+        unit: it.unit || 'Ha',
+        targetDailyVolume: it.dailyTargetVolume,
+        totalVolume: it.totalVolume,
+        realizedDailyVolume: 0,
+        notes: '',
+      }));
+    } else if (block?.workItems && block.workItems.length > 0) {
+      initialItems = block.workItems.map((wi) => ({
+        id: wi.id,
+        name: wi.name,
+        unit: wi.unit || 'Ha',
+        targetDailyVolume: wi.unit.toUpperCase() === 'HA' ? resolvedTargetHa : (wi.targetVolume ? Number((wi.targetVolume / 25).toFixed(1)) : 10),
+        totalVolume: wi.targetVolume,
+        realizedDailyVolume: 0,
+        notes: '',
+      }));
+    } else {
+      initialItems = [
+        { id: 'wi-1', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', targetDailyVolume: resolvedTargetHa, totalVolume: block?.targetAreaHa || 100, realizedDailyVolume: 0, notes: '' },
+        { id: 'wi-2', name: 'BATANG KUBUR (Penebangan / Pemotongan)', unit: 'POHON', targetDailyVolume: 25, totalVolume: 250, realizedDailyVolume: 0, notes: '' },
+        { id: 'wi-3', name: 'MECHANICAL STACKING / RUMPUK MEKANIS', unit: 'Ha', targetDailyVolume: Number((resolvedTargetHa * 0.75).toFixed(1)), totalVolume: block?.targetAreaHa || 100, realizedDailyVolume: 0, notes: '' },
+        { id: 'wi-4', name: 'MAINROAD & COLLECTION ROAD', unit: 'm', targetDailyVolume: 150, totalVolume: 1500, realizedDailyVolume: 0, notes: '' },
+      ];
     }
-  }, [selectedBlockId, allBlocks]);
+
+    setWorkItemEntries(initialItems);
+  }, [selectedClientId, selectedBlockId, date, allBlocks]);
+
+  const handleItemRealizationChange = (itemId: string, val: number) => {
+    setWorkItemEntries((prev) => {
+      const next = prev.map((item) => (item.id === itemId ? { ...item, realizedDailyVolume: val } : item));
+      
+      // Hitung otomatis realizedAreaHa berdasarkan capaian item
+      const haItems = next.filter((it) => it.unit.toUpperCase() === 'HA');
+      if (haItems.length > 0) {
+        const primaryHa = haItems[0]?.realizedDailyVolume || 0;
+        setRealizedAreaHa(Number(primaryHa.toFixed(2)));
+      } else {
+        const avgPct = next.reduce((sum, it) => sum + (it.targetDailyVolume > 0 ? (it.realizedDailyVolume / it.targetDailyVolume) : 0), 0) / (next.length || 1);
+        setRealizedAreaHa(Number((avgPct * targetAreaHa).toFixed(2)));
+      }
+      return next;
+    });
+  };
+
+  const handleItemNotesChange = (itemId: string, note: string) => {
+    setWorkItemEntries((prev) =>
+      prev.map((item) => (item.id === itemId ? { ...item, notes: note } : item))
+    );
+  };
 
   // Step 5: Logistics & Parts
   const [tankInitial, setTankInitial] = useState<number>(4734);
@@ -592,6 +668,9 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
       blockId: selectedBlockId,
       blockCode: activeBlock ? activeBlock.code : 'Blok Utama',
       weather,
+      weatherStartTime: weatherStartTime.trim() || undefined,
+      weatherEndTime: weatherEndTime.trim() || undefined,
+      weatherNotes: weatherNotes.trim() || undefined,
       effectiveWorkShift: workShift,
       supervisorId: 'w-8',
       supervisorName,
@@ -601,6 +680,18 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
         cumulativeAreaHa: Number(cumulativeAreaCalc.toFixed(2)),
         progressPercentage: Number(((cumulativeAreaCalc / (activeBlock?.targetAreaHa || 100)) * 100).toFixed(2)),
         notes: progressNotes,
+        directorTargetId: directorTarget?.id,
+        directorNotes: directorTarget?.notes,
+        itemProgress: workItemEntries.map((it) => ({
+          itemName: it.name,
+          unit: it.unit,
+          targetDailyVolume: it.targetDailyVolume,
+          realizedDailyVolume: it.realizedDailyVolume,
+          achievementPercentage: it.targetDailyVolume > 0
+            ? Number(((it.realizedDailyVolume / it.targetDailyVolume) * 100).toFixed(1))
+            : 100,
+          notes: it.notes || '',
+        })),
       },
       equipmentWorkLogs: equipmentLogs,
       laborAbsences: laborList,
@@ -1065,34 +1156,147 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
               </div>
             )}
 
-            {/* Cuaca Selection */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                Kondisi Cuaca Hari Ini
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
-                {(['Cerah', 'Gerimis', 'Hujan Lebat', 'Banjir', 'Cerah - Hujan Sore'] as WeatherCondition[]).map((w) => {
-                  const isSelected = weather === w;
-                  return (
+            {/* Cuaca Selection & Rentang Jam Operasional Cuaca */}
+            <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-slate-200/80 pb-3">
+                <div>
+                  <label className="block text-xs font-black text-slate-800 uppercase tracking-wider">
+                    Kondisi Cuaca Hari Ini & Jam Terjadi
+                  </label>
+                  <p className="text-[11px] text-slate-500">
+                    Pilih kondisi cuaca utama dan masukkan rentang waktu jam mulai s/d selesai agar rincian downtime & efisiensi kerja lebih jelas.
+                  </p>
+                </div>
+                {weatherStartTime && weatherEndTime && (
+                  <span className="self-start sm:self-auto px-2.5 py-1 bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-[11px] font-bold">
+                    {weather} ({weatherStartTime} - {weatherEndTime} WIB)
+                  </span>
+                )}
+              </div>
+
+              {/* 1. Grid Pilihan Kondisi Cuaca */}
+              <div>
+                <span className="block text-[11px] font-bold text-slate-600 mb-2">1. Pilih Status Kondisi Cuaca:</span>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                  {(['Cerah', 'Gerimis', 'Hujan Lebat', 'Banjir', 'Cerah - Hujan Sore'] as WeatherCondition[]).map((w) => {
+                    const isSelected = weather === w;
+                    return (
+                      <button
+                        key={w}
+                        type="button"
+                        onClick={() => setWeather(w)}
+                        className={`p-3 rounded-xl border text-center font-bold text-xs flex flex-col items-center justify-center gap-1.5 transition cursor-pointer ${
+                          isSelected
+                            ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-md ring-2 ring-amber-300'
+                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {w === 'Cerah' ? (
+                          <Sun className="w-5 h-5 text-amber-600" />
+                        ) : (
+                          <CloudRain className="w-5 h-5 text-blue-600" />
+                        )}
+                        <span>{w}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 2. Input Manual Rentang Waktu (Mulai Jam - Sampai Jam) */}
+              <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200/90 shadow-2xs space-y-3">
+                <span className="block text-[11px] font-bold text-slate-700">2. Input Manual Jam Cuaca:</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1 flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Mulai Jam</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={weatherStartTime}
+                        onChange={(e) => setWeatherStartTime(e.target.value)}
+                        placeholder="Contoh: 08.00"
+                        className="w-full px-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:bg-white text-slate-900"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-bold">WIB</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1 flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Sampai Jam</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={weatherEndTime}
+                        onChange={(e) => setWeatherEndTime(e.target.value)}
+                        placeholder="Contoh: 14.15"
+                        className="w-full px-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:bg-white text-slate-900"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-bold">WIB</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tombol Preset Cepat */}
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <span className="text-[10px] text-slate-500 font-semibold mr-1">Preset Cepat:</span>
+                  {[
+                    { label: '08.00 - 14.15', start: '08.00', end: '14.15' },
+                    { label: '07.00 - 12.00', start: '07.00', end: '12.00' },
+                    { label: '13.00 - 17.00', start: '13.00', end: '17.00' },
+                    { label: '07.00 - 17.00 (Shift Penuh)', start: '07.00', end: '17.00' },
+                  ].map((p) => (
                     <button
-                      key={w}
+                      key={p.label}
                       type="button"
-                      onClick={() => setWeather(w)}
-                      className={`p-3 rounded-xl border text-center font-bold text-xs flex flex-col items-center justify-center gap-1.5 transition ${
-                        isSelected
-                          ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-md ring-2 ring-amber-300'
-                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                      }`}
+                      onClick={() => {
+                        setWeatherStartTime(p.start);
+                        setWeatherEndTime(p.end);
+                      }}
+                      className="px-2.5 py-1 bg-slate-100 hover:bg-amber-100 hover:text-amber-900 text-slate-700 rounded-lg text-[10px] font-bold transition border border-slate-200 cursor-pointer"
                     >
-                      {w === 'Cerah' ? (
-                        <Sun className="w-5 h-5 text-amber-600" />
-                      ) : (
-                        <CloudRain className="w-5 h-5 text-blue-600" />
-                      )}
-                      <span>{w}</span>
+                      {p.label}
                     </button>
-                  );
-                })}
+                  ))}
+                </div>
+
+                {/* Catatan Tambahan Cuaca (Opsional) */}
+                <div className="pt-2 border-t border-slate-100">
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                    Catatan Rincian Cuaca / Perubahan Lapangan (Opsional):
+                  </label>
+                  <input
+                    type="text"
+                    value={weatherNotes}
+                    onChange={(e) => setWeatherNotes(e.target.value)}
+                    placeholder="Contoh: Cerah berawan di pagi hari, mulai 14.30 gerimis ringan di Blok AA"
+                    className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/50 text-slate-800"
+                  />
+                </div>
+
+                {/* Live Preview Summary Box */}
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex items-start gap-2.5">
+                  <Info className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                  <div className="text-xs text-slate-800">
+                    <p className="font-bold text-amber-950">
+                      Rangkuman Cuaca: <span className="underline">{weather}</span> {weatherStartTime && weatherEndTime ? `mulai jam ${weatherStartTime} sampai jam ${weatherEndTime} WIB` : '(rentang jam belum diisi)'}
+                    </p>
+                    {weatherNotes ? (
+                      <p className="text-[11px] text-slate-600 mt-0.5 italic">
+                        "{weatherNotes}"
+                      </p>
+                    ) : (
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        Keterangan detail rentang waktu cuaca ini akan tercetak otomatis pada Laporan Harian resmi & PDF.
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1717,105 +1921,285 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
         )}
 
         {/* ========================================================================= */}
-        {/* LANGKAH 4: HASIL KERJA HARIAN (LAND CLEARING HA) */}
+        {/* LANGKAH 4: HASIL KERJA HARIAN (CAPAIAN TARGET HARIAN DIREKTUR) */}
         {/* ========================================================================= */}
         {currentStep === 4 && (
-          <div className="p-6 space-y-6">
-            <div className="border-b border-slate-200 pb-3">
-              <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                <Layers className="w-5 h-5 text-amber-500" />
-                Langkah 4: Hasil Kerja Harian (Capaian Fisik Land Clearing)
-              </h3>
-              <p className="text-xs text-slate-500">
-                Input capaian realisasi luas lahan (Hektar) yang telah selesai dibersihkan (rabas, cincang, & rumpuk mekanis).
-              </p>
+          <div className="p-4 sm:p-6 space-y-6">
+            {/* Header Title */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 pb-3 gap-2">
+              <div>
+                <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                  <Target className="w-5 h-5 text-amber-500" />
+                  Langkah 4: Hasil Kerja Harian (Capaian Target Harian Direktur)
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Target harian dan daftar item kerja ditarik otomatis dari penetapan Direktur (Master Data Proyek &rarr; Submenu Target Harian). Pengawas menginput capaian realisasi hasil kerja harian di lapangan.
+                </p>
+              </div>
+
+              <span className="self-start sm:self-auto inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/15 text-amber-900 border border-amber-300 rounded-xl text-xs font-black">
+                <Lock className="w-3.5 h-3.5 text-amber-700" />
+                Target Direktur Terkunci
+              </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              {/* Land Clearing Ha Input Card */}
-              <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-bold text-emerald-950">
-                    Input Luas Pembersihan Lahan (Land Clearing)
-                  </span>
-                  <span className="text-xs bg-emerald-200 text-emerald-900 font-bold px-2 py-0.5 rounded">
-                    Rabas, Cincang, Rumpuk
-                  </span>
+            {/* Banner Informasi SPK, Blok & Target Harian Direktur */}
+            <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-700 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-700/80 pb-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-amber-500 text-slate-950">
+                      SPK TERPILIH
+                    </span>
+                    <span className="font-mono font-bold text-amber-300 text-xs">
+                      {selectedClient?.contractNumber || "045/SPK-LC/PTA/VI/2026"}
+                    </span>
+                  </div>
+                  <h4 className="text-base font-black text-white">
+                    {selectedClient?.name || "PT. A"} · {activeBlock?.code || "Blok Utama"}
+                  </h4>
+                  <p className="text-[11px] text-slate-400">
+                    Proyek: {selectedClient?.projectName || "Land Clearing Perkebunan"} · Luas Total Blok: {activeBlock?.targetAreaHa || 100} Ha
+                  </p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="block text-[11px] font-bold text-slate-700 uppercase">
-                        Target Harian (Ha)
-                      </label>
-                      <span className="flex items-center gap-1 text-[10px] text-amber-900 font-bold bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300">
-                        <Lock className="w-3 h-3 text-amber-700" /> Terkunci
-                      </span>
-                    </div>
-                    <input
-                      type="number"
-                      step="0.1"
-                      readOnly
-                      disabled
-                      value={targetAreaHa}
-                      className="w-full px-3 py-2 bg-slate-100 border border-slate-300 rounded-lg text-sm font-mono font-black text-slate-800 cursor-not-allowed select-none shadow-inner"
-                    />
-                    <p className="text-[10px] text-slate-500 mt-1">
-                      Ditentukan Direktur untuk {activeBlock?.code || 'blok ini'}.
-                    </p>
+                <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center bg-slate-800/80 px-4 py-2.5 rounded-xl border border-slate-700 shrink-0">
+                  <span className="text-[10px] uppercase font-bold text-amber-400">Target Luas Harian Direktur</span>
+                  <div className="text-2xl font-black font-mono text-white">
+                    {targetAreaHa.toFixed(1)} <span className="text-xs font-bold text-amber-400">Ha/Hari</span>
                   </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-emerald-900 uppercase mb-1">
-                      Realisasi Hari Ini (Ha)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={realizedAreaHa}
-                      onChange={(e) => setRealizedAreaHa(parseFloat(e.target.value) || 0)}
-                      className="w-full px-3 py-2 bg-white border border-emerald-500 rounded-lg text-base font-mono font-black text-emerald-900 ring-2 ring-emerald-400"
-                    />
-                    <p className="text-[10px] text-emerald-700 mt-1">
-                      Realisasi lapangan hari ini.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t border-emerald-200 text-xs flex justify-between font-medium text-emerald-900">
-                  <span>Ketercapaian Target Harian:</span>
-                  <strong className="text-sm font-mono font-black">
-                    {targetAreaHa > 0 ? ((realizedAreaHa / targetAreaHa) * 100).toFixed(1) : 0}%
-                  </strong>
+                  <span className="text-[10px] text-slate-400">
+                    {directorTarget ? `Jadwal Tgl: ${directorTarget.date}` : "Standar Ritme Blok"}
+                  </span>
                 </div>
               </div>
 
-              {/* Cumulative & Block Overview Card */}
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+              {/* Arahan / Catatan Khusus Direktur jika ada */}
+              {directorTarget?.notes && (
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex items-start gap-2 text-xs">
+                  <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="text-amber-300 font-bold block text-[11px] uppercase">
+                      Instruksi &amp; Arahan Khusus Direktur:
+                    </strong>
+                    <p className="text-slate-200 text-xs mt-0.5 italic">
+                      "{directorTarget.notes}"
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* DAFTAR CAPAIAN ITEM PEKERJAAN (TARGET DIREKTUR vs REALISASI PENGAWAS) */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5">
+                    <Layers className="w-4 h-4 text-amber-600" />
+                    <span>Daftar Item Pekerjaan &amp; Capaian Lapangan Hari Ini</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-500">
+                    Input hasil kerja harian pengawas pada masing-masing item pekerjaan yang ditentukan oleh Direktur di bawah ini:
+                  </p>
+                </div>
+                <span className="text-xs font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">
+                  {workItemEntries.length} Item Pekerjaan
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3">
+                {workItemEntries.map((item, idx) => {
+                  const targetVol = item.targetDailyVolume;
+                  const realVol = item.realizedDailyVolume || 0;
+                  const pct = targetVol > 0 ? Number(((realVol / targetVol) * 100).toFixed(1)) : 100;
+                  const isAchieved = pct >= 100;
+                  const isNear = pct >= 80 && pct < 100;
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="bg-white border-2 border-slate-200 hover:border-amber-300 rounded-2xl p-4 transition-all shadow-xs space-y-3"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-lg bg-amber-500 text-slate-950 font-black text-xs flex items-center justify-center shrink-0">
+                            {idx + 1}
+                          </span>
+                          <div>
+                            <h5 className="font-black text-slate-900 text-xs sm:text-sm">
+                              {item.name}
+                            </h5>
+                            <span className="text-[10px] text-slate-500 font-medium">
+                              Satuan Ukur: <strong>{item.unit}</strong> {item.totalVolume ? `· Total Volume SPK: ${item.totalVolume} ${item.unit}` : ""}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Status Capaian Badge */}
+                        <div className="flex items-center gap-2 self-start sm:self-auto">
+                          <span
+                            className={`px-2.5 py-1 rounded-xl text-[11px] font-black flex items-center gap-1 ${
+                              isAchieved
+                                ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                : isNear
+                                ? "bg-amber-100 text-amber-800 border border-amber-300"
+                                : realVol > 0
+                                ? "bg-rose-100 text-rose-800 border border-rose-300"
+                                : "bg-slate-100 text-slate-600"
+                            }`}
+                          >
+                            {isAchieved ? (
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            ) : (
+                              <Clock className="w-3.5 h-3.5 text-amber-600" />
+                            )}
+                            <span>{realVol > 0 ? `${pct}% Capaian` : "Belum Diisi"}</span>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Inputs Row: Target Direktur (Read-only) vs Realisasi Pengawas (Editable) */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
+                        {/* 1. Target Harian Direktur (Terkunci) */}
+                        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-[10px] font-bold text-slate-600 uppercase">
+                              Target Harian Direktur
+                            </label>
+                            <span className="text-[9px] font-bold text-amber-900 bg-amber-100 px-1 py-0.2 rounded border border-amber-200">
+                              Terkunci
+                            </span>
+                          </div>
+                          <div className="text-base font-black font-mono text-slate-800">
+                            {targetVol} <span className="text-xs font-bold text-slate-500">{item.unit}/hari</span>
+                          </div>
+                          <p className="text-[9px] text-slate-400 mt-0.5">
+                            Otoritas Direktur (Master Target Harian)
+                          </p>
+                        </div>
+
+                        {/* 2. Input Realisasi Pengawas Hari Ini */}
+                        <div className="bg-emerald-50/70 p-2.5 rounded-xl border-2 border-emerald-400 ring-2 ring-emerald-200">
+                          <label className="block text-[10px] font-black text-emerald-950 uppercase mb-1">
+                            Realisasi Lapangan Hari Ini <span className="text-rose-500">*</span>
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="number"
+                              step="0.05"
+                              min="0"
+                              value={item.realizedDailyVolume || ""}
+                              onChange={(e) => handleItemRealizationChange(item.id, parseFloat(e.target.value) || 0)}
+                              placeholder="0.00"
+                              className="w-full px-3 py-1.5 bg-white border border-emerald-500 rounded-lg text-base font-mono font-black text-emerald-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                            />
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-black text-emerald-800">
+                              {item.unit}
+                            </span>
+                          </div>
+                          <p className="text-[9px] text-emerald-800 mt-0.5 font-semibold">
+                            Input capaian aktual fisik hari ini
+                          </p>
+                        </div>
+
+                        {/* 3. Catatan / Lokasi Sektor Spesifik */}
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                            Keterangan / Sektor Pekerjaan
+                          </label>
+                          <input
+                            type="text"
+                            value={item.notes || ""}
+                            onChange={(e) => handleItemNotesChange(item.id, e.target.value)}
+                            placeholder="Contoh: Sektor Barat dekat batas kanal"
+                            className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Mini Progress Bar */}
+                      <div className="space-y-1 pt-1">
+                        <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden border border-slate-200">
+                          <div
+                            className={`h-2 rounded-full transition-all duration-300 ${
+                              isAchieved
+                                ? "bg-emerald-600"
+                                : isNear
+                                ? "bg-amber-500"
+                                : "bg-rose-500"
+                            }`}
+                            style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* RINGKASAN AKUMULASI CAPAIAN & PROGRES KESELURUHAN BLOK */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Card 1: Rangkuman Realisasi Hari Ini */}
+              <div className="p-4 bg-emerald-50/70 border border-emerald-300 rounded-2xl space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-bold text-slate-900">
-                    Akumulasi Progres Blok: {activeBlock?.code || 'Blok Utama'}
+                  <span className="text-xs font-black uppercase text-emerald-950 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>Rekap Capaian Terhadap Target Direktur</span>
                   </span>
-                  <span className="text-xs bg-slate-200 text-slate-800 font-bold px-2 py-0.5 rounded">
-                    Total Target: {activeBlock?.targetAreaHa || 100} Ha
+                  <span className="text-xs bg-emerald-200 text-emerald-900 font-bold px-2 py-0.5 rounded">
+                    Hari Ini
                   </span>
                 </div>
 
-                <div className="space-y-2 pt-1">
-                  <div className="flex justify-between text-xs text-slate-600">
-                    <span>Luas Kumulatif Sebelumnya:</span>
-                    <span className="font-mono font-bold text-slate-800">{activeBlock?.clearedAreaHa || 0} Ha</span>
-                  </div>
-                  <div className="flex justify-between text-xs text-emerald-800 font-bold">
-                    <span>Tambahan Realisasi Hari Ini:</span>
-                    <span className="font-mono">+{realizedAreaHa.toFixed(2)} Ha</span>
-                  </div>
-                  <div className="flex justify-between text-sm text-slate-900 font-black border-t border-slate-200 pt-1.5">
-                    <span>Total Kumulatif Baru:</span>
-                    <span className="font-mono text-emerald-700">{cumulativeAreaCalc.toFixed(2)} Ha / {activeBlock?.targetAreaHa || 100} Ha</span>
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  <div className="bg-white p-3 rounded-xl border border-emerald-200">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase block">Total Luas Dikerjakan</span>
+                    <div className="text-2xl font-black font-mono text-emerald-800">
+                      {realizedAreaHa.toFixed(2)} <span className="text-xs font-bold">Ha</span>
+                    </div>
+                    <span className="text-[10px] text-slate-400">Target: {targetAreaHa.toFixed(1)} Ha</span>
                   </div>
 
-                  {/* Progress bar */}
+                  <div className="bg-white p-3 rounded-xl border border-emerald-200">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase block">Rasio Ketercapaian</span>
+                    <div className="text-2xl font-black font-mono text-slate-900">
+                      {targetAreaHa > 0 ? ((realizedAreaHa / targetAreaHa) * 100).toFixed(1) : 0}%
+                    </div>
+                    <span className={`text-[10px] font-bold ${realizedAreaHa >= targetAreaHa ? "text-emerald-600" : "text-amber-600"}`}>
+                      {realizedAreaHa >= targetAreaHa ? "✓ Target Direktur Terpenuhi" : "Perlu Peningkatan Ritme"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 2: Akumulasi Kumulatif Blok */}
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black uppercase text-slate-900">
+                    Akumulasi Progres Blok: {activeBlock?.code || "Blok Utama"}
+                  </span>
+                  <span className="text-xs bg-slate-200 text-slate-800 font-bold px-2 py-0.5 rounded">
+                    Total: {activeBlock?.targetAreaHa || 100} Ha
+                  </span>
+                </div>
+
+                <div className="space-y-1.5 text-xs text-slate-600 pt-1">
+                  <div className="flex justify-between">
+                    <span>Luas Kumulatif Sebelumnya:</span>
+                    <strong className="font-mono text-slate-800">{activeBlock?.clearedAreaHa || 0} Ha</strong>
+                  </div>
+                  <div className="flex justify-between text-emerald-800 font-bold">
+                    <span>Tambahan Realisasi Hari Ini:</span>
+                    <strong className="font-mono">+{realizedAreaHa.toFixed(2)} Ha</strong>
+                  </div>
+                  <div className="flex justify-between text-slate-900 font-black border-t border-slate-200 pt-1.5">
+                    <span>Total Kumulatif Baru:</span>
+                    <span className="font-mono text-emerald-700">
+                      {cumulativeAreaCalc.toFixed(2)} Ha / {activeBlock?.targetAreaHa || 100} Ha
+                    </span>
+                  </div>
+
                   <div className="mt-2 space-y-1">
                     <div className="flex justify-between text-[11px] font-bold text-slate-600">
                       <span>Progres Keseluruhan Blok</span>
@@ -1827,7 +2211,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                       <div
                         className="bg-emerald-600 h-2.5 rounded-full transition-all duration-300"
                         style={{ width: `${Math.min(100, Math.max(0, (cumulativeAreaCalc / (activeBlock?.targetAreaHa || 100)) * 100))}%` }}
-                      ></div>
+                      />
                     </div>
                   </div>
                 </div>

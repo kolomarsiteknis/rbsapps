@@ -376,17 +376,30 @@ export interface DailyReport {
   blockId: string;
   blockCode: string;
   weather: WeatherCondition;
+  weatherStartTime?: string; // e.g. "08.00"
+  weatherEndTime?: string; // e.g. "14.15"
+  weatherNotes?: string; // e.g. "Cerah mulai 08.00 s/d 14.15 WIB"
   effectiveWorkShift: string; // e.g. "07.00 - 17.00 WIB"
   supervisorId: string;
   supervisorName: string;
 
-  // Step 4: Simple Physical Progress
+  // Step 4: Physical Progress (Capaian dari Target Harian Direktur)
   physicalProgress: {
     targetAreaHa: number; // e.g. 4.00 Ha
     realizedAreaHa: number; // e.g. 3.80 Ha
     cumulativeAreaHa: number; // e.g. 48.80 Ha
     progressPercentage: number; // e.g. 48.80%
     notes: string;
+    directorTargetId?: string; // ID dari Target Harian Direktur yang diambil
+    directorNotes?: string; // Arahan/instruksi khusus direktur
+    itemProgress?: Array<{
+      itemName: string;
+      unit: string;
+      targetDailyVolume: number;
+      realizedDailyVolume: number;
+      achievementPercentage: number;
+      notes?: string;
+    }>;
   };
 
   // Step 3: Equipment logs

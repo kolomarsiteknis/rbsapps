@@ -2,7 +2,6 @@ import React, { useState, useMemo } from 'react';
 import { 
   ClipboardCheck, 
   ShieldAlert, 
-  Camera, 
   Calculator, 
   Fuel, 
   AlertTriangle, 
@@ -25,7 +24,6 @@ import {
   FileText, 
   Layers, 
   Activity, 
-  Maximize2,
   ChevronRight,
   Sparkles,
   Info
@@ -36,7 +34,6 @@ import {
   DailyP2HChecklist, 
   FuelBowserReceipt, 
   SoilHazardIncident, 
-  FieldGeotagPhoto, 
   HmDiscrepancyLog 
 } from '../types';
 import { storageService } from '../services/storageService';
@@ -60,6 +57,8 @@ export const DirectorFieldMonitorView: React.FC<DirectorFieldMonitorViewProps> =
 }) => {
   // STRICT ACCESS CONTROL: Direktur & Manager Only
   const isAuthorized = authUser?.role === 'director' || authUser?.role === 'manager' || authUser?.userLevel === 'Superadmin' || authUser?.userLevel === 'Manager';
+  const isManager = authUser?.role === 'manager' || authUser?.userLevel === 'Manager';
+
   if (!isAuthorized) {
     return (
       <div className="max-w-xl mx-auto my-12 p-6 bg-white rounded-2xl border border-rose-200 text-center space-y-3 shadow-lg">
@@ -73,7 +72,7 @@ export const DirectorFieldMonitorView: React.FC<DirectorFieldMonitorViewProps> =
   }
 
   // Active Sub-Tab
-  type MonitorTab = 'p2h' | 'geotag' | 'hm_calc' | 'fuel_bowser' | 'soil_incidents';
+  type MonitorTab = 'p2h' | 'hm_calc' | 'fuel_bowser' | 'soil_incidents';
   const [activeTab, setActiveTab] = useState<MonitorTab>('p2h');
 
   // Search & Filter States
@@ -83,13 +82,11 @@ export const DirectorFieldMonitorView: React.FC<DirectorFieldMonitorViewProps> =
 
   // Selected Item Modals
   const [selectedP2hDetail, setSelectedP2hDetail] = useState<DailyP2HChecklist | null>(null);
-  const [selectedPhotoPreview, setSelectedPhotoPreview] = useState<FieldGeotagPhoto | null>(null);
   const [selectedIncidentDetail, setSelectedIncidentDetail] = useState<SoilHazardIncident | null>(null);
   const [selectedBowserDetail, setSelectedBowserDetail] = useState<FuelBowserReceipt | null>(null);
 
   // Load Real Data from StorageService
   const p2hList = useMemo(() => storageService.getP2HChecklists(selectedClientId), [selectedClientId]);
-  const geotagPhotos = useMemo(() => storageService.getGeotagPhotos(selectedClientId), [selectedClientId]);
   const hmAudits = useMemo(() => storageService.getHmDiscrepancyLogs(selectedClientId), [selectedClientId]);
   const bowserReceipts = useMemo(() => storageService.getFuelBowserReceipts(selectedClientId), [selectedClientId]);
   const soilIncidents = useMemo(() => storageService.getSoilIncidents(selectedClientId), [selectedClientId]);
@@ -102,9 +99,6 @@ export const DirectorFieldMonitorView: React.FC<DirectorFieldMonitorViewProps> =
     const conditionalP2h = p2hList.filter((p) => p.overallStatus === 'Bersyarat (Pantau)').length;
     const stopP2h = p2hList.filter((p) => p.overallStatus === 'Stop Operasi (Butuh Mekanik)').length;
     const readyRate = totalP2h > 0 ? Math.round((readyP2h / totalP2h) * 100) : 100;
-
-    // Photos
-    const totalPhotos = geotagPhotos.length;
 
     // HM Discrepancy
     const totalHmLogs = hmAudits.length;
@@ -126,7 +120,6 @@ export const DirectorFieldMonitorView: React.FC<DirectorFieldMonitorViewProps> =
       conditionalP2h,
       stopP2h,
       readyRate,
-      totalPhotos,
       totalHmLogs,
       discrepancyCount,
       fuelAlertCount,
@@ -136,7 +129,7 @@ export const DirectorFieldMonitorView: React.FC<DirectorFieldMonitorViewProps> =
       totalPullOutHours,
       zeroAccidentRate,
     };
-  }, [p2hList, geotagPhotos, hmAudits, bowserReceipts, soilIncidents]);
+  }, [p2hList, hmAudits, bowserReceipts, soilIncidents]);
 
   // Filtered lists based on search & filters
   const filteredP2h = useMemo(() => {
@@ -155,20 +148,6 @@ export const DirectorFieldMonitorView: React.FC<DirectorFieldMonitorViewProps> =
       return matchSearch && matchStatus && matchDate;
     });
   }, [p2hList, searchTerm, statusFilter, dateFilter]);
-
-  const filteredPhotos = useMemo(() => {
-    const q = (searchTerm || '').toLowerCase();
-    return geotagPhotos.filter((p) => {
-      const matchSearch = searchTerm === '' ||
-        (p.fileName && p.fileName.toLowerCase().includes(q)) ||
-        (p.category && p.category.toLowerCase().includes(q)) ||
-        (p.blockCode && p.blockCode.toLowerCase().includes(q)) ||
-        (p.equipmentId && p.equipmentId.toLowerCase().includes(q)) ||
-        (p.clientName && p.clientName.toLowerCase().includes(q));
-      
-      return matchSearch;
-    });
-  }, [geotagPhotos, searchTerm]);
 
   const filteredHmAudits = useMemo(() => {
     const q = (searchTerm || '').toLowerCase();
@@ -276,8 +255,8 @@ export const DirectorFieldMonitorView: React.FC<DirectorFieldMonitorViewProps> =
           </div>
         </div>
 
-        {/* 5 EXECUTIVE TILES: QUICK METRICS SUMMARY */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-6 pt-5 border-t border-slate-800/90">
+        {/* EXECUTIVE TILES: QUICK METRICS SUMMARY */}
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-6 pt-5 border-t border-slate-800/90">
           
           {/* Tile 1: Kesiapan Armada P2H */}
           <div 
@@ -300,28 +279,7 @@ export const DirectorFieldMonitorView: React.FC<DirectorFieldMonitorViewProps> =
             </div>
           </div>
 
-          {/* Tile 2: Foto Geotagging */}
-          <div 
-            onClick={() => setActiveTab('geotag')}
-            className={`p-3 rounded-xl border transition-all cursor-pointer ${
-              activeTab === 'geotag'
-                ? 'bg-amber-500/15 border-amber-500/50 shadow-sm'
-                : 'bg-slate-800/80 border-slate-700 hover:bg-slate-800'
-            }`}
-          >
-            <div className="flex items-center justify-between text-[11px] font-bold text-slate-400 mb-1">
-              <span>Foto Geotag</span>
-              <Camera className="w-3.5 h-3.5 text-sky-400" />
-            </div>
-            <div className="text-xl font-black text-white">
-              {metrics.totalPhotos} <span className="text-xs font-medium text-slate-400">Foto</span>
-            </div>
-            <div className="text-[10px] text-sky-400 mt-0.5">
-              Watermark GPS Aktif
-            </div>
-          </div>
-
-          {/* Tile 3: Audit HM & Jam Kerja */}
+          {/* Tile 2: Audit HM & Jam Kerja */}
           <div 
             onClick={() => setActiveTab('hm_calc')}
             className={`p-3 rounded-xl border transition-all cursor-pointer ${
@@ -410,19 +368,6 @@ export const DirectorFieldMonitorView: React.FC<DirectorFieldMonitorViewProps> =
 
           <button
             type="button"
-            onClick={() => { setActiveTab('geotag'); setStatusFilter('ALL'); }}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 ${
-              activeTab === 'geotag'
-                ? 'bg-amber-500 text-slate-950 shadow-sm'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-            }`}
-          >
-            <Camera className="w-4 h-4" />
-            <span>2. Galeri Geotag Progres ({geotagPhotos.length})</span>
-          </button>
-
-          <button
-            type="button"
             onClick={() => { setActiveTab('hm_calc'); setStatusFilter('ALL'); }}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 ${
               activeTab === 'hm_calc'
@@ -431,7 +376,7 @@ export const DirectorFieldMonitorView: React.FC<DirectorFieldMonitorViewProps> =
             }`}
           >
             <Calculator className="w-4 h-4" />
-            <span>3. Audit HM & Discrepancy ({hmAudits.length})</span>
+            <span>2. Audit HM & Discrepancy ({hmAudits.length})</span>
           </button>
 
           <button
@@ -444,7 +389,7 @@ export const DirectorFieldMonitorView: React.FC<DirectorFieldMonitorViewProps> =
             }`}
           >
             <Fuel className="w-4 h-4" />
-            <span>4. Solar Bowser Keliling ({bowserReceipts.length})</span>
+            <span>3. Solar Bowser Keliling ({bowserReceipts.length})</span>
           </button>
 
           <button
@@ -457,7 +402,7 @@ export const DirectorFieldMonitorView: React.FC<DirectorFieldMonitorViewProps> =
             }`}
           >
             <AlertTriangle className="w-4 h-4" />
-            <span>5. Log Insiden K3 Gambut ({soilIncidents.length})</span>
+            <span>4. Log Insiden K3 Gambut ({soilIncidents.length})</span>
           </button>
 
         </div>
@@ -473,7 +418,6 @@ export const DirectorFieldMonitorView: React.FC<DirectorFieldMonitorViewProps> =
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder={
               activeTab === 'p2h' ? 'Cari unit alat, operator, pengawas, atau blok...' :
-              activeTab === 'geotag' ? 'Cari file, kategori progres, blok, unit...' :
               activeTab === 'hm_calc' ? 'Cari unit, catatan breakdown, blok...' :
               activeTab === 'fuel_bowser' ? 'Cari segel, surat jalan, supir bowser...' :
               'Cari insiden, jenis kendala tanah, unit alat...'
@@ -702,139 +646,7 @@ export const DirectorFieldMonitorView: React.FC<DirectorFieldMonitorViewProps> =
       )}
 
       {/* ========================================================================= */}
-      {/* 4. TAB CONTENT 2: GALERI & VERIFIKASI FOTO GEOTAGGING LAPANGAN */}
-      {/* ========================================================================= */}
-      {activeTab === 'geotag' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-              <Camera className="w-4 h-4 text-sky-500" />
-              <span>Galeri Foto Lapangan Ber-Watermark GPS Permanen (Smart Camera)</span>
-            </h3>
-            <span className="text-xs text-slate-500">
-              {filteredPhotos.length} Foto Tercatat
-            </span>
-          </div>
-
-          {filteredPhotos.length === 0 ? (
-            <div className="bg-white rounded-2xl p-12 text-center border border-slate-200 shadow-sm space-y-2">
-              <Camera className="w-10 h-10 text-slate-300 mx-auto" />
-              <p className="text-sm font-bold text-slate-700">Belum ada foto geotagging yang tersimpan</p>
-              <p className="text-xs text-slate-500">Foto yang diambil pengawas via Fitur Cepat akan langsung muncul di sini.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredPhotos.map((photo) => {
-                const mapsUrl = `https://www.google.com/maps?q=${photo.lat},${photo.lng}`;
-                return (
-                  <div
-                    key={photo.id}
-                    className="bg-white rounded-2xl overflow-hidden border border-slate-200 shadow-sm transition-all hover:shadow-md flex flex-col justify-between group"
-                  >
-                    <div>
-                      {/* Photo Thumbnail */}
-                      <div className="relative aspect-video bg-slate-900 overflow-hidden cursor-pointer" onClick={() => setSelectedPhotoPreview(photo)}>
-                        <img
-                          src={photo.dataUrl}
-                          alt={photo.fileName}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-black/20" />
-                        
-                        {/* Overlay Badge */}
-                        <div className="absolute top-2 left-2 flex items-center gap-1.5">
-                          <span className="px-2 py-0.5 rounded bg-slate-900/90 text-amber-400 font-bold text-[10px] backdrop-blur-xs border border-slate-700">
-                            {photo.blockCode}
-                          </span>
-                          <span className="px-2 py-0.5 rounded bg-sky-950/90 text-sky-300 font-semibold text-[10px] backdrop-blur-xs border border-sky-800">
-                            {photo.category}
-                          </span>
-                        </div>
-
-                        {/* GPS Watermark Summary Ribbon */}
-                        <div className="absolute bottom-2 left-2 right-2 text-white text-[10px] font-mono leading-tight">
-                          <div className="flex items-center gap-1 font-bold text-amber-300 truncate">
-                            <MapPin className="w-3 h-3 shrink-0" />
-                            <span>{photo.lat.toFixed(5)}, {photo.lng.toFixed(5)} (±{photo.accuracy}m)</span>
-                          </div>
-                          <div className="text-slate-300 text-[9px] mt-0.5 truncate">
-                            {photo.timestamp} · {photo.clientName}
-                          </div>
-                        </div>
-
-                        {/* Maximize Button */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedPhotoPreview(photo);
-                          }}
-                          className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-black/90 text-white rounded-lg backdrop-blur-xs transition-colors cursor-pointer"
-                          title="Perbesar Foto"
-                        >
-                          <Maximize2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-
-                      {/* Photo Info Content */}
-                      <div className="p-4 space-y-2">
-                        <div className="flex items-start justify-between gap-2">
-                          <h4 className="text-xs font-black text-slate-900 truncate" title={photo.fileName}>
-                            {photo.fileName}
-                          </h4>
-                          {photo.equipmentId && (
-                            <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-700 font-bold rounded">
-                              {photo.equipmentId}
-                            </span>
-                          )}
-                        </div>
-
-                        {photo.notes && (
-                          <p className="text-xs text-slate-600 line-clamp-2 italic bg-slate-50 p-2 rounded-lg border border-slate-100">
-                            "{photo.notes}"
-                          </p>
-                        )}
-
-                        <div className="text-[11px] text-slate-500 flex items-center justify-between pt-1">
-                          <span>Pengawas: <strong>{photo.supervisorName || 'Pengawas'}</strong></span>
-                          <span>Klien: <strong>{photo.clientName}</strong></span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Bottom Action Buttons */}
-                    <div className="p-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2">
-                      <a
-                        href={mapsUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-800 text-[11px] font-bold rounded-lg border border-slate-200 transition-colors"
-                        title="Buka titik koordinat di Google Maps Satelit"
-                      >
-                        <ExternalLink className="w-3 h-3 text-sky-600" />
-                        <span>Lihat di Maps</span>
-                      </a>
-
-                      <a
-                        href={photo.dataUrl}
-                        download={`RBS_GEOTAG_${photo.blockCode}_${photo.fileName}`}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 text-[11px] font-bold rounded-lg transition-all cursor-pointer shadow-xs"
-                        title="Download foto original ber-watermark"
-                      >
-                        <Download className="w-3 h-3" />
-                        <span>Unduh Foto</span>
-                      </a>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 4. TAB CONTENT 3: AUDIT HM & DISCREPANCY ALERT */}
+      {/* 3. TAB CONTENT 2: AUDIT HM & DISCREPANCY ALERT */}
       {/* ========================================================================= */}
       {activeTab === 'hm_calc' && (
         <div className="space-y-4">
@@ -1267,93 +1079,6 @@ export const DirectorFieldMonitorView: React.FC<DirectorFieldMonitorViewProps> =
               >
                 Tutup Lembar P2H
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 6. MODAL PREVIEW FOTO GEOTAGGING BESAR */}
-      {/* ========================================================================= */}
-      {selectedPhotoPreview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="bg-slate-900 rounded-3xl max-w-4xl w-full p-4 sm:p-6 shadow-2xl border border-slate-800 space-y-4 max-h-[92vh] overflow-y-auto text-white">
-            <div className="flex items-start justify-between border-b border-slate-800 pb-3">
-              <div>
-                <span className="text-xs font-bold text-amber-400 uppercase tracking-wider block">
-                  VERIFIKASI FOTO GEOTAGGING RESMI
-                </span>
-                <h3 className="text-base font-black text-slate-100">
-                  {selectedPhotoPreview.fileName}
-                </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  {selectedPhotoPreview.clientName} · {selectedPhotoPreview.blockCode} · {selectedPhotoPreview.category}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedPhotoPreview(null)}
-                className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="relative aspect-video max-h-[55vh] bg-black rounded-2xl overflow-hidden flex items-center justify-center border border-slate-800">
-              <img
-                src={selectedPhotoPreview.dataUrl}
-                alt={selectedPhotoPreview.fileName}
-                className="max-w-full max-h-full object-contain"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-slate-800/80 p-3.5 rounded-2xl border border-slate-700/80">
-              <div>
-                <span className="text-slate-400 text-[10px] block">Koordinat GPS Satelit:</span>
-                <strong className="text-amber-300 font-mono text-sm">
-                  {selectedPhotoPreview.lat.toFixed(6)}, {selectedPhotoPreview.lng.toFixed(6)}
-                </strong>
-                <span className="text-slate-400 text-[11px] block mt-0.5">
-                  Akurasi: ±{selectedPhotoPreview.accuracy} Meter
-                </span>
-              </div>
-              <div>
-                <span className="text-slate-400 text-[10px] block">Waktu Pengambilan & Pengawas:</span>
-                <strong className="text-slate-200 block text-xs">{selectedPhotoPreview.timestamp}</strong>
-                <span className="text-slate-400 text-[11px] block mt-0.5">
-                  Oleh: {selectedPhotoPreview.supervisorName || 'Pengawas'}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-              <a
-                href={`https://www.google.com/maps?q=${selectedPhotoPreview.lat},${selectedPhotoPreview.lng}`}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1.5 px-3 py-2 bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold rounded-xl transition-all"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>Buka Titik di Google Maps Satelit</span>
-              </a>
-
-              <div className="flex items-center gap-2">
-                <a
-                  href={selectedPhotoPreview.dataUrl}
-                  download={`RBS_GEOTAG_${selectedPhotoPreview.blockCode}_${selectedPhotoPreview.fileName}`}
-                  className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 text-xs font-bold rounded-xl transition-all cursor-pointer shadow-sm"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Download Foto Asli</span>
-                </a>
-                <button
-                  type="button"
-                  onClick={() => setSelectedPhotoPreview(null)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl cursor-pointer"
-                >
-                  Tutup
-                </button>
-              </div>
             </div>
           </div>
         </div>

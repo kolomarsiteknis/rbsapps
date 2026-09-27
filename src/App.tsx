@@ -799,20 +799,20 @@ export default function App() {
 
         {/* Tab 3: Master Data Proyek (1. Klien, 2. Lokasi & Pekerjaan, 3. Alat Berat & BBM, 4. Penugasan Kerja, 5. Target Harian) */}
         {activeTab === 'master' && (
-          authUser.role === 'director' || authUser.role === 'manager' ? (
+          authUser.role === 'director' ? (
             <MasterDataView />
           ) : (
             <div className="max-w-xl mx-auto my-12 p-6 bg-white rounded-2xl border border-rose-200 text-center space-y-3 shadow-lg">
               <ShieldAlert className="w-12 h-12 text-rose-500 mx-auto" />
               <h3 className="font-black text-slate-900 text-base">Akses Master Data Terbatas</h3>
               <p className="text-xs text-slate-600">
-                Pengaturan Master Data Proyek & Klien hanya dapat diakses oleh Manajemen (Direktur / Manager).
+                Pengaturan Master Data Proyek & Klien hanya dapat diakses oleh Direktur (Superadmin).
               </p>
               <button
-                onClick={() => setActiveTab('wizard')}
+                onClick={() => setActiveTab(authUser.role === 'manager' ? 'approval' : 'wizard')}
                 className="px-4 py-2 bg-amber-500 text-slate-950 font-bold text-xs rounded-xl shadow cursor-pointer"
               >
-                Kembali ke Form Laporan
+                {authUser.role === 'manager' ? 'Kembali ke Approval' : 'Kembali ke Form Laporan'}
               </button>
             </div>
           )

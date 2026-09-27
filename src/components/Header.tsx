@@ -149,7 +149,7 @@ export const Header: React.FC<HeaderProps> = ({
         {
           key: 'director-field-monitor' as TabKey,
           label: 'Audit Pengawas',
-          subtitle: 'P2H, Geotag, HM, Solar & K3',
+          subtitle: 'P2H, HM, Solar & K3',
           icon: ClipboardCheck,
           visible: true,
         },
@@ -231,13 +231,6 @@ export const Header: React.FC<HeaderProps> = ({
           label: 'Cetak Pdf',
           subtitle: 'Format Dokumen Resmi Cetak',
           icon: Printer,
-          visible: true,
-        },
-        {
-          key: 'master' as TabKey,
-          label: 'Master Data Proyek',
-          subtitle: 'Katalog Proyek & Penugasan',
-          icon: Database,
           visible: true,
         },
         {

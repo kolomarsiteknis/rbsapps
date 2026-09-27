@@ -515,9 +515,14 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                       {report.blockCode}
                     </td>
                     <td className="p-3 text-center">
-                      <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px] font-medium">
+                      <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px] font-medium block">
                         {report.weather}
                       </span>
+                      {report.weatherStartTime && (
+                        <span className="text-[10px] text-slate-500 font-mono block mt-0.5">
+                          {report.weatherStartTime} - {report.weatherEndTime || ''}
+                        </span>
+                      )}
                     </td>
                     <td className="p-3 text-center font-mono font-bold text-emerald-700">
                       {report.physicalProgress.realizedAreaHa.toFixed(2)} Ha
@@ -716,7 +721,14 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                 <div>
                   <span className="text-[10px] uppercase font-bold text-slate-400 block">Tanggal & Cuaca</span>
                   <span className="font-bold text-slate-800">{viewingReport.date}</span>
-                  <span className="text-[11px] text-slate-500 block">Kondisi: {viewingReport.weather}</span>
+                  <span className="text-[11px] text-slate-600 block">
+                    Kondisi: <strong>{viewingReport.weather}</strong>
+                    {viewingReport.weatherStartTime && (
+                      <span className="text-[10px] text-slate-500 ml-1">
+                        ({viewingReport.weatherStartTime} - {viewingReport.weatherEndTime || ''} WIB)
+                      </span>
+                    )}
+                  </span>
                 </div>
                 <div>
                   <span className="text-[10px] uppercase font-bold text-slate-400 block">Klien & Blok</span>
@@ -774,6 +786,38 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                     </div>
                   </div>
                 </div>
+
+                {/* Rincian Capaian Item Pekerjaan Berdasarkan Target Direktur */}
+                {viewingReport.physicalProgress.itemProgress && viewingReport.physicalProgress.itemProgress.length > 0 && (
+                  <div className="mt-2 border border-slate-200 rounded-xl overflow-hidden bg-white">
+                    <div className="bg-slate-100/80 px-3 py-1.5 border-b border-slate-200 flex justify-between items-center text-[10px] font-bold text-slate-700 uppercase">
+                      <span>Rincian Item Pekerjaan (Target Direktur vs Realisasi)</span>
+                      <span>{viewingReport.physicalProgress.itemProgress.length} Item</span>
+                    </div>
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-600 text-[9px] font-bold uppercase border-b border-slate-200">
+                        <tr>
+                          <th className="p-2">Item Pekerjaan</th>
+                          <th className="p-2 text-center">Target Direktur</th>
+                          <th className="p-2 text-center">Realisasi Pengawas</th>
+                          <th className="p-2 text-center">Capaian (%)</th>
+                          <th className="p-2">Keterangan</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {viewingReport.physicalProgress.itemProgress.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/50">
+                            <td className="p-2 font-bold text-slate-900">{item.itemName}</td>
+                            <td className="p-2 text-center font-mono text-slate-700">{item.targetDailyVolume} {item.unit}</td>
+                            <td className="p-2 text-center font-mono font-bold text-emerald-700">{item.realizedDailyVolume} {item.unit}</td>
+                            <td className="p-2 text-center font-mono font-black text-amber-700">{item.achievementPercentage}%</td>
+                            <td className="p-2 text-slate-500 text-[11px]">{item.notes || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
                 {viewingReport.physicalProgress.notes && (
                   <p className="text-[11px] text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
                     <strong>Catatan Lapangan:</strong> {viewingReport.physicalProgress.notes}

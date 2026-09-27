@@ -65,7 +65,7 @@ INFORMASI PROYEK & KLIEN
 ----------------------------------------------------------------------------------------------------
 Klien / Pemilik Lahan : ${report.clientName.padEnd(36)} Tanggal Laporan  : ${report.date}
 Nama Proyek           : ${report.projectName.padEnd(36)} Lokasi Kerja     : ${report.blockCode}
-No. Kontrak           : ${report.contractNumber.padEnd(36)} Kondisi Cuaca    : ${report.weather}
+No. Kontrak           : ${report.contractNumber.padEnd(36)} Kondisi Cuaca    : ${report.weather}${report.weatherStartTime ? ` (${report.weatherStartTime} - ${report.weatherEndTime || ''} WIB)` : ''}
 Pengawas Lapangan     : ${report.supervisorName} (${companyProfile.shortName || 'RBS'})    Jam Efektif Keja : ${report.effectiveWorkShift}
 
 ----------------------------------------------------------------------------------------------------
@@ -251,7 +251,19 @@ ${report.equipmentWorkLogs
               <div className="flex">
                 <span className="w-32 text-slate-600">Kondisi Cuaca</span>
                 <span className="w-3 text-slate-400">:</span>
-                <span className="font-semibold text-slate-900">{report.weather}</span>
+                <span className="font-semibold text-slate-900">
+                  {report.weather}
+                  {report.weatherStartTime && (
+                    <span className="text-xs font-normal text-slate-700 ml-1.5">
+                      ({report.weatherStartTime} - {report.weatherEndTime || 'Selesai'} WIB)
+                    </span>
+                  )}
+                  {report.weatherNotes && (
+                    <span className="text-[11px] font-normal italic text-slate-500 block">
+                      *{report.weatherNotes}
+                    </span>
+                  )}
+                </span>
               </div>
               <div className="flex">
                 <span className="w-36 text-slate-600">Pengawas Lapangan</span>
@@ -283,23 +295,46 @@ ${report.equipmentWorkLogs
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td className="border border-slate-300 px-2 py-1.5 font-medium">
-                    Land Clearing (Rabas, Cincang, Rumpuk Mekanis)
-                  </td>
-                  <td className="border border-slate-300 px-2 py-1.5 text-center font-mono">
-                    {report.physicalProgress.targetAreaHa.toFixed(2)} Ha
-                  </td>
-                  <td className="border border-slate-300 px-2 py-1.5 text-center font-mono font-bold text-emerald-800">
-                    {report.physicalProgress.realizedAreaHa.toFixed(2)} Ha
-                  </td>
-                  <td className="border border-slate-300 px-2 py-1.5 text-center font-mono font-bold">
-                    {report.physicalProgress.cumulativeAreaHa.toFixed(2)} Ha
-                  </td>
-                  <td className="border border-slate-300 px-2 py-1.5 text-center font-bold text-amber-700">
-                    {report.physicalProgress.progressPercentage.toFixed(2)} %
-                  </td>
-                </tr>
+                {report.physicalProgress.itemProgress && report.physicalProgress.itemProgress.length > 0 ? (
+                  report.physicalProgress.itemProgress.map((item, idx) => (
+                    <tr key={idx} className={idx % 2 === 1 ? 'bg-slate-50/50' : ''}>
+                      <td className="border border-slate-300 px-2 py-1.5 font-medium">
+                        {item.itemName}
+                        {item.notes && <span className="text-[10px] text-slate-500 block italic">({item.notes})</span>}
+                      </td>
+                      <td className="border border-slate-300 px-2 py-1.5 text-center font-mono">
+                        {item.targetDailyVolume} {item.unit}
+                      </td>
+                      <td className="border border-slate-300 px-2 py-1.5 text-center font-mono font-bold text-emerald-800">
+                        {item.realizedDailyVolume} {item.unit}
+                      </td>
+                      <td className="border border-slate-300 px-2 py-1.5 text-center font-mono font-bold">
+                        {report.physicalProgress.cumulativeAreaHa.toFixed(2)} Ha
+                      </td>
+                      <td className="border border-slate-300 px-2 py-1.5 text-center font-bold text-amber-700">
+                        {item.achievementPercentage} %
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td className="border border-slate-300 px-2 py-1.5 font-medium">
+                      Land Clearing (Rabas, Cincang, Rumpuk Mekanis)
+                    </td>
+                    <td className="border border-slate-300 px-2 py-1.5 text-center font-mono">
+                      {report.physicalProgress.targetAreaHa.toFixed(2)} Ha
+                    </td>
+                    <td className="border border-slate-300 px-2 py-1.5 text-center font-mono font-bold text-emerald-800">
+                      {report.physicalProgress.realizedAreaHa.toFixed(2)} Ha
+                    </td>
+                    <td className="border border-slate-300 px-2 py-1.5 text-center font-mono font-bold">
+                      {report.physicalProgress.cumulativeAreaHa.toFixed(2)} Ha
+                    </td>
+                    <td className="border border-slate-300 px-2 py-1.5 text-center font-bold text-amber-700">
+                      {report.physicalProgress.progressPercentage.toFixed(2)} %
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
             {report.physicalProgress.notes && (
