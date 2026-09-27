@@ -1,7 +1,7 @@
 /**
  * SURYALAND APPS - Heavy Equipment Land Clearing Plantation Project
  * Zero Burning Method (Metode Tanpa Bakar)
- * PT. SURYALAND GROUP
+ * PT. RBS GROUP
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -19,6 +19,7 @@ import { ManagerApprovalView } from './components/ManagerApprovalView';
 import { UserActivityAuditLogView } from './components/UserActivityAuditLogView';
 import { UserManagementView } from './components/UserManagementView';
 import { CompanyProfileView } from './components/CompanyProfileView';
+import { CompanyMasterDataView } from './components/CompanyMasterDataView';
 import { TutorialView } from './components/TutorialView';
 import { LoginPage } from './components/LoginPage';
 import { storageService } from './services/storageService';
@@ -578,8 +579,8 @@ export default function App() {
               onNavigateLogistics={() => setActiveTab('logistics')}
               onNavigateFieldMonitor={() => setActiveTab('director-field-monitor')}
               onNavigateActivityLog={() => setActiveTab('user-activity-log')}
-              onNavigateUserManagement={() => setActiveTab('user-management')}
-              onNavigateCompanyProfile={() => setActiveTab('company-profile')}
+              onNavigateUserManagement={() => setActiveTab('company-master')}
+              onNavigateCompanyProfile={() => setActiveTab('company-master')}
               onApproveReport={handleApproveReport}
               userRole={effectiveRole}
               clients={clients}
@@ -766,57 +767,10 @@ export default function App() {
           )
         )}
 
-        {/* Tab 9: Master Data & Equipment Settings - STRICT: ONLY FOR DIRECTOR */}
-        {activeTab === 'master' && (
+        {/* Tab 2: Master Data Perusahaan (1. Identitas & Logo, 2. Staff & TTD + User Mgmt, 3. Personil Tim Pekerja) */}
+        {(activeTab === 'company-master' || activeTab === 'company-profile') && (
           authUser.role === 'director' ? (
-            <MasterDataView />
-          ) : (
-            <div className="max-w-xl mx-auto my-12 p-6 bg-white rounded-2xl border border-rose-200 text-center space-y-3 shadow-lg">
-              <ShieldAlert className="w-12 h-12 text-rose-500 mx-auto" />
-              <h3 className="font-black text-slate-900 text-base">Akses Master Data Terbatas</h3>
-              <p className="text-xs text-slate-600">
-                Pengaturan Master Data & Klien hanya dapat diubah oleh Direktur (Superadmin).
-              </p>
-              <button
-                onClick={() => setActiveTab('wizard')}
-                className="px-4 py-2 bg-amber-500 text-slate-950 font-bold text-xs rounded-xl shadow cursor-pointer"
-              >
-                Kembali ke Form Laporan
-              </button>
-            </div>
-          )
-        )}
-
-        {/* Tab 10: User Management (CRUD Pengguna & Kredensial) - STRICT: ONLY FOR SUPERADMIN */}
-        {activeTab === 'user-management' && (
-          authUser.role === 'director' ? (
-            <UserManagementView
-              authUser={authUser}
-              showToast={showToast}
-              preloadStaff={preloadStaffForUserManagement}
-              onClearPreloadStaff={() => setPreloadStaffForUserManagement(null)}
-            />
-          ) : (
-            <div className="max-w-xl mx-auto my-12 p-6 bg-white rounded-2xl border border-rose-200 text-center space-y-3 shadow-lg">
-              <ShieldAlert className="w-12 h-12 text-rose-500 mx-auto" />
-              <h3 className="font-black text-slate-900 text-base">Akses Khusus Superadmin</h3>
-              <p className="text-xs text-slate-600">
-                Fitur Manajemen User (CRUD Data User, Kredensial & Level Hak Akses) hanya dapat diakses dan diinput oleh Superadmin.
-              </p>
-              <button
-                onClick={() => setActiveTab('wizard')}
-                className="px-4 py-2 bg-amber-500 text-slate-950 font-bold text-xs rounded-xl shadow cursor-pointer"
-              >
-                Kembali ke Form Laporan
-              </button>
-            </div>
-          )
-        )}
-
-        {/* Tab: Identitas Perusahaan & Informasi Staff TTD - STRICT: ONLY FOR DIRECTOR */}
-        {activeTab === 'company-profile' && (
-          authUser.role === 'director' ? (
-            <CompanyProfileView
+            <CompanyMasterDataView
               companyProfile={companyProfile}
               onUpdateCompanyProfile={(updated) => {
                 setCompanyProfile(updated);
@@ -825,17 +779,15 @@ export default function App() {
               }}
               authUser={authUser}
               showToast={showToast}
-              onNavigateToUserManagement={(staff) => {
-                setPreloadStaffForUserManagement(staff || null);
-                setActiveTab('user-management');
-              }}
+              clients={clients}
+              initialSubTab={activeTab === 'company-profile' ? 'identity' : 'identity'}
             />
           ) : (
             <div className="max-w-xl mx-auto my-12 p-6 bg-white rounded-2xl border border-rose-200 text-center space-y-3 shadow-lg">
               <ShieldAlert className="w-12 h-12 text-rose-500 mx-auto" />
               <h3 className="font-black text-slate-900 text-base">Akses Khusus Direktur</h3>
               <p className="text-xs text-slate-600">
-                Halaman Identitas Perusahaan & Database Tanda Tangan Digital Staff hanya dapat diakses oleh akun Direktur Utama (Superadmin).
+                Halaman Master Data Perusahaan (Identitas Resmi, Staff TTD & Manajemen User, serta Personil Tim Pekerja) hanya dapat diakses oleh akun Direktur Utama (Superadmin).
               </p>
               <button
                 onClick={() => setActiveTab('wizard')}
@@ -847,18 +799,16 @@ export default function App() {
           )
         )}
 
-        {/* Tab 11: Superadmin Tutorial & Documentation - STRICT: ONLY FOR SUPERADMIN */}
-        {activeTab === 'tutorial' && (
-          authUser.role === 'director' ? (
-            <TutorialView
-              onNavigateTab={(tab) => setActiveTab(tab)}
-            />
+        {/* Tab 3: Master Data Proyek (1. Klien, 2. Lokasi & Pekerjaan, 3. Alat Berat & BBM, 4. Penugasan Kerja, 5. Target Harian) */}
+        {activeTab === 'master' && (
+          authUser.role === 'director' || authUser.role === 'manager' ? (
+            <MasterDataView />
           ) : (
             <div className="max-w-xl mx-auto my-12 p-6 bg-white rounded-2xl border border-rose-200 text-center space-y-3 shadow-lg">
               <ShieldAlert className="w-12 h-12 text-rose-500 mx-auto" />
-              <h3 className="font-black text-slate-900 text-base">Akses Khusus Superadmin</h3>
+              <h3 className="font-black text-slate-900 text-base">Akses Master Data Terbatas</h3>
               <p className="text-xs text-slate-600">
-                Halaman Panduan & Tutorial Penggunaan Fitur Komprehensif ini dikhususkan bagi Akun Superadmin / Direktur.
+                Pengaturan Master Data Proyek & Klien hanya dapat diakses oleh Manajemen (Direktur / Manager).
               </p>
               <button
                 onClick={() => setActiveTab('wizard')}
@@ -868,6 +818,38 @@ export default function App() {
               </button>
             </div>
           )
+        )}
+
+        {/* Tab: User Management (Standalone or redirect to Company Master) */}
+        {activeTab === 'user-management' && (
+          authUser.role === 'director' ? (
+            <CompanyMasterDataView
+              companyProfile={companyProfile}
+              onUpdateCompanyProfile={(updated) => {
+                setCompanyProfile(updated);
+                storageService.saveCompanyProfile(updated);
+              }}
+              authUser={authUser}
+              showToast={showToast}
+              clients={clients}
+              initialSubTab="staff"
+            />
+          ) : (
+            <div className="max-w-xl mx-auto my-12 p-6 bg-white rounded-2xl border border-rose-200 text-center space-y-3 shadow-lg">
+              <ShieldAlert className="w-12 h-12 text-rose-500 mx-auto" />
+              <h3 className="font-black text-slate-900 text-base">Akses Khusus Superadmin</h3>
+              <p className="text-xs text-slate-600">
+                Fitur Manajemen User hanya dapat diakses oleh Superadmin.
+              </p>
+            </div>
+          )
+        )}
+
+        {/* Tab: Tutorial & Documentation */}
+        {activeTab === 'tutorial' && (
+          <TutorialView
+            onNavigateTab={(tab) => setActiveTab(tab)}
+          />
         )}
       </main>
 

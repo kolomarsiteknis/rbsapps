@@ -2128,8 +2128,9 @@ export const storageService = {
       normalizedUser.assignedBlockCodes &&
       normalizedUser.assignedBlockCodes.length > 0
     ) {
+      const assignedCId = normalizedUser.assignedClientId;
       normalizedUser.assignedBlockCodes.forEach((bCode) => {
-        this.addBlockCodeToClient(normalizedUser.assignedClientId, bCode);
+        this.addBlockCodeToClient(assignedCId, bCode);
       });
     }
 
@@ -2232,7 +2233,34 @@ export const storageService = {
   // INFORMASI STAFF PERUSAHAAN & TTD DIGITAL
   // ==========================================
   getCompanyStaff(): CompanyStaff[] {
-    return loadFromStorage<CompanyStaff[]>(STORAGE_KEYS.COMPANY_STAFF, initialCompanyStaff);
+    const rawStaff = loadFromStorage<CompanyStaff[]>(STORAGE_KEYS.COMPANY_STAFF, initialCompanyStaff);
+    const users = this.getManagedUsers();
+
+    // Enrich staff with corresponding managed user credentials if not already set
+    return rawStaff.map((staff) => {
+      const matchedUser = users.find(
+        (u) => (staff.linkedUserId && u.id === staff.linkedUserId) ||
+               (staff.username && u.username.toLowerCase() === staff.username.toLowerCase()) ||
+               (u.fullName.toLowerCase() === staff.fullName.toLowerCase())
+      );
+
+      if (matchedUser) {
+        return {
+          ...staff,
+          username: staff.username || matchedUser.username,
+          password: staff.password || matchedUser.password,
+          userLevel: staff.userLevel || matchedUser.userLevel,
+          address: staff.address || matchedUser.address,
+          signatureUrl: staff.signatureUrl || matchedUser.signatureUrl,
+          employeeIdNumber: staff.employeeIdNumber || matchedUser.employeeIdNumber || staff.employeeIdNumber,
+          linkedUserId: matchedUser.id,
+          assignedClientId: staff.assignedClientId || matchedUser.assignedClientId,
+          assignedClientName: staff.assignedClientName || matchedUser.assignedClientName,
+          assignedBlockCodes: staff.assignedBlockCodes || matchedUser.assignedBlockCodes,
+        };
+      }
+      return staff;
+    });
   },
 
   getStaffById(id: string): CompanyStaff | undefined {
@@ -2248,6 +2276,41 @@ export const storageService = {
       ...staff,
       updatedAt: new Date().toISOString(),
     };
+
+    // Auto-synchronize to ManagedUser if credentials (username & password) exist
+    if (payload.username && payload.password) {
+      const users = this.getManagedUsers();
+      const existingUser = users.find(
+        (u) => (payload.linkedUserId && u.id === payload.linkedUserId) ||
+               (u.username.toLowerCase() === payload.username!.trim().toLowerCase()) ||
+               (u.fullName.toLowerCase() === payload.fullName.toLowerCase())
+      );
+      const userId = payload.linkedUserId || existingUser?.id || `user-usr-${payload.id.replace(/^staff-/, '')}`;
+      payload.linkedUserId = userId;
+
+      const userPayload: ManagedUser = {
+        id: userId,
+        fullName: payload.fullName.trim(),
+        address: payload.address?.trim() || '',
+        whatsappNumber: payload.phone?.trim() || '',
+        email: payload.email?.trim() || '',
+        jobTitle: payload.jobRole.trim(),
+        userLevel: payload.userLevel || 'Pengawas',
+        username: payload.username.trim().toLowerCase(),
+        password: payload.password,
+        signatureUrl: payload.signatureUrl,
+        employeeIdNumber: payload.employeeIdNumber,
+        assignedClientId: payload.assignedClientId,
+        assignedClientName: payload.assignedClientName,
+        assignedBlockCodes: payload.assignedBlockCodes,
+        status: payload.status,
+        notes: payload.notes,
+        createdAt: existingUser?.createdAt || payload.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      this.saveManagedUser(userPayload);
+    }
 
     if (existingIndex >= 0) {
       updatedList = [...staffList];
@@ -2266,8 +2329,18 @@ export const storageService = {
 
   deleteCompanyStaff(id: string): boolean {
     const staffList = this.getCompanyStaff();
+    const target = staffList.find((s) => s.id === id);
+    if (!target) return false;
+
+    // Also delete linked ManagedUser account if exists
+    if (target.linkedUserId) {
+      this.deleteManagedUser(target.linkedUserId);
+    } else if (target.username) {
+      const u = this.getManagedUserByUsername(target.username);
+      if (u) this.deleteManagedUser(u.id);
+    }
+
     const filtered = staffList.filter((s) => s.id !== id);
-    if (filtered.length === staffList.length) return false;
     saveToStorage(STORAGE_KEYS.COMPANY_STAFF, filtered);
     syncDocDelete(FIRESTORE_COLLECTIONS.COMPANY_STAFF, id);
     if (typeof window !== 'undefined') {
@@ -2294,6 +2367,8 @@ export const storageService = {
     saveToStorage(STORAGE_KEYS.JOB_TITLES, initialJobTitles);
     saveToStorage(STORAGE_KEYS.COMPANY_PROFILE, initialCompanyProfile);
     saveToStorage(STORAGE_KEYS.COMPANY_STAFF, initialCompanyStaff);
+    saveToStorage(STORAGE_KEYS.WORK_ASSIGNMENTS, initialWorkAssignments);
+    saveToStorage(STORAGE_KEYS.DAILY_TARGETS, initialDailyTargets);
     this.clearDraft();
   },
 };

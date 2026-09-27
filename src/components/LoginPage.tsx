@@ -66,8 +66,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         // Validate password
         if (user.password === trimmedPass) {
           const isSuper = user.userLevel === 'Superadmin' || user.jobTitle.toLowerCase().includes('direktur');
-          const isManager = user.userLevel === 'Manager' || user.jobTitle.toLowerCase().includes('manager');
-          const role: 'director' | 'manager' | 'supervisor' = isSuper ? 'director' : isManager ? 'manager' : 'supervisor';
+          const isSiteManager = user.userLevel === 'Site Manager' || user.userLevel === 'Manager' || user.jobTitle.toLowerCase().includes('manager');
+          const isClient = user.userLevel === 'Klien' || user.jobTitle.toLowerCase().includes('klien');
+          const role: 'director' | 'manager' | 'supervisor' | 'client' = isSuper ? 'director' : isSiteManager ? 'manager' : isClient ? 'client' : 'supervisor';
 
           const authUserObj: AuthUser = {
             id: user.id,
@@ -75,22 +76,24 @@ export const LoginPage: React.FC<LoginPageProps> = ({
             displayName: user.fullName,
             role,
             roleTitle: isSuper
-              ? `${user.jobTitle} • Owner (Semua Proyek & Blok)`
-              : isManager
-              ? `${user.jobTitle} • Operasional Lapangan (Akses Approval & Audit)`
-              : `${user.jobTitle} • ${user.assignedClientName} (${user.assignedBlockCodes.join(', ')})`,
+              ? `${user.jobTitle} • Owner (Akses Penuh Semua Proyek)`
+              : isSiteManager
+              ? `${user.jobTitle} • Site Manager (Akses Approval & Audit Operasional)`
+              : isClient
+              ? `${user.jobTitle} • ${user.assignedClientName || 'Klien'} (Akses Monitoring Progres Lahan)`
+              : `${user.jobTitle} • ${user.assignedClientName || 'Proyek'} (${user.assignedBlockCodes?.join(', ') || 'Semua Blok'})`,
             email: user.email,
             phoneNumber: user.whatsappNumber,
             address: user.address,
             jobTitle: user.jobTitle,
             userLevel: user.userLevel,
-            assignedClientId: (isSuper || isManager) ? 'all' : user.assignedClientId,
+            assignedClientId: (isSuper || isSiteManager) ? 'all' : user.assignedClientId,
             assignedClientName: isSuper 
               ? 'Semua Proyek (Owner)' 
-              : isManager 
-              ? 'Semua Proyek (Manager Operasional)' 
+              : isSiteManager 
+              ? 'Semua Proyek (Site Manager Operasional)' 
               : user.assignedClientName,
-            assignedBlockCodes: (isSuper || isManager) ? ['Akses Semua Blok'] : user.assignedBlockCodes,
+            assignedBlockCodes: (isSuper || isSiteManager) ? ['Akses Semua Blok'] : user.assignedBlockCodes,
             loginTime: new Date().toISOString(),
           };
 

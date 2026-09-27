@@ -27,7 +27,8 @@ import {
   MapPin,
   Clock,
   Camera,
-  Truck
+  Truck,
+  Building2
 } from 'lucide-react';
 import { TabKey } from './Header';
 
@@ -57,13 +58,15 @@ export const TutorialView: React.FC<TutorialViewProps> = ({ onNavigateTab }) => 
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     'overview': true,
     'dashboard': true,
+    'company-master': false,
     'master': false,
     'audit': false,
+    'approval': false,
     'logistics': false,
     'reports': false,
     'pdf': false,
-    'users': false,
     'activity': false,
+    'tutorial-guide': false,
     'firestore': false,
     'manager-access': false,
   });
@@ -93,43 +96,41 @@ export const TutorialView: React.FC<TutorialViewProps> = ({ onNavigateTab }) => 
       title: 'Arsitektur Sistem & Peran Pengguna (RBAC)',
       badge: 'Prinsip Dasar',
       icon: ShieldCheck,
-      description: 'Suryaland Land Clearing membagi hak akses secara ketat antara Superadmin (Direktur/Owner) dan Pengawas Lapangan untuk memastikan integritas data dan keamanan operasional.',
-      targetRole: 'Superadmin & Direktur',
+      description: 'Suryaland Land Clearing membagi hak akses secara ketat antara Superadmin (Direktur/Owner), Manager Operasional, dan Pengawas Lapangan untuk memastikan integritas data dan keamanan operasional.',
+      targetRole: 'Seluruh Manajemen & Pengawas',
       steps: [
         {
           title: 'Peran Superadmin / Direktur (Akses Penuh)',
-          desc: 'Memiliki visibilitas 360° ke seluruh PT/klien, berhak menambah/mengubah Master Data, menyetujui (Approve) laporan harian dan inbound logistik BBM, mengelola akun staf, serta memeriksa audit GPS & log aktivitas.',
-          tips: 'Hanya Superadmin yang dapat melakukan otorisasi sah yang menerbitkan tanda tangan digital pada PDF laporan resmi.'
+          desc: 'Memiliki visibilitas 360° ke seluruh PT/klien, berhak mengelola Master Data Perusahaan & Proyek, menyetujui (Approve) laporan harian dan logistik BBM, serta memeriksa audit GPS & log aktivitas.',
+          tips: 'Hanya Superadmin yang dapat menerbitkan tanda tangan digital resmi dan konfigurasi legalitas perusahaan.'
+        },
+        {
+          title: 'Peran Manager Operasional (Verifikasi & Approval)',
+          desc: 'Memvalidasi pekerjaan pengawas lapangan, approval mutasi BBM & pelumas, pemeriksaan P2H dan K3, serta cetak laporan PDF resmi.',
         },
         {
           title: 'Peran Pengawas Lapangan (Data Isolation)',
-          desc: 'Akun pengawas dikunci (terisolasi) hanya pada 1 PT penempatan dan blok kerja tertentu. Pengawas hanya dapat mengisi laporan, checklist P2H, foto geotagging, dan transaksi solar bowser.',
-          tips: 'Pengawas tidak memiliki akses ke Dashboard Konsolidasi, Master Data Klien, Manajemen User, maupun Otorisasi Direktur.'
-        },
-        {
-          title: 'Pemisahan Jalur Kerja Lapangan vs Manajemen',
-          desc: 'Pengawas bekerja di lapangan mengisi form 6-langkah. Setelah laporan terkirim, status laporan menjadi "Menunggu Verifikasi Direktur". Direktur memverifikasi di menu Audit dan Rekap Laporan.',
+          desc: 'Akun pengawas dikunci hanya pada penempatan proyek/SPK dan blok kerja tertentu untuk mengisi formulir lapangan 6-langkah, checklist P2H, foto geotagging, dan transaksi bowser.',
         }
       ],
       keyRules: [
         'Prinsip Zero Burning: Seluruh operasional land clearing wajib ramah lingkungan tanpa pembakaran lahan.',
-        'Prinsip Data Isolation: Pengawas PT. A dilarang dan tidak bisa melihat data milik PT. B atau PT. D.',
-        'Prinsip Otorisasi Direktur: Setiap laporan atau logistik masuk wajib di-approve Direktur sebelum sah dicetak.'
+        'Prinsip Data Isolation: Pengawas PT. A dilarang dan tidak bisa melihat data milik PT. B.',
+        'Prinsip Otorisasi: Setiap laporan atau logistik masuk wajib di-approve Direktur / Manager sebelum sah dicetak.'
       ]
     },
     {
       id: 'dashboard',
       tabKey: 'dashboard',
       title: '1. Dashboard & Analisis KPI Eksekutif',
-      badge: 'Modul Utama',
+      badge: 'Menu 1',
       icon: LayoutDashboard,
       description: 'Pusat visualisasi metrik bisnis, progres pembukaan lahan (Ha), efisiensi konsumsi BBM alat berat (L/HM), dan status tangki solar lapangan.',
-      targetRole: 'Khusus Superadmin',
+      targetRole: 'Khusus Superadmin / Direktur',
       steps: [
         {
           title: 'Memilih Portofolio PT menggunakan Dropdown',
-          desc: 'Gunakan dropdown "Pilih Klien / PT Proyek" di bagian atas dashboard. Anda dapat memilih "Konsolidasi Semua Proyek" untuk melihat total seluruh perkebunan, atau memilih PT tertentu (misal: PT. A, PT. B) untuk inspeksi mendalam.',
-          tips: 'Pilihan dropdown mempermudah navigasi saat perusahaan menangani puluhan hingga ratusan PT klien tanpa perlu scrolling panjang.'
+          desc: 'Gunakan dropdown "Pilih Klien / PT Proyek" di bagian atas dashboard untuk konsolidasi semua proyek atau spesifik per PT.',
         },
         {
           title: 'Membaca KPI Fisik & Target Hektar (Ha)',
@@ -137,12 +138,7 @@ export const TutorialView: React.FC<TutorialViewProps> = ({ onNavigateTab }) => 
         },
         {
           title: 'Menganalisis Efisiensi BBM (Fuel Ratio)',
-          desc: 'Perhatikan bagan "Tren Rasio BBM Mingguan (L/HM)" dan kartu peringatan deviasi. Jika suatu alat berat mengonsumsi solar melebihi batas standar pabrik, kartu merah ALERT akan muncul secara otomatis.',
-          tips: 'Peringatan deviasi membantu Direktur mengidentifikasi indikasi kebocoran bahan bakar, operator ugal-ugalan, atau medan tanah berat.'
-        },
-        {
-          title: 'Memantau Tangki Solar Lapangan & Pelumas',
-          desc: 'Kartu ringkasan logistik menampilkan sisa liter Solar Industri B35 pada tangki 10.000 L, stok drum oli mesin, hidrolik, dan jumlah transaksi inbound yang butuh persetujuan.',
+          desc: 'Perhatikan bagan Tren Rasio BBM Mingguan (L/HM) dan kartu peringatan deviasi alat berat di atas standar toleransi pabrik.',
         }
       ],
       keyRules: [
@@ -151,218 +147,222 @@ export const TutorialView: React.FC<TutorialViewProps> = ({ onNavigateTab }) => 
       ]
     },
     {
-      id: 'master',
-      tabKey: 'master',
-      title: '2. Master Data (Klien, Blok, Unit & Tim)',
-      badge: 'Konfigurasi',
-      icon: Database,
-      description: 'Pengaturan pondasi data perusahaan yang menjadi acuan pengisian laporan, kalkulasi target, dan inventaris alat berat.',
-      targetRole: 'Khusus Superadmin',
+      id: 'company-master',
+      tabKey: 'company-master',
+      title: '2. Master Data Perusahaan',
+      badge: 'Menu 2',
+      icon: Building2,
+      description: 'Pengaturan internal perusahaan: 1. Identitas & Logo Apps, 2. Staff & TTD Digital + Manajemen User Pusat, 3. Personil Tim Pekerja.',
+      targetRole: 'Khusus Superadmin / Direktur',
       steps: [
         {
-          title: 'Kelola Data Klien / PT Kontrak',
-          desc: 'Tambahkan klien baru dengan mengklik tab "Klien & Proyek", isi Nama Klien, Nama Resmi PT, Nomor Kontrak, Lokasi Kebun, dan Total Luas Kontrak (Ha).',
+          title: 'Sub-Tab 1: Identitas Perusahaan & Logo Apps',
+          desc: 'Ubah Nama Singkat (otomatis jadi Nama Apps), Nama Resmi PT/CV, Slogan, Alamat Kantor, NPWP, Rekening, dan Upload Logo Apps baru yang otomatis tampil di Header, Login, dan Dokumen PDF.',
         },
         {
-          title: 'Kelola Blok Lahan & Target Harian',
-          desc: 'Atur kode blok (misal: Blok A1, Blok AB), status vegetasi, dan target pembukaan hektar per hari. Blok yang dibuat di sini akan muncul pada opsi laporan pengawas.',
+          title: 'Sub-Tab 2: Staff & TTD Digital (Manajemen User digabung kesini)',
+          desc: 'Kelola data staff resmi (Direktur, Site Manager, Pengawas, Akuntan & Finance) lengkap dengan TTD Digital (Upload, Canvas, atau Preset). Terintegrasi dengan Manajemen User Pusat CRUD data pengguna resmi sistem (Username, Password, Nomor WhatsApp, Email & Hak Akses).',
+          tips: 'Gunakan tombol "Buat Akun Login" pada kartu staff untuk langsung membuatkan kredensial login dengan data terisi otomatis.'
         },
         {
-          title: 'Kelola Armada Alat Berat (Heavy Equipments)',
-          desc: 'Daftarkan unit Excavator, Bulldozer, Dump Truck, Grader, atau Vibro Roller. Wajib tentukan Serial Number, Brand/Model, Jam HM Terakhir, dan Standar Rasio BBM (L/HM).',
-          tips: 'Standar rasio BBM di sini menjadi batas toleransi (threshold) alarm deviasi di Dashboard dan Laporan Harian.'
-        },
-        {
-          title: 'Kelola Daftar Tenaga Kerja Lapangan',
-          desc: 'Input daftar Mandor, Operator Alat Berat, Helper/Mekanik, dan Tim Rintis Tebas beserta nomor kontak aktif.',
+          title: 'Sub-Tab 3: Personil Tim Pekerja',
+          desc: 'Kelola personil lapangan: Operator, Mekanik, Logistik, Pendukung, Pengawas. Dilengkapi dropdown kategori dinamis (+ Tambah kategori) dan Penugasan Lokasi Kerja (NO KONTRAK/SPK) format "<NOMOR SPK> - <Nama Singkat Klien>".',
         }
       ],
       keyRules: [
-        'Menghapus Master Klien yang memiliki laporan tersimpan akan dicegah sistem untuk melindungi arsip transaksi.',
-        'Kode Blok harus unik pada masing-masing PT penempatan.'
+        'Nama Singkat Perusahaan otomatis menjadi branding di seluruh modul dan watermark foto.',
+        'Kredensial login akun dapat disalin dengan satu klik untuk dikirimkan melalui WhatsApp kepada personil terkait.'
+      ]
+    },
+    {
+      id: 'master',
+      tabKey: 'master',
+      title: '3. Master Data Proyek',
+      badge: 'Menu 3',
+      icon: Database,
+      description: 'Katalog proyek: 1. Daftar Klien, 2. Lokasi & Pekerjaan, 3. Alat Berat & Batas BBM, 4. Penugasan Kerja, 5. Target Harian.',
+      targetRole: 'Direktur & Manager',
+      steps: [
+        {
+          title: 'Sub-Tab 1: Daftar Klien (Multi-Client & Multi-SPK)',
+          desc: 'Daftarkan SPK kontrak klien perkebunan, total luas kontrak (Ha), lokasi provinsi/kabupaten, dan PIC perusahaan.',
+        },
+        {
+          title: 'Sub-Tab 2: Lokasi & Pekerjaan (Blok Kerja & Item Land Clearing)',
+          desc: 'Atur kode blok (Blok AA, AB, AC, dll), target luas (Ha), serta rincian item pekerjaan: Underbrushing, Felling, Stacking, dll.',
+        },
+        {
+          title: 'Sub-Tab 3: Alat Berat & Batas BBM',
+          desc: 'Inventaris unit alat berat (Excavator, Dozer, Grader, Vibro), Serial Number, dan batas jatah BBM (L/HM).',
+        },
+        {
+          title: 'Sub-Tab 4: Penugasan Kerja (Operasional Lapangan)',
+          desc: 'Alokasikan penugasan terstruktur: 1. Data Staff penanggung jawab (Level Staff & Nama Lengkap Staff dari Master Data Perusahaan), 2. Data Personel Tim Pekerja Lapangan (Operator, Mekanik, Logistik, Pendukung — Pengawas & Site Manager berada pada level Staff di atas), 3. Unit Alat Berat (khusus Operator), 4. No Kontrak / SPK Klien & Blok Kerja, serta 5. Status & Tanggal Penugasan.',
+        },
+        {
+          title: 'Sub-Tab 5: Target Harian',
+          desc: 'Tetapkan target harian pembukaan lahan (Ha per hari) untuk setiap blok kerja agar progres terkontrol presisi.',
+        }
+      ],
+      keyRules: [
+        'Nomor SPK menjadi identitas unik kontrak proyek.',
+        'Batas BBM solar di sini menjadi ambang batas deteksi pemborosan bahan bakar.'
       ]
     },
     {
       id: 'audit',
       tabKey: 'director-field-monitor',
-      title: '3. Audit Hasil Pengawas (P2H, Geotag, Solar & K3)',
-      badge: 'Audit Lapangan',
+      title: '4. Audit Pengawas',
+      badge: 'Menu 4',
       icon: ClipboardCheck,
-      description: 'Halaman khusus Direktur untuk menginspeksi kepatuhan pengawas di lapangan sebelum mengesahkan laporan harian.',
-      targetRole: 'Khusus Superadmin',
+      description: 'Audit hasil pemeriksaan harian pengawas: P2H Alat Berat, Galeri Foto Geotagging, HM Kerja, Solar Bowser & Log K3 Lapangan.',
+      targetRole: 'Direktur & Manager',
       steps: [
         {
-          title: 'Pemeriksaan Hasil P2H (Pra-Operasi Harian)',
-          desc: 'Cek kondisi fisik alat berat sebelum jam kerja dimulai: level oli mesin, oli hidrolik, air radiator, kebocoran selang, kelonggaran track rantai undercarriage, fungsi rem, dan ketersediaan tabung APAR.',
-          tips: 'Jika ada item P2H yang dinilai "Kritis / Rusak", unit wajib dihentikan (Breakdown) hingga mekanik menyelesaikan perbaikan.'
+          title: 'Inspeksi P2H Alat Berat',
+          desc: 'Periksa kondisi oli, hidrolik, air radiator, track undercarriage, rem, dan APAR sebelum unit beroperasi.',
         },
         {
-          title: 'Inspeksi Galeri Geotagging Lapangan',
-          desc: 'Lihat foto dokumentasi hasil kerja pengawas dengan watermark tertera: Tanggal, Jam WIB, Koordinat GPS (Latitude/Longitude), Akurasi Satelit (meter), dan Kategori Kerja (Underbrushing, Tumbang, Cincang, Rumpuk/Stacking).',
+          title: 'Audit Foto Geotagging Satelit',
+          desc: 'Periksa foto dokumentasi lapangan ber-watermark koordinat GPS, tanggal jam, akurasi satelit, dan aktivitas pekerjaan.',
         },
         {
-          title: 'Audit Penerimaan Solar Bowser Lapangan',
-          desc: 'Cek bukti transfer solar dari tangki ke unit keliling (Fuel Bowser): Nomor DO Supplier, Plat Mobil Tangki, Volume Liter, dan Nama Driver.',
-        },
-        {
-          title: 'Audit Log Insiden Lahan & Keselamatan K3',
-          desc: 'Pantau catatan insiden medan berat seperti alat amblas di rawa gambut, pohon patah menimpa kanopi cabin, atau hewan liar, beserta waktu penanganan recovery (HM terbuang).',
+          title: 'Monitoring HM & Solar Bowser Keliling',
+          desc: 'Cek transaksi pengisian bahan bakar lapangan dan rasio konsumsi solar per jam kerja.',
         }
       ],
       keyRules: [
-        'Foto dokumentasi tanpa tag GPS akurat akan ditandai berisiko tinggi.',
-        'Unit dengan status P2H Rusak dilarang beroperasi untuk menghindari kebakaran mesin di semak belukar.'
+        'Foto tanpa koordinat GPS akan mendapatkan bendera peringatan risiko tinggi.',
+        'Unit rusak pada P2H wajib diservis mekanik sebelum dioperasikan.'
+      ]
+    },
+    {
+      id: 'approval',
+      tabKey: 'approval',
+      title: '5. Approval Pengawas',
+      badge: 'Menu 5',
+      icon: ShieldCheck,
+      description: 'Pusat verifikasi dan otorisasi kerja lapangan: Laporan Harian, P2H Alat Berat, Mutasi Stok BBM, dan Keselamatan K3.',
+      targetRole: 'Direktur & Manager',
+      steps: [
+        {
+          title: 'Tinjau Antrean Pengajuan',
+          desc: 'Pilih laporan atau transaksi yang diajukan pengawas lapangan berstatus Menunggu Verifikasi.',
+        },
+        {
+          title: 'Otorisasi Persetujuan (Approve) atau Tolak (Reject)',
+          desc: 'Klik Setujui untuk mengesahkan dokumen secara resmi, atau Tolak dengan catatan alasan tertulis.',
+        }
+      ],
+      keyRules: [
+        'Laporan yang telah diapprove terkunci dari pengeditan ulang.',
+        'Stempel dan tanda tangan digital sah hanya diterbitkan setelah persetujuan.'
       ]
     },
     {
       id: 'logistics',
       tabKey: 'logistics',
-      title: '4. Logistik & Approval Solar BBM',
-      badge: 'Material & Fuel',
+      title: '6. Logistik & BBM',
+      badge: 'Menu 6',
       icon: Fuel,
-      description: 'Manajemen pergerakan Solar Industri B35, Drum Pelumas (Mesin/Hidrolik/Transmisi), Grease Chassis, dan Suku Cadang Kritis.',
-      targetRole: 'Superadmin (Approval) & Pengawas (Pengajuan)',
+      description: 'Pusat inventaris Solar Industri B35, pelumas oli (mesin, hidrolik, transmisi), grease, dan spare part alat berat.',
+      targetRole: 'Superadmin, Manager & Pengawas',
       steps: [
         {
-          title: 'Memeriksa Permintaan Inbound (Barang Masuk)',
-          desc: 'Saat pengawas menerima pasokan solar dari Pertamina/supplier, pengawas menginput transaksi penerimaan berstatus "Menunggu Persetujuan Direktur".',
+          title: 'Penerimaan Inbound (Barang Masuk)',
+          desc: 'Input DO supplier, volume liter solar/oli yang masuk ke tangki atau gudang.',
         },
         {
-          title: 'Otorisasi Direktur (Approve / Reject)',
-          desc: 'Direktur memeriksa nomor Surat Jalan (DO), jumlah liter/unit barang, dan foto bukti fisik. Klik tombol "Setujui" (Approve) untuk menambah stok tangki induk, atau "Tolak" (Reject) jika dokumen tidak valid.',
-          tips: 'Stok fisik di sistem TIDAK AKAN bertambah sebelum disetujui secara resmi oleh Direktur.'
-        },
-        {
-          title: 'Pelacakan Pengeluaran Otomatis (Outflow)',
-          desc: 'Setiap kali pengawas menginput pengisian bahan bakar alat berat di Formulir Laporan Harian atau Bowser Solar, stok tangki otomatis berkurang secara proporsional.',
-        },
-        {
-          title: 'Pemberitahuan Stok Menipis (Threshold Alert)',
-          desc: 'Bila stok solar turun di bawah 1.000 liter atau oli di bawah ambang batas minimal, sistem otomatis menampilkan lencana kuning peringatan untuk segera melakukan PO baru.',
+          title: 'Pencatatan Otomatis Pengeluaran (Outflow)',
+          desc: 'Stok berkurang otomatis saat pengisian alat berat diinput pada laporan harian atau bowser keliling.',
         }
       ],
       keyRules: [
-        'Transparansi Solar: Volume solar masuk wajib dicocokkan dengan flowmeter tangki dan delivery order supplier.',
-        'Hanya Direktur yang memiliki tombol Setujui dan Tolak pada transaksi inbound.'
+        'Inbound solar memerlukan approval sebelum menambah stok resmi.'
       ]
     },
     {
       id: 'reports',
       tabKey: 'reports',
-      title: '5. Rekap Laporan & Otorisasi Direktur',
-      badge: 'Verifikasi Laporan',
+      title: '7. Rekap Laporan',
+      badge: 'Menu 7',
       icon: FileText,
-      description: 'Daftar rekapitulasi seluruh laporan harian yang masuk dari pengawas berbagai blok kerja dengan fasilitas approval digital.',
-      targetRole: 'Superadmin & Pengawas',
+      description: 'Daftar rekapitulasi seluruh laporan harian pembukaan lahan dari pengawas berbagai blok kerja dengan filter komprehensif.',
+      targetRole: 'Semua Peran',
       steps: [
         {
-          title: 'Filter Laporan Berdasarkan Klien & Blok',
-          desc: 'Gunakan filter drop-down untuk memilah laporan per PT, kode blok, atau filter khusus "Hanya yang memiliki Fuel Alert".',
+          title: 'Filter Multi-Klien & Blok',
+          desc: 'Pilah laporan per SPK klien, kode blok, atau status verifikasi.',
         },
         {
-          title: 'Melihat Rincian Laporan (Detail View)',
-          desc: 'Klik ikon Mata (Detail) pada baris laporan untuk meninjau rekaman jam kerja alat, kondisi cuaca, downtime hujan, nama operator, dan catatan lapangan pengawas.',
-        },
-        {
-          title: 'Melakukan Otorisasi Direktur (Approve / Reject)',
-          desc: 'Jika data valid, klik tombol "Setujui Laporan". Status berubah menjadi "Terverifikasi Direktur" lengkap dengan stempel digital waktu otorisasi. Jika data keliru, klik "Tolak" dan masukkan alasan revisi.',
-          tips: 'Laporan yang telah disetujui Direktur terkunci dari pengeditan ulang oleh pengawas untuk mencegah manipulasi data.'
-        },
-        {
-          title: 'Ekspor Data ke Spreadsheet (CSV / Excel)',
-          desc: 'Klik tombol "Ekspor Excel (CSV)" untuk mengunduh seluruh data tabel dalam format spreadsheet kompatibel Microsoft Excel untuk keperluan audit akuntansi eksternal.',
+          title: 'Ekspor Data ke Excel (CSV)',
+          desc: 'Unduh data tabel dalam format spreadsheet kompatibel Microsoft Excel untuk laporan manajemen dan akuntansi.',
         }
       ],
       keyRules: [
-        'Laporan berstatus "Draft" atau "Menunggu Verifikasi" belum dapat diserahkan ke pihak Klien.',
-        'Hanya laporan terverifikasi yang sah dilampirkan dalam pengajuan penagihan termin (invoicing).'
+        'Hanya laporan yang telah disetujui yang dapat diajukan untuk penagihan termin (invoicing).'
       ]
     },
     {
       id: 'pdf',
       tabKey: 'official-pdf',
-      title: '6. Cetak PDF Resmi & Dokumen Berita Acara',
-      badge: 'Output Cetak',
+      title: '8. Cetak Pdf',
+      badge: 'Menu 8',
       icon: Printer,
-      description: 'Penerbitan dokumen resmi berformat standar A4 berlogo PT. Suryaland Group siap cetak atau simpan ke PDF.',
-      targetRole: 'Superadmin & Pengawas',
+      description: 'Penerbitan dokumen resmi berformat standar A4 berlogo perusahaan lengkap dengan tanda tangan digital pengawas & direktur.',
+      targetRole: 'Semua Peran',
       steps: [
         {
-          title: 'Pilih Laporan yang Hendak Dicetak',
-          desc: 'Buka menu Cetak PDF, pilih tanggal laporan dan PT terkait dari daftar dokumen yang tersedia.',
+          title: 'Pilih Dokumen yang Hendak Dicetak',
+          desc: 'Pilih tanggal dan SPK klien dari daftar laporan yang tersedia.',
         },
         {
-          title: 'Struktur Tata Letak Dokumen Resmi',
-          desc: 'Lembar PDF mencakup: Kop Surat Resmi PT. SURYALAND GROUP, Ringkasan Proyek & Blok, Tabel Jam Kerja Tiap Alat (HM Start, HM End, HM Efektif, Downtime), Konsumsi Solar & Rasio L/HM, Daftar Operator Hadir, Kondisi Cuaca, serta Dokumentasi Foto Geotagging Ber-GPS.',
-        },
-        {
-          title: 'Kolom Tanda Tangan Pengawas & Direktur',
-          desc: 'Pada bagian bawah laporan tercetak kolom tanda tangan pengawas pembuat laporan dan tanda tangan/stempel verifikasi Direktur (Superadmin).',
-          tips: 'Gunakan tombol shortcut Ctrl+P atau tombol "Cetak Lembar Laporan" untuk mencetak langsung atau menyimpannya sebagai file PDF.'
+          title: 'Tanda Tangan Digital Pengesahan',
+          desc: 'Memuat tanda tangan digital resmi pengawas pembuat dan direktur/manager pemeriksa.',
         }
       ],
       keyRules: [
-        'Dokumen PDF secara otomatis dioptimasi untuk kertas standar A4 vertikal tanpa terpotong.',
         'Pastikan memilih orientasi Portrait saat dialog cetak printer muncul.'
-      ]
-    },
-    {
-      id: 'users',
-      tabKey: 'user-management',
-      title: '7. Manajemen User',
-      badge: 'Akses & Kredensial',
-      icon: Users,
-      description: 'Pengelolaan akun login karyawan, kredensial password, hak akses level user, jabatan, dan status aktif akun.',
-      targetRole: 'Khusus Superadmin',
-      steps: [
-        {
-          title: 'Menambah Pengguna Baru',
-          desc: 'Klik tombol "+ Tambah Pengguna Baru", isi Nama Lengkap, Alamat, Nomor WhatsApp aktif, Email, Jabatan, Level Pengguna (Superadmin atau Pengawas), serta kredensial Username dan Password.',
-        },
-        {
-          title: 'Otomatisasi Password Kuat (Generate)',
-          desc: 'Gunakan tombol "Generate" pada form password untuk membuat kata sandi acak yang aman dan teruji standar keamanannya.',
-          tips: 'Gunakan tombol "Salin" pada kartu pengguna untuk membagikan kredensial akun kepada staf yang bersangkutan.'
-        },
-        {
-          title: 'Kelola Jabatan Kustom (Job Title)',
-          desc: 'Anda dapat memilih jabatan standar atau mengetikkan nama jabatan baru di kolom Tambah Jabatan Baru untuk dimasukkan ke master opsi.',
-        },
-        {
-          title: 'Nonaktifkan Akun Pengguna',
-          desc: 'Jika seorang karyawan sedang cuti panjang, dimutasi, atau berhenti bekerja, cukup ubah statusnya menjadi "Nonaktif". Akun tersebut seketika tidak dapat login ke aplikasi.',
-        }
-      ],
-      keyRules: [
-        'Hanya Superadmin yang memiliki akses ke modul Manajemen User.',
-        'Username bersifat unik dan tidak boleh ganda dengan pengguna lain.'
       ]
     },
     {
       id: 'activity',
       tabKey: 'user-activity-log',
-      title: '8. Log Aktivitas & Pelacakan GPS (Audit Trail)',
-      badge: 'Audit Forensik',
+      title: '9. Log Aktivitas & GPS',
+      badge: 'Menu 9',
       icon: Activity,
       description: 'Pencatatan riwayat digital tanpa manipulasi (audit trail) untuk setiap aksi yang dilakukan oleh seluruh pengguna.',
       targetRole: 'Khusus Superadmin',
       steps: [
         {
-          title: 'Memantau Aktivitas Pengguna Real-Time',
-          desc: 'Setiap aksi penting (Login, Tambah Laporan, Edit Laporan, Hapus Data, Otorisasi Direktur, Tambah User) otomatis dicatat ke riwayat log.',
+          title: 'Pemeriksaan Kronologi Audit Trail',
+          desc: 'Pantau siapa yang login, membuat laporan, mengedit master data, atau menghapus data beserta stempel waktu dan IP/perangkat.',
         },
         {
-          title: 'Memeriksa Tag Lokasi Koordinat GPS',
-          desc: 'Log mencatat koordinat Latitude dan Longitude saat pengawas menginput laporan di lapangan, membuktikan bahwa pengawas benar-benar berada di lokasi kerja blok perkebunan.',
-        },
-        {
-          title: 'Filter & Pencarian Log Audit',
-          desc: 'Filter log berdasarkan nama pengguna, jenis aktivitas, atau tanggal kejadian untuk investigasi cepat bila terjadi selisih solar atau ketidaksesuaian data.',
+          title: 'Pelacakan Koordinat GPS Pengguna',
+          desc: 'Verifikasi lokasi login pengguna saat bertransaksi di dalam area proyek perkebunan.',
         }
       ],
       keyRules: [
-        'Log aktivitas disimpan secara otomatis dan tidak dapat dihapus oleh pengawas biasa.',
-        'Setiap log memuat cap waktu akurat zona Waktu Indonesia Barat (WIB).'
+        'Log aktivitas disimpan secara otomatis dan permanen.'
+      ]
+    },
+    {
+      id: 'tutorial-guide',
+      tabKey: 'tutorial',
+      title: '10. Tutorial & Dokumentasi',
+      badge: 'Menu 10',
+      icon: BookOpen,
+      description: 'Panduan lengkap modul, fitur, alur kerja standar (SOP), dan arsitektur sistem Suryaland Apps.',
+      targetRole: 'Semua Peran',
+      steps: [
+        {
+          title: 'Navigasi Modul Terpadu',
+          desc: 'Pelajari fungsi 10 menu utama dan bagaimana setiap modul saling berintegrasi dalam siklus proyek land clearing.',
+        }
+      ],
+      keyRules: [
+        'Pedomani SOP Zero Burning dan Keselamatan K3 dalam setiap aktivitas di lapangan.'
       ]
     },
     {

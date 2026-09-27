@@ -32,6 +32,7 @@ import { ConnectionHealthCheck } from './ConnectionHealthCheck';
 
 export type TabKey = 
   | 'dashboard' 
+  | 'company-master'
   | 'master'
   | 'company-profile'
   | 'director-field-monitor'
@@ -121,7 +122,7 @@ export const Header: React.FC<HeaderProps> = ({
     setIsSidebarOpen(false);
   };
 
-  // Nav item list configurations with exact user-requested sequence for Superadmin, Manager, and Pengawas
+  // Nav item list configurations strictly ordered as requested by user
   const navItems = isDirector
     ? [
         {
@@ -132,15 +133,22 @@ export const Header: React.FC<HeaderProps> = ({
           visible: true,
         },
         {
+          key: 'company-master' as TabKey,
+          label: 'Master Data Perusahaan',
+          subtitle: 'Identitas, Staff TTD & Personil',
+          icon: Building2,
+          visible: true,
+        },
+        {
           key: 'master' as TabKey,
-          label: 'Master Data',
-          subtitle: 'Data Klien, Blok, Unit & Tim',
+          label: 'Master Data Proyek',
+          subtitle: 'Klien, Lokasi, Unit, Penugasan & Target',
           icon: Database,
           visible: true,
         },
         {
           key: 'director-field-monitor' as TabKey,
-          label: 'Audit Hasil Pengawas',
+          label: 'Audit Pengawas',
           subtitle: 'P2H, Geotag, HM, Solar & K3',
           icon: ClipboardCheck,
           visible: true,
@@ -162,29 +170,15 @@ export const Header: React.FC<HeaderProps> = ({
         {
           key: 'reports' as TabKey,
           label: 'Rekap Laporan',
-          subtitle: 'Arsip & Otorisasi Direktur',
+          subtitle: 'Arsip & Otorisasi Land Clearing',
           icon: FileText,
           visible: true,
         },
         {
           key: 'official-pdf' as TabKey,
-          label: 'Cetak PDF',
-          subtitle: 'Format Resmi Direktur & Klien',
+          label: 'Cetak Pdf',
+          subtitle: 'Format Dokumen Resmi Cetak',
           icon: Printer,
-          visible: true,
-        },
-        {
-          key: 'company-profile' as TabKey,
-          label: 'Identitas Perusahaan',
-          subtitle: 'Profil, Logo, Singkatan & Staff TTD',
-          icon: Building2,
-          visible: true,
-        },
-        {
-          key: 'user-management' as TabKey,
-          label: 'Manajemen User',
-          subtitle: 'CRUD Pengguna, Kredensial & Level',
-          icon: Users,
           visible: true,
         },
         {
@@ -197,7 +191,7 @@ export const Header: React.FC<HeaderProps> = ({
         {
           key: 'tutorial' as TabKey,
           label: 'Tutorial',
-          subtitle: 'Panduan Fitur & SOP Superadmin',
+          subtitle: 'Panduan Modul, Fitur & SOP',
           icon: BookOpen,
           visible: true,
         },
@@ -220,8 +214,8 @@ export const Header: React.FC<HeaderProps> = ({
         },
         {
           key: 'director-field-monitor' as TabKey,
-          label: 'Audit Lapangan',
-          subtitle: 'Read-Only Field Operational Suite',
+          label: 'Audit Pengawas',
+          subtitle: 'Review P2H, HM, Solar & K3',
           icon: ClipboardCheck,
           visible: true,
         },
@@ -234,9 +228,23 @@ export const Header: React.FC<HeaderProps> = ({
         },
         {
           key: 'official-pdf' as TabKey,
-          label: 'Cetak PDF',
+          label: 'Cetak Pdf',
           subtitle: 'Format Dokumen Resmi Cetak',
           icon: Printer,
+          visible: true,
+        },
+        {
+          key: 'master' as TabKey,
+          label: 'Master Data Proyek',
+          subtitle: 'Katalog Proyek & Penugasan',
+          icon: Database,
+          visible: true,
+        },
+        {
+          key: 'tutorial' as TabKey,
+          label: 'Tutorial',
+          subtitle: 'Panduan Fitur & SOP',
+          icon: BookOpen,
           visible: true,
         },
       ]
@@ -271,9 +279,16 @@ export const Header: React.FC<HeaderProps> = ({
         },
         {
           key: 'official-pdf' as TabKey,
-          label: 'Cetak PDF',
+          label: 'Cetak Pdf',
           subtitle: 'Format Resmi Direktur & Klien',
           icon: Printer,
+          visible: true,
+        },
+        {
+          key: 'tutorial' as TabKey,
+          label: 'Tutorial',
+          subtitle: 'Panduan Pengawas Lapangan',
+          icon: BookOpen,
           visible: true,
         },
       ];

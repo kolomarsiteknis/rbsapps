@@ -34,7 +34,7 @@ import {
   Clock,
   Eye
 } from 'lucide-react';
-import { Equipment, Worker, Block, Client, Project, DailyLocationTarget, DailyItemRitmeTarget, BlockWorkItem, WorkAssignment } from '../types';
+import { Equipment, Worker, Block, Client, Project, DailyLocationTarget, DailyItemRitmeTarget, BlockWorkItem, WorkAssignment, CompanyStaff } from '../types';
 import { storageService } from '../services/storageService';
 import { DEFAULT_WORK_ITEMS_CATALOG } from '../data/mockData';
 
@@ -46,6 +46,7 @@ export const MasterDataView: React.FC = () => {
   const [equipments, setEquipments] = useState<Equipment[]>(() => storageService.getEquipments());
   const [workers, setWorkers] = useState<Worker[]>(() => storageService.getWorkers());
   const [workAssignments, setWorkAssignments] = useState<WorkAssignment[]>(() => storageService.getWorkAssignments());
+  const [companyStaffList, setCompanyStaffList] = useState<CompanyStaff[]>(() => storageService.getCompanyStaff());
 
   const [selectedClientForBlock, setSelectedClientForBlock] = useState<string>('ALL');
 
@@ -905,47 +906,80 @@ export const MasterDataView: React.FC = () => {
 
   interface AssignmentFormState {
     assignmentNumber: string;
+    // 1. Data Staff (Level Staff, Nama Lengkap Staff) dari Master Data Perusahaan
+    staffId: string;
+    staffLevel: string;
+    staffName: string;
+    // 2. Data Personel & Kategori Penugasan (Tanpa Pengawas & Site Manager)
     workerCategory: string;
     workerId: string;
     workerName: string;
+    // 3. Alokasi Alat Berat
     equipmentType: string;
     equipmentId: string;
+    // 4. Penugasan Lokasi Kerja SPK & Blok
     clientId: string;
     blockId: string;
+    // 5. Status & Tanggal Penugasan
     status: 'Aktif' | 'Standby' | 'Selesai' | 'BKO / Bantuan';
     assignedDate: string;
     notes: string;
   }
 
-  const [assignmentForm, setAssignmentForm] = useState<AssignmentFormState>({
-    assignmentNumber: '',
-    workerCategory: 'Operator',
-    workerId: '',
-    workerName: '',
-    equipmentType: 'Excavator',
-    equipmentId: '',
-    clientId: 'client-1',
-    blockId: 'ALL',
-    status: 'Aktif',
-    assignedDate: new Date().toISOString().slice(0, 10),
-    notes: '',
+  const [assignmentForm, setAssignmentForm] = useState<AssignmentFormState>(() => {
+    const currentStaff = storageService.getCompanyStaff();
+    const defaultStaff = currentStaff[0];
+    return {
+      assignmentNumber: '',
+      staffId: defaultStaff?.id || '',
+      staffLevel: defaultStaff?.staffLevel || 'Pengawas',
+      staffName: defaultStaff?.fullName || '',
+      workerCategory: 'Operator',
+      workerId: '',
+      workerName: '',
+      equipmentType: 'Excavator',
+      equipmentId: '',
+      clientId: 'client-1',
+      blockId: 'ALL',
+      status: 'Aktif',
+      assignedDate: new Date().toISOString().slice(0, 10),
+      notes: '',
+    };
   });
 
   const handleOpenAddAssignment = () => {
     setEditingAssignmentId(null);
+    const currentStaffList = storageService.getCompanyStaff();
+    setCompanyStaffList(currentStaffList);
+
     const initialClientId = clients[0]?.id || 'client-1';
     const targetClient = clients.find((c) => c.id === initialClientId) || clients[0];
     const todayStr = new Date().toISOString().slice(0, 10);
-    const operatorWorkers = workers.filter((w) => w.category === 'Operator');
-    const defaultWorker = operatorWorkers[0] || workers[0];
+
+    // Eligible workers excluding Pengawas and Site Manager
+    const eligibleWorkers = workers.filter((w) => {
+      const catLower = (w.category || '').toLowerCase();
+      const roleLower = (w.role || '').toLowerCase();
+      return !catLower.includes('pengawas') && !catLower.includes('site manager') && !catLower.includes('manager') &&
+             !roleLower.includes('pengawas') && !roleLower.includes('site manager') && !roleLower.includes('manager');
+    });
+
+    const operatorWorkers = eligibleWorkers.filter((w) => w.category === 'Operator');
+    const defaultWorker = operatorWorkers[0] || eligibleWorkers[0];
     const isOp = defaultWorker?.category === 'Operator';
     const defaultEquip = equipments.find((e) => e.type === 'Excavator') || equipments[0];
+
+    // Default staff from Master Data Perusahaan
+    const defaultStaff = currentStaffList.find((s) => s.staffLevel === 'Pengawas') || currentStaffList[0];
 
     // Otomatis generate No Penugasan standar resmi seperti No Kontrak/SPK
     const generatedNo = storageService.generateAssignmentNumber(targetClient, todayStr, workAssignments);
 
     setAssignmentForm({
       assignmentNumber: generatedNo,
+      staffId: defaultStaff?.id || '',
+      staffLevel: defaultStaff?.staffLevel || 'Pengawas',
+      staffName: defaultStaff?.fullName || '',
       workerCategory: defaultWorker?.category || 'Operator',
       workerId: defaultWorker?.id || '',
       workerName: defaultWorker?.name || '',
@@ -962,12 +996,20 @@ export const MasterDataView: React.FC = () => {
 
   const handleOpenEditAssignment = (asg: WorkAssignment) => {
     setEditingAssignmentId(asg.id);
+    const currentStaffList = storageService.getCompanyStaff();
+    setCompanyStaffList(currentStaffList);
+
     const isOp = asg.workerCategory === 'Operator';
     const client = clients.find((c) => c.id === asg.clientId);
     const asgNo = asg.assignmentNumber || storageService.generateAssignmentNumber(client, asg.assignedDate, workAssignments);
 
+    const matchedStaff = currentStaffList.find((s) => s.id === asg.staffId || s.fullName === asg.staffName);
+
     setAssignmentForm({
       assignmentNumber: asgNo,
+      staffId: asg.staffId || matchedStaff?.id || '',
+      staffLevel: asg.staffLevel || matchedStaff?.staffLevel || 'Pengawas',
+      staffName: asg.staffName || matchedStaff?.fullName || '',
       workerCategory: asg.workerCategory,
       workerId: asg.workerId,
       workerName: asg.workerName,
@@ -999,6 +1041,8 @@ export const MasterDataView: React.FC = () => {
     const selectedClient = clients.find((c) => c.id === assignmentForm.clientId) || clients[0];
     const selectedWorker = workers.find((w) => w.id === assignmentForm.workerId);
     const selectedEquip = isOperator ? equipments.find((e) => e.id === assignmentForm.equipmentId) : undefined;
+    const selectedStaff = companyStaffList.find((s) => s.id === assignmentForm.staffId) ||
+      companyStaffList.find((s) => s.fullName === assignmentForm.staffName);
 
     let blockCode = 'Seluruh Blok Kerja pada SPK Terpilih';
     if (assignmentForm.blockId !== 'ALL') {
@@ -1014,18 +1058,26 @@ export const MasterDataView: React.FC = () => {
     const newAsg: WorkAssignment = {
       id: assignmentId,
       assignmentNumber: finalAssignmentNo,
+      // 1. Data Staff dari Master Data Perusahaan
+      staffId: assignmentForm.staffId || selectedStaff?.id || undefined,
+      staffLevel: assignmentForm.staffLevel || selectedStaff?.staffLevel || undefined,
+      staffName: assignmentForm.staffName || selectedStaff?.fullName || undefined,
+      // 2. Data Personel Tim Pekerja Lapangan
       workerId: assignmentForm.workerId,
       workerName: selectedWorker?.name || assignmentForm.workerName || 'Personel',
       workerCategory: assignmentForm.workerCategory,
+      // 3. Alokasi Alat Berat
       equipmentId: isOperator ? (selectedEquip?.id || undefined) : undefined,
       equipmentType: isOperator ? (selectedEquip?.type || assignmentForm.equipmentType || undefined) : undefined,
       equipmentName: isOperator ? (selectedEquip?.name || undefined) : undefined,
       equipmentModel: isOperator ? (selectedEquip?.model || undefined) : undefined,
+      // 4. Penugasan Lokasi SPK & Blok
       clientId: selectedClient?.id || 'client-1',
       clientName: selectedClient?.name || 'Klien',
       contractNumber: selectedClient?.contractNumber || 'Tanpa SPK',
       blockId: assignmentForm.blockId || 'ALL',
       blockCode: blockCode,
+      // 5. Status & Tanggal
       status: assignmentForm.status,
       assignedDate: assignmentForm.assignedDate,
       notes: assignmentForm.notes?.trim() || undefined,
@@ -1398,20 +1450,20 @@ export const MasterDataView: React.FC = () => {
           <div>
             <div className="flex items-center gap-2">
               <span className="px-2.5 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-amber-500 text-slate-950">
-                Pengaturan Sistem & Master Data
+                Master Data Proyek
               </span>
               <span className="text-xs text-slate-500 font-mono">PT. SURYALAND GROUP</span>
             </div>
             <h2 className="text-xl sm:text-2xl font-black text-slate-900 mt-1">
-              Master Data Operasional Proyek Land Clearing
+              Master Data Proyek Land Clearing
             </h2>
             <p className="text-xs text-slate-500">
-              Pengaturan daftar klien perkebunan (Multi-Client), blok kerja, alat berat, batas BBM solar, dan personel lapangan.
+              Pengaturan daftar klien perkebunan (Multi-Client), lokasi & pekerjaan, alat berat & batas BBM, penugasan kerja, dan target harian.
             </p>
           </div>
         </div>
 
-        {/* Sub-tab navigation */}
+        {/* Sub-tab navigation: Master Data Proyek (1. Klien, 2. Lokasi & Pekerjaan, 3. Alat Berat & BBM, 4. Penugasan Kerja, 5. Target Harian) */}
         <div className="flex items-center gap-2 overflow-x-auto pt-4 text-xs font-bold">
           {/* 1. DAFTAR KLIEN */}
           <button
@@ -1439,20 +1491,7 @@ export const MasterDataView: React.FC = () => {
             <span>2. Lokasi & Pekerjaan ({blocks.length})</span>
           </button>
 
-          {/* 3. TIM & PERSONEL */}
-          <button
-            onClick={() => setActiveSubTab('workers')}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl transition cursor-pointer whitespace-nowrap ${
-              activeSubTab === 'workers'
-                ? 'bg-amber-500 text-slate-950 shadow font-black'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            <Users className="w-4 h-4" />
-            <span>3. Tim & Personel ({workers.length})</span>
-          </button>
-
-          {/* 4. ALAT BERAT & BATAS BBM */}
+          {/* 3. ALAT BERAT & BATAS BBM */}
           <button
             onClick={() => setActiveSubTab('equipments')}
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl transition cursor-pointer whitespace-nowrap ${
@@ -1462,10 +1501,10 @@ export const MasterDataView: React.FC = () => {
             }`}
           >
             <Truck className="w-4 h-4" />
-            <span>4. Alat Berat & Batas BBM ({equipments.length})</span>
+            <span>3. Alat Berat & Batas BBM ({equipments.length})</span>
           </button>
 
-          {/* 5. PENUGASAN KERJA */}
+          {/* 4. PENUGASAN KERJA */}
           <button
             onClick={() => setActiveSubTab('assignments')}
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl transition cursor-pointer whitespace-nowrap ${
@@ -1475,10 +1514,10 @@ export const MasterDataView: React.FC = () => {
             }`}
           >
             <ClipboardList className="w-4 h-4" />
-            <span>5. Penugasan Kerja ({workAssignments.length})</span>
+            <span>4. Penugasan Kerja ({workAssignments.length})</span>
           </button>
 
-          {/* 6. TARGET HARIAN */}
+          {/* 5. TARGET HARIAN */}
           <button
             onClick={() => setActiveSubTab('dailyTargets')}
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl transition cursor-pointer whitespace-nowrap ${
@@ -1488,7 +1527,7 @@ export const MasterDataView: React.FC = () => {
             }`}
           >
             <Target className="w-4 h-4" />
-            <span>6. Target Harian ({dailyTargets.length})</span>
+            <span>5. Target Harian ({dailyTargets.length})</span>
           </button>
         </div>
       </div>
@@ -1958,6 +1997,8 @@ export const MasterDataView: React.FC = () => {
             !assignmentSearch ||
             asg.workerName.toLowerCase().includes(assignmentSearch.toLowerCase()) ||
             asg.workerCategory.toLowerCase().includes(assignmentSearch.toLowerCase()) ||
+            (asg.staffName && asg.staffName.toLowerCase().includes(assignmentSearch.toLowerCase())) ||
+            (asg.staffLevel && asg.staffLevel.toLowerCase().includes(assignmentSearch.toLowerCase())) ||
             (asg.equipmentId && asg.equipmentId.toLowerCase().includes(assignmentSearch.toLowerCase())) ||
             (asg.equipmentName && asg.equipmentName.toLowerCase().includes(assignmentSearch.toLowerCase())) ||
             asg.contractNumber.toLowerCase().includes(assignmentSearch.toLowerCase()) ||
@@ -1986,7 +2027,7 @@ export const MasterDataView: React.FC = () => {
                     </h3>
                   </div>
                   <p className="text-xs text-slate-500 mt-1 max-w-2xl">
-                    Matriks ploting resmi penugasan personel dan armada alat berat berdasarkan Nomor Kontrak / SPK Klien serta lokasi blok kerja operasional.
+                    Matriks alokasi resmi penugasan staff penanggung jawab (Master Data Perusahaan), personil tim pekerja lapangan, dan armada alat berat per No Kontrak/SPK klien &amp; lokasi blok kerja.
                   </p>
                 </div>
 
@@ -2045,7 +2086,7 @@ export const MasterDataView: React.FC = () => {
                     <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       type="text"
-                      placeholder="Cari personil, kode alat, SPK, blok..."
+                      placeholder="Cari staff, personil, kode alat, SPK..."
                       value={assignmentSearch}
                       onChange={(e) => setAssignmentSearch(e.target.value)}
                       className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-amber-500"
@@ -2066,17 +2107,15 @@ export const MasterDataView: React.FC = () => {
                     ))}
                   </select>
 
-                  {/* Kategori Personel Filter */}
+                  {/* Kategori Personel Lapangan Filter */}
                   <select
                     value={assignmentCategoryFilter}
                     onChange={(e) => setAssignmentCategoryFilter(e.target.value)}
                     className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer"
                   >
-                    <option value="ALL">Semua Kategori</option>
+                    <option value="ALL">Semua Kategori Pekerja</option>
                     <option value="Operator">Operator</option>
                     <option value="Mekanik">Mekanik</option>
-                    <option value="Pengawas">Pengawas</option>
-                    <option value="Site Manager">Site Manager</option>
                     <option value="Logistik">Logistik</option>
                     <option value="Pendukung">Pendukung</option>
                     {customWorkerCategories
@@ -2146,11 +2185,12 @@ export const MasterDataView: React.FC = () => {
                       <tr>
                         <th className="py-3 px-3.5 text-center w-12">No</th>
                         <th className="py-3 px-3.5">No. Penugasan (Key)</th>
-                        <th className="py-3 px-3.5">Personel & Kategori</th>
+                        <th className="py-3 px-3.5">Data Staff (Perusahaan)</th>
+                        <th className="py-3 px-3.5">Personel Tim Lapangan</th>
                         <th className="py-3 px-3.5">Alokasi Unit Alat Berat</th>
-                        <th className="py-3 px-3.5">No. Kontrak / SPK & Klien</th>
+                        <th className="py-3 px-3.5">No. Kontrak / SPK &amp; Klien</th>
                         <th className="py-3 px-3.5">Lokasi Blok Kerja</th>
-                        <th className="py-3 px-3.5 text-center">Status & Tanggal</th>
+                        <th className="py-3 px-3.5 text-center">Status &amp; Tanggal</th>
                         <th className="py-3 px-3.5 text-right w-28">Aksi</th>
                       </tr>
                     </thead>
@@ -2176,7 +2216,26 @@ export const MasterDataView: React.FC = () => {
                               </span>
                             </td>
 
-                            {/* Personel */}
+                            {/* 1. DATA STAFF (MASTER DATA PERUSAHAAN) */}
+                            <td className="py-3 px-3.5">
+                              {asg.staffName ? (
+                                <div className="space-y-0.5">
+                                  <div className="font-black text-indigo-950 text-xs flex items-center gap-1.5">
+                                    <ShieldCheck className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                    <span>{asg.staffName}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-800 font-bold text-[10px] border border-indigo-200">
+                                      {asg.staffLevel || 'Staff'}
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-slate-400 font-medium text-[11px] italic">-</span>
+                              )}
+                            </td>
+
+                            {/* 2. DATA PERSONEL TIM PEKERJA LAPANGAN */}
                             <td className="py-3 px-3.5">
                               <div className="space-y-1">
                                 <div className="font-black text-slate-900 text-xs sm:text-sm flex items-center gap-1.5">
@@ -2186,10 +2245,10 @@ export const MasterDataView: React.FC = () => {
                                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                                     asg.workerCategory === 'Operator'
                                       ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                                      : asg.workerCategory === 'Pengawas' || asg.workerCategory === 'Site Manager'
-                                      ? 'bg-sky-100 text-sky-900 border border-sky-300'
                                       : asg.workerCategory === 'Mekanik'
                                       ? 'bg-indigo-100 text-indigo-900 border border-indigo-300'
+                                      : asg.workerCategory === 'Logistik'
+                                      ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
                                       : 'bg-slate-100 text-slate-800 border border-slate-200'
                                   }`}>
                                     {asg.workerCategory}
@@ -5041,7 +5100,12 @@ export const MasterDataView: React.FC = () => {
       {isAssignmentModalOpen && (() => {
         const isOperator = assignmentForm.workerCategory === 'Operator';
 
-        const filteredWorkersForModal = workers.filter(
+        // Filter workers: Sesuai instruksi: Pengawas dan Site Manager tidak masuk dalam tim pekerja lapangan ini!
+        const eligibleFieldWorkers = workers.filter(
+          (w) => w.category !== 'Pengawas' && w.category !== 'Site Manager' && !w.role?.toLowerCase().includes('pengawas') && !w.role?.toLowerCase().includes('site manager')
+        );
+
+        const filteredWorkersForModal = eligibleFieldWorkers.filter(
           (w) => assignmentForm.workerCategory === 'ALL' || w.category === assignmentForm.workerCategory
         );
 
@@ -5049,7 +5113,23 @@ export const MasterDataView: React.FC = () => {
           (e) => e.type === assignmentForm.equipmentType
         );
 
-        const selectedWorkerInModal = workers.find((w) => w.id === assignmentForm.workerId);
+        // Staff data dari Master Data Perusahaan
+        const availableStaffLevels = ['Direktur', 'Site Manager', 'Pengawas', 'Akuntan & Finance', 'Staff Lapangan'];
+        companyStaffList.forEach((s) => {
+          if (s.staffLevel && !availableStaffLevels.includes(s.staffLevel)) {
+            availableStaffLevels.push(s.staffLevel);
+          }
+        });
+
+        const filteredStaffList = companyStaffList.filter((s) => {
+          if (!assignmentForm.staffLevel) return true;
+          return s.staffLevel === assignmentForm.staffLevel;
+        });
+
+        const selectedStaffInModal = companyStaffList.find((s) => s.id === assignmentForm.staffId) ||
+          companyStaffList.find((s) => s.fullName === assignmentForm.staffName);
+
+        const selectedWorkerInModal = eligibleFieldWorkers.find((w) => w.id === assignmentForm.workerId) || workers.find((w) => w.id === assignmentForm.workerId);
         const selectedEquipInModal = isOperator ? equipments.find((e) => e.id === assignmentForm.equipmentId) : undefined;
         const selectedClientInModal = clients.find((c) => c.id === assignmentForm.clientId);
         const availableBlocksInModal = blocks.filter((b) => b.clientId === assignmentForm.clientId);
@@ -5068,7 +5148,7 @@ export const MasterDataView: React.FC = () => {
                     {editingAssignmentId ? 'Edit Data Penugasan Kerja' : '+ Tambah Penugasan Kerja Baru'}
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Alokasikan personel dan alat berat ke SPK klien dan blok kerja lapangan secara resmi.
+                    Alokasikan staff penanggung jawab, personil tim pekerja lapangan, dan alat berat ke SPK klien serta lokasi blok kerja secara resmi.
                   </p>
                 </div>
                 <button
@@ -5094,16 +5174,130 @@ export const MasterDataView: React.FC = () => {
                   </div>
                 </div>
 
-                {/* 1. MEMILIH KATEGORI PERSONIL & MEMILIH NAMA LENGKAP PERSONIL */}
+                {/* 1. DATA STAFF (LEVEL STAFF, NAMA LENGKAP STAFF) - DIAMBIL DARI MASTER DATA PERUSAHAAN */}
+                <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-200 space-y-3">
+                  <div className="flex items-center justify-between border-b border-indigo-100 pb-2">
+                    <label className="font-black text-indigo-950 text-xs uppercase tracking-wide flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-indigo-600" />
+                      <span>1. Data Staff (Master Data Perusahaan)</span>
+                      <span className="text-rose-600">*</span>
+                    </label>
+                    <span className="text-[10px] font-bold text-indigo-600 bg-indigo-100/70 px-2 py-0.5 rounded-full border border-indigo-200">
+                      Tersedia: {companyStaffList.length} Staff Resmi
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Pilih Level Staff */}
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">
+                        Level Staff <span className="text-rose-600">*</span>
+                      </label>
+                      <select
+                        value={assignmentForm.staffLevel}
+                        onChange={(e) => {
+                          const lvl = e.target.value;
+                          const matchingStaff = companyStaffList.filter((s) => !lvl || s.staffLevel === lvl);
+                          const firstStaff = matchingStaff[0];
+                          setAssignmentForm({
+                            ...assignmentForm,
+                            staffLevel: lvl,
+                            staffId: firstStaff?.id || '',
+                            staffName: firstStaff?.fullName || '',
+                          });
+                        }}
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-bold text-slate-900 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                      >
+                        <option value="">-- Pilih Level Staff --</option>
+                        {availableStaffLevels.map((lvl) => (
+                          <option key={lvl} value={lvl}>
+                            {lvl}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Pilih Nama Lengkap Staff */}
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">
+                        Nama Lengkap Staff <span className="text-rose-600">*</span>
+                      </label>
+                      <select
+                        required
+                        value={assignmentForm.staffId}
+                        onChange={(e) => {
+                          const sId = e.target.value;
+                          const found = companyStaffList.find((s) => s.id === sId);
+                          if (found) {
+                            setAssignmentForm({
+                              ...assignmentForm,
+                              staffId: found.id,
+                              staffName: found.fullName,
+                              staffLevel: found.staffLevel || assignmentForm.staffLevel || 'Staff',
+                            });
+                          } else {
+                            setAssignmentForm({
+                              ...assignmentForm,
+                              staffId: '',
+                              staffName: '',
+                            });
+                          }
+                        }}
+                        className="w-full px-3 py-2 bg-white border-2 border-indigo-400 rounded-lg font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-2xs"
+                      >
+                        <option value="">-- Pilih Nama Lengkap Staff ({filteredStaffList.length}) --</option>
+                        {filteredStaffList.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.fullName} ({s.staffLevel || s.jobRole || 'Staff'})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Preview Detail Staff Terpilih */}
+                  {selectedStaffInModal ? (
+                    <div className="p-2.5 bg-indigo-100/60 border border-indigo-200 rounded-lg text-xs text-indigo-950 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-black text-xs">
+                          {selectedStaffInModal.fullName.charAt(0)}
+                        </div>
+                        <div>
+                          <span className="font-bold text-slate-900 block">{selectedStaffInModal.fullName}</span>
+                          <span className="text-indigo-700 text-[11px] font-medium">{selectedStaffInModal.jobRole || 'Staff'} • NIK: {selectedStaffInModal.employeeIdNumber || '-'}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 text-[11px]">
+                        <span className="px-2 py-0.5 rounded-full bg-indigo-200 text-indigo-900 font-bold border border-indigo-300">
+                          {selectedStaffInModal.staffLevel || 'Staff'}
+                        </span>
+                        <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
+                          {selectedStaffInModal.status}
+                        </span>
+                        {selectedStaffInModal.signatureUrl && (
+                          <span className="text-[10px] text-emerald-700 font-bold flex items-center gap-0.5">
+                            ✓ TTD Digital Terdaftar
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-slate-500 italic bg-white/70 p-2 rounded-lg border border-dashed border-slate-200">
+                      Pilih level staff dan nama lengkap staff penanggung jawab resmi dari Master Data Perusahaan di atas.
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. DATA PERSONEL & KATEGORI PENUGASAN (AMBIL DARI PERSONIL TIM PEKERJA LAPANGAN - TANPA PENGAWAS & SITE MANAGER) */}
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-300 space-y-3">
                   <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                     <label className="font-black text-slate-900 text-xs uppercase tracking-wide flex items-center gap-1.5">
                       <Users className="w-4 h-4 text-amber-600" />
-                      <span>1. Data Personel & Kategori Penugasan</span>
+                      <span>2. Data Personel & Kategori Penugasan</span>
                       <span className="text-rose-600">*</span>
                     </label>
-                    <span className="text-[10px] font-bold text-slate-500">
-                      Tersedia: {filteredWorkersForModal.length} Personel
+                    <span className="text-[10px] font-bold text-amber-900 bg-amber-100/80 px-2 py-0.5 rounded-full border border-amber-300">
+                      Tersedia: {filteredWorkersForModal.length} Pekerja Lapangan
                     </span>
                   </div>
 
@@ -5111,13 +5305,13 @@ export const MasterDataView: React.FC = () => {
                     {/* Pilih Kategori Personil */}
                     <div>
                       <label className="block font-bold text-slate-700 mb-1">
-                        Kategori Personel <span className="text-rose-600">*</span>
+                        Kategori Personel Lapangan <span className="text-rose-600">*</span>
                       </label>
                       <select
                         value={assignmentForm.workerCategory}
                         onChange={(e) => {
                           const newCat = e.target.value;
-                          const filtered = workers.filter((w) => w.category === newCat);
+                          const filtered = eligibleFieldWorkers.filter((w) => w.category === newCat);
                           const firstW = filtered[0];
                           const isOp = newCat === 'Operator';
                           const defaultEquip = equipments.find((eq) => eq.type === 'Excavator') || equipments[0];
@@ -5135,8 +5329,6 @@ export const MasterDataView: React.FC = () => {
                       >
                         <option value="Operator">Operator</option>
                         <option value="Mekanik">Mekanik</option>
-                        <option value="Pengawas">Pengawas</option>
-                        <option value="Site Manager">Site Manager</option>
                         <option value="Logistik">Logistik</option>
                         <option value="Pendukung">Pendukung</option>
                         {customWorkerCategories
@@ -5147,19 +5339,22 @@ export const MasterDataView: React.FC = () => {
                             </option>
                           ))}
                       </select>
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        * Khusus Personil Tim Pekerja Lapangan (Pengawas &amp; Site Manager tidak masuk dalam tim ini).
+                      </p>
                     </div>
 
                     {/* Pilih Nama Lengkap Personil */}
                     <div>
                       <label className="block font-bold text-slate-700 mb-1">
-                        Nama Lengkap Personel <span className="text-rose-600">*</span>
+                        Nama Lengkap Personel Lapangan <span className="text-rose-600">*</span>
                       </label>
                       <select
                         required
                         value={assignmentForm.workerId}
                         onChange={(e) => {
                           const wId = e.target.value;
-                          const wObj = workers.find((w) => w.id === wId);
+                          const wObj = eligibleFieldWorkers.find((w) => w.id === wId);
                           setAssignmentForm({
                             ...assignmentForm,
                             workerId: wId,
@@ -5168,7 +5363,7 @@ export const MasterDataView: React.FC = () => {
                         }}
                         className="w-full px-3 py-2 bg-white border-2 border-amber-400 rounded-lg font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer shadow-2xs"
                       >
-                        <option value="">-- Pilih Nama Personel ({filteredWorkersForModal.length}) --</option>
+                        <option value="">-- Pilih Nama Personel Lapangan ({filteredWorkersForModal.length}) --</option>
                         {filteredWorkersForModal.map((w) => (
                           <option key={w.id} value={w.id}>
                             {w.name} ({w.role || w.category})
@@ -5196,14 +5391,14 @@ export const MasterDataView: React.FC = () => {
                   )}
                 </div>
 
-                {/* 2. ALOKASI UNIT ALAT BERAT OPERASIONAL (HANYA OPERATOR YANG MEMILIH, DI LUAR OPERATOR DINONAKTIFKAN TANPA PEMBERITAHUAN) */}
+                {/* 3. ALOKASI UNIT ALAT BERAT OPERASIONAL (HANYA OPERATOR YANG MEMILIH, DI LUAR OPERATOR DINONAKTIFKAN TANPA PEMBERITAHUAN) */}
                 <div className={`p-4 rounded-xl border space-y-3 transition ${
                   isOperator ? 'bg-slate-50 border-slate-300' : 'bg-slate-100/70 border-slate-200'
                 }`}>
                   <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                     <label className="font-black text-slate-900 text-xs uppercase tracking-wide flex items-center gap-1.5">
                       <Truck className={`w-4 h-4 ${isOperator ? 'text-amber-600' : 'text-slate-400'}`} />
-                      <span>2. Alokasi Unit Alat Berat Operasional</span>
+                      <span>3. Alokasi Unit Alat Berat Operasional</span>
                       {isOperator && <span className="text-rose-600">*</span>}
                     </label>
                     <span className="text-[10px] font-bold text-slate-500">
@@ -5300,12 +5495,13 @@ export const MasterDataView: React.FC = () => {
                   </div>
                 </div>
 
-                {/* 3. PENUGASAN LOKASI KERJA (NO KONTRAK/SPK & BLOK KERJA) - MIRROR GAMBAR */}
+                {/* 4. PENUGASAN LOKASI KERJA (NO KONTRAK/SPK & BLOK KERJA) */}
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-300 space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                     <label className="block font-black text-slate-900 text-xs uppercase tracking-wide flex items-center gap-1.5">
                       <FileText className="w-4 h-4 text-amber-600" />
-                      Penugasan Lokasi Kerja (NO KONTRAK/SPK) <span className="text-rose-600">*</span>
+                      <span>4. Penugasan Lokasi Kerja (NO KONTRAK/SPK &amp; Blok Kerja)</span>
+                      <span className="text-rose-600">*</span>
                     </label>
                   </div>
 
@@ -5370,35 +5566,44 @@ export const MasterDataView: React.FC = () => {
                   )}
                 </div>
 
-                {/* 4. STATUS & TANGGAL PENUGASAN */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">
-                      Tanggal Mulai Penugasan <span className="text-rose-600">*</span>
+                {/* 5. STATUS & TANGGAL PENUGASAN */}
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-300 space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                    <label className="font-black text-slate-900 text-xs uppercase tracking-wide flex items-center gap-1.5">
+                      <Calendar className="w-4 h-4 text-amber-600" />
+                      <span>5. Status &amp; Tanggal Penugasan</span>
+                      <span className="text-rose-600">*</span>
                     </label>
-                    <input
-                      type="date"
-                      required
-                      value={assignmentForm.assignedDate}
-                      onChange={(e) => setAssignmentForm({ ...assignmentForm, assignedDate: e.target.value })}
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-bold text-xs text-slate-900"
-                    />
                   </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">
+                        Tanggal Mulai Penugasan <span className="text-rose-600">*</span>
+                      </label>
+                      <input
+                        type="date"
+                        required
+                        value={assignmentForm.assignedDate}
+                        onChange={(e) => setAssignmentForm({ ...assignmentForm, assignedDate: e.target.value })}
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-bold text-xs text-slate-900"
+                      />
+                    </div>
 
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">
-                      Status Penugasan <span className="text-rose-600">*</span>
-                    </label>
-                    <select
-                      value={assignmentForm.status}
-                      onChange={(e) => setAssignmentForm({ ...assignmentForm, status: e.target.value as any })}
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-bold text-xs text-slate-900 cursor-pointer"
-                    >
-                      <option value="Aktif">Aktif Bertugas di Lokasi</option>
-                      <option value="Standby">Standby (Siaga)</option>
-                      <option value="BKO / Bantuan">BKO / Bantuan Sementara</option>
-                      <option value="Selesai">Penugasan Selesai</option>
-                    </select>
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">
+                        Status Penugasan <span className="text-rose-600">*</span>
+                      </label>
+                      <select
+                        value={assignmentForm.status}
+                        onChange={(e) => setAssignmentForm({ ...assignmentForm, status: e.target.value as any })}
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-bold text-xs text-slate-900 cursor-pointer"
+                      >
+                        <option value="Aktif">Aktif Bertugas di Lokasi</option>
+                        <option value="Standby">Standby (Siaga)</option>
+                        <option value="BKO / Bantuan">BKO / Bantuan Sementara</option>
+                        <option value="Selesai">Penugasan Selesai</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
 

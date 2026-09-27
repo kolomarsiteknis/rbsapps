@@ -1,6 +1,6 @@
 export type UserRole = 'supervisor' | 'director' | 'manager' | 'client';
 
-export type ManagedUserLevel = 'Superadmin' | 'Manager' | 'Pengawas';
+export type ManagedUserLevel = 'Superadmin' | 'Site Manager' | 'Pengawas' | 'Klien' | 'Manager';
 
 export interface ManagedUser {
   id: string;
@@ -9,12 +9,14 @@ export interface ManagedUser {
   whatsappNumber: string;    // no WA aktif
   email: string;             // Email aktif
   jobTitle: string;          // Jabatan: Direktur, Manager, Pengawas, atau custom jabatan baru
-  userLevel: ManagedUserLevel; // Level User: Superadmin, Manager, Pengawas
+  userLevel: ManagedUserLevel; // Level User: Superadmin, Site Manager, Pengawas, Klien
   username: string;          // Username untuk login
   password: string;          // Password
-  assignedClientId: string;  // Penempatan Proyek (hanya boleh satu klien)
-  assignedClientName: string;
-  assignedBlockCodes: string[]; // Penempatan Lokasi Kerja (bisa lebih dari satu blok / bisa nambah blok)
+  signatureUrl?: string;     // Spesimen Tanda Tangan Digital
+  employeeIdNumber?: string; // NIK / NIP Karyawan
+  assignedClientId?: string;  // Penempatan Proyek (hanya boleh satu klien)
+  assignedClientName?: string;
+  assignedBlockCodes?: string[]; // Penempatan Lokasi Kerja (bisa lebih dari satu blok / bisa nambah blok)
   status: 'Aktif' | 'Nonaktif';
   createdAt: string;
   updatedAt?: string;
@@ -177,9 +179,14 @@ export interface Worker {
 export interface WorkAssignment {
   id: string; // e.g. "ASG-001"
   assignmentNumber: string; // e.g. "001/ST-LC/PTA/VI/2026" - Standar penomoran seperti SPK
+  // 1. Data Staff dari Master Data Perusahaan
+  staffId?: string;
+  staffLevel?: string; // Direktur, Manager, Pengawas, Akuntan, Staff
+  staffName?: string;
+  // 2. Data Personel Tim Pekerja Lapangan
   workerId: string;
   workerName: string;
-  workerCategory: string; // Operator, Mekanik, Logistik, Pendukung, Pengawas, Site Manager, etc.
+  workerCategory: string; // Operator, Mekanik, Logistik, Pendukung (Pengawas & Site Manager dikecualikan)
   equipmentId?: string; // Kode Unit Alat, e.g. "EX-01"
   equipmentType?: string; // "Excavator"
   equipmentName?: string; // "Excavator Komatsu PC200-8"
@@ -592,25 +599,35 @@ export interface CompanyProfile {
   email: string;              // Email Resmi Perusahaan
   website?: string;           // Website Resmi
   headOfficeAddress: string;  // Alamat Kantor Pusat
+  address?: string;           // Alias Alamat Kantor
   siteOfficeAddress: string;  // Alamat Basecamp / Site Operasional
   bankAccountInfo?: string;   // Rekening Bank Perusahaan
+  bankAccount?: string;       // Alias Rekening Bank
   legalNotice?: string;       // Catatan Legalitas / SOP
   updatedAt: string;
 }
 
-// Informasi Staff Perusahaan dengan TTD Digital
+// Informasi Staff Perusahaan dengan TTD Digital & Kredensial Login
 export interface CompanyStaff {
   id: string;
   fullName: string;           // Nama Lengkap & Gelar
-  jobRole: string;            // Jabatan: Direktur, Manager, Pengawas, Akuntan, atau custom
-  staffLevel: 'Direktur' | 'Manager' | 'Pengawas' | 'Akuntan' | 'Staff';
+  jobRole: string;            // Jabatan: Direktur, Site Manager, Pengawas, Klien, Akuntan, atau custom
+  staffLevel?: 'Direktur' | 'Site Manager' | 'Pengawas' | 'Klien' | 'Akuntan' | 'Staff' | string;
   employeeIdNumber: string;   // NIK / NIP Karyawan
   email: string;              // Email Staff
   phone: string;              // No HP / WA
+  address?: string;           // Alamat Domisili / Kantor
   signatureUrl?: string;      // Image Tanda Tangan Digital (Data URL)
   status: 'Aktif' | 'Nonaktif';
   notes?: string;
   linkedUserId?: string;      // ID Akun Login jika sudah dibuatkan di Manajemen User
+  // Kredensial Akun Login Resmi Sistem:
+  username?: string;          // Username untuk login
+  password?: string;          // Password login
+  userLevel?: ManagedUserLevel; // Level Hak Akses: Superadmin, Site Manager, Pengawas, Klien
+  assignedClientId?: string;  // Penempatan Klien Proyek (khusus Pengawas / Klien)
+  assignedClientName?: string;
+  assignedBlockCodes?: string[];
   createdAt: string;
   updatedAt?: string;
 }
