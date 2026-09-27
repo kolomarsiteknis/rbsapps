@@ -501,7 +501,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
         const watermarked = await applyWatermark(file, {
           blockCode,
           category: photoCategory,
-          companyName: 'PT. SURYALAND GROUP',
+          companyName: 'PT. RBS GROUP',
           clientName: clientName,
         });
 
@@ -689,7 +689,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
             Akses Input Khusus Pengawas Lapangan
           </h2>
           <p className="text-sm text-slate-600 max-w-lg mx-auto leading-relaxed">
-            Sesuai Standard Operating Procedure (SOP) PT. SURYALAND GROUP, Direktur tidak melakukan penginputan Laporan Harian Operasional Proyek. Penginputan dilakukan secara langsung di lapangan oleh Pengawas Lapangan.
+            Sesuai Standard Operating Procedure (SOP) PT. RBS GROUP, Direktur tidak melakukan penginputan Laporan Harian Operasional Proyek. Penginputan dilakukan secara langsung di lapangan oleh Pengawas Lapangan.
           </p>
           <p className="text-xs text-slate-500 max-w-md mx-auto">
             Sebagai Direktur, Anda berwenang melakukan pengawasan, verifikasi, serta menyetujui atau menolak laporan melalui menu <strong>Rekap Laporan</strong>.

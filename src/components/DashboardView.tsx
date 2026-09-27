@@ -24,7 +24,23 @@ import {
   Activity,
   Users,
   ChevronDown,
-  MapPin
+  MapPin,
+  Bell,
+  BellRing,
+  Target,
+  Sliders,
+  Send,
+  Share2,
+  X,
+  Volume2,
+  VolumeX,
+  AlertCircle,
+  Copy,
+  CheckCircle,
+  ExternalLink,
+  RefreshCw,
+  Smartphone,
+  Info
 } from 'lucide-react';
 import { DailyReport, Equipment, UserRole, Client } from '../types';
 import { storageService } from '../services/storageService';
@@ -123,6 +139,218 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   // Fuel Alert equipments
   const alertEquipments = metrics.alertIncidents;
+
+  // ==========================================================
+  // FITUR NOTIFIKASI & ALERT TARGET HARIAN OPERASIONAL DIREKTUR
+  // ==========================================================
+  interface DirectorDailyTargetConfig {
+    targetAreaHa: number;
+    targetEffectiveHm: number;
+    maxDowntimeHours: number;
+    alertThresholdPercent: number;
+    supervisorWhatsapp: string;
+    enableSound: boolean;
+  }
+
+  const STORAGE_KEY_DAILY_TARGET_CONFIG = 'rbs_director_daily_target_config';
+
+  const defaultTargetConfig: DirectorDailyTargetConfig = {
+    targetAreaHa: 4.0,
+    targetEffectiveHm: 8.0,
+    maxDowntimeHours: 1.0,
+    alertThresholdPercent: 80,
+    supervisorWhatsapp: '0812-7654-3210',
+    enableSound: false,
+  };
+
+  const [targetConfig, setTargetConfig] = useState<DirectorDailyTargetConfig>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_DAILY_TARGET_CONFIG);
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error('Error loading director target config:', e);
+    }
+    return defaultTargetConfig;
+  });
+
+  const [showTargetConfigModal, setShowTargetConfigModal] = useState(false);
+  const [showWhatsappModal, setShowWhatsappModal] = useState(false);
+  const [showBlockBreakdownModal, setShowBlockBreakdownModal] = useState(false);
+  const [isNotificationPopoverOpen, setIsNotificationPopoverOpen] = useState(false);
+  const [dismissedAlertIds, setDismissedAlertIds] = useState<string[]>([]);
+  const [copiedWaText, setCopiedWaText] = useState(false);
+  const [tempConfig, setTempConfig] = useState<DirectorDailyTargetConfig>(targetConfig);
+
+  // Targets from storage for active client selection
+  const configuredDailyTargets = storageService.getDailyTargets(selectedClientId);
+  const evalDate = latestReport?.date || '2026-09-24';
+  const matchedTargetForDate = configuredDailyTargets.find(t => t.date === evalDate) || configuredDailyTargets[0];
+
+  // Effective Daily Target Luas (Ha)
+  const targetHaToday = isFiltered
+    ? (matchedTargetForDate?.dailyTargetAreaHa || targetConfig.targetAreaHa)
+    : (configuredDailyTargets.length > 0 
+        ? configuredDailyTargets.reduce((acc, t) => acc + (t.dailyTargetAreaHa || 0), 0)
+        : targetConfig.targetAreaHa * Math.max(1, clients.length));
+
+  // Actual Luas (Ha) Realized Today
+  const actualHaToday = isFiltered
+    ? (latestReport?.physicalProgress?.realizedAreaHa || 0)
+    : (displayedReports.slice(0, Math.max(1, clients.length)).reduce((acc, r) => acc + (r.physicalProgress?.realizedAreaHa || 0), 0));
+
+  const haGap = Number((actualHaToday - targetHaToday).toFixed(2));
+  const haPercent = targetHaToday > 0 ? Number(((actualHaToday / targetHaToday) * 100).toFixed(1)) : 0;
+
+  // Actual Average HM Today
+  const actualAvgHm = latestReport?.equipmentWorkLogs?.length 
+    ? Number((latestReport.equipmentWorkLogs.reduce((acc, l) => acc + (l.effectiveWorkHours || 0), 0) / latestReport.equipmentWorkLogs.length).toFixed(1))
+    : (metrics.totalEffectiveHours > 0 ? Number((metrics.totalEffectiveHours / Math.max(1, metrics.equipmentCount)).toFixed(1)) : 7.2);
+  const targetHmToday = targetConfig.targetEffectiveHm;
+  const hmGap = Number((actualAvgHm - targetHmToday).toFixed(1));
+  const hmPercent = targetHmToday > 0 ? Math.min(100, Number(((actualAvgHm / targetHmToday) * 100).toFixed(0))) : 0;
+
+  // Downtime Today
+  const actualWeatherDowntimeToday = latestReport?.equipmentWorkLogs 
+    ? latestReport.equipmentWorkLogs.reduce((acc, l) => acc + (l.downtimeWeatherHours || 0), 0)
+    : (metrics.totalWeatherDowntime || 0);
+  const actualBreakdownDowntimeToday = latestReport?.equipmentWorkLogs 
+    ? latestReport.equipmentWorkLogs.reduce((acc, l) => acc + (l.downtimeBreakdownHours || 0), 0)
+    : (metrics.totalBreakdownDowntime || 0);
+  const actualDowntimeToday = actualWeatherDowntimeToday + actualBreakdownDowntimeToday;
+  const isDowntimeOverLimit = actualDowntimeToday > targetConfig.maxDowntimeHours;
+
+  // Evaluated Alert Status
+  const isCriticalDeficit = haPercent < targetConfig.alertThresholdPercent;
+  const isWarningNeedsAttention = !isCriticalDeficit && (haPercent < 100 || isDowntimeOverLimit || actualAvgHm < targetHmToday);
+  const isOnTrack = !isCriticalDeficit && !isWarningNeedsAttention;
+
+  // Alerts List
+  const dailyTargetAlerts: Array<{
+    id: string;
+    title: string;
+    badge: string;
+    severity: 'critical' | 'warning' | 'success';
+    desc: string;
+    recommendation: string;
+    timestamp: string;
+  }> = [];
+
+  if (haGap < 0) {
+    dailyTargetAlerts.push({
+      id: 'alert-target-ha',
+      title: 'Defisit Pembukaan Lahan Harian',
+      badge: isCriticalDeficit ? 'DEFISIT KRITIS' : 'PERHATIAN RITME',
+      severity: isCriticalDeficit ? 'critical' : 'warning',
+      timestamp: `${evalDate} • Evaluasi Sore`,
+      desc: `Realisasi pembukaan lahan hari ini baru mencapai ${actualHaToday.toFixed(1)} Ha dari target ${targetHaToday.toFixed(1)} Ha (Defisit ${Math.abs(haGap).toFixed(1)} Ha / ${(100 - haPercent).toFixed(0)}%). Ritme pembersihan lahan tertinggal.`,
+      recommendation: 'Perlu penambahan armada dozer atau perpanjangan jam shift efektif esok hari untuk mengejar ketertinggalan.',
+    });
+  } else {
+    dailyTargetAlerts.push({
+      id: 'alert-target-ha-ok',
+      title: 'Target Harian Luas Tercapai',
+      badge: 'TERCAPAI',
+      severity: 'success',
+      timestamp: `${evalDate} • Evaluasi Sore`,
+      desc: `Realisasi pembukaan lahan mencapai ${actualHaToday.toFixed(1)} Ha melampaui target ${targetHaToday.toFixed(1)} Ha (+${haGap.toFixed(1)} Ha / +${(haPercent - 100).toFixed(0)}%).`,
+      recommendation: 'Ritme kerja optimal. Pastikan pasokan solar tangki tetap aman untuk rotasi berikutnya.',
+    });
+  }
+
+  if (isDowntimeOverLimit) {
+    dailyTargetAlerts.push({
+      id: 'alert-downtime',
+      title: 'Downtime Melebihi Batas Toleransi',
+      badge: 'DOWNTIME ALERT',
+      severity: 'warning',
+      timestamp: `${evalDate} • Lahan Gambut`,
+      desc: `Total jam mati mencapai ${actualDowntimeToday.toFixed(1)} jam (${actualWeatherDowntimeToday.toFixed(1)}h Cuaca hujan, ${actualBreakdownDowntimeToday.toFixed(1)}h Kendala mekanis). Batas toleransi adalah ${targetConfig.maxDowntimeHours.toFixed(1)} jam.`,
+      recommendation: 'Antisipasi hujan lebat sore dengan memajukan jam kerja operator ke pukul 06:30 pagi.',
+    });
+  }
+
+  if (actualAvgHm < targetHmToday) {
+    dailyTargetAlerts.push({
+      id: 'alert-hm',
+      title: 'Jam Efektif Alat (HM) Belum Maksimal',
+      badge: 'UTILISASI MESIN',
+      severity: 'warning',
+      timestamp: `${evalDate} • Rata-rata Unit`,
+      desc: `Rata-rata jam kerja mesin baru ${actualAvgHm.toFixed(1)} HM/unit (Target: ${targetHmToday.toFixed(1)} HM/unit). Selisih ${Math.abs(hmGap).toFixed(1)} HM/unit.`,
+      recommendation: 'Evaluasi jeda istirahat operator dan minimalkan kondisi unit menyala tanpa kerja produktif (idle).',
+    });
+  }
+
+  if (alertEquipments.length > 0) {
+    dailyTargetAlerts.push({
+      id: 'alert-fuel',
+      title: 'Rasio Konsumsi BBM Melebihi Standar',
+      badge: 'BBM OVERLIMIT',
+      severity: 'warning',
+      timestamp: `${evalDate} • Unit Lapangan`,
+      desc: `${alertEquipments.length} unit alat berat (${alertEquipments.map(e => e.equipmentId).join(', ')}) mencatat konsumsi BBM di atas batas toleransi standar proyek.`,
+      recommendation: 'Lakukan inspeksi nozel injeksi dan periksa track undercarriage apakah amblas di tanah lunak.',
+    });
+  }
+
+  const activeAlerts = dailyTargetAlerts.filter(a => !dismissedAlertIds.includes(a.id));
+  const unreadAlertsCount = activeAlerts.filter(a => a.severity !== 'success').length;
+
+  const handleSaveTargetConfig = (newCfg: DirectorDailyTargetConfig) => {
+    setTargetConfig(newCfg);
+    try {
+      localStorage.setItem(STORAGE_KEY_DAILY_TARGET_CONFIG, JSON.stringify(newCfg));
+    } catch (e) {
+      console.error('Error saving director target config:', e);
+    }
+    setShowTargetConfigModal(false);
+  };
+
+  const handleDismissAlert = (id: string) => {
+    setDismissedAlertIds(prev => [...prev, id]);
+  };
+
+  const handleResetDismissedAlerts = () => {
+    setDismissedAlertIds([]);
+  };
+
+  const generateWhatsappAlertMessage = () => {
+    const clientName = isFiltered && activeClient ? activeClient.name : 'Seluruh Proyek (Konsolidasi)';
+    const supervisor = latestReport?.supervisorName || 'Pengawas Lapangan';
+    const statusText = isCriticalDeficit 
+      ? '🔴 KRITIS (Defisit Pembukaan Lahan)' 
+      : (isWarningNeedsAttention ? '🟡 PERHATIAN (Mendekati Target)' : '🟢 TERCAPAI (Target Terpenuhi)');
+    
+    return `*NOTIFIKASI TARGET HARIAN OPERASIONAL LAND CLEARING*
+*PT. RBS GROUP — Land Clearing Heavy Equipment*
+
+Kepada Yth: *${supervisor}*
+Proyek     : *${clientName}*
+Lokasi     : *${latestReport?.blockCode || 'Blok Operasi'}*
+Tanggal    : *${evalDate}*
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 *STATUS TARGET HARIAN: ${statusText}*
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Target Luas Harian : *${targetHaToday.toFixed(1)} Ha*
+• Realisasi Hari Ini : *${actualHaToday.toFixed(1)} Ha* (${haPercent}% Capaian)
+• Selisih / Deviasi   : *${haGap >= 0 ? '+' : ''}${haGap.toFixed(1)} Ha*
+
+• Target Jam Alat     : *${targetHmToday.toFixed(1)} HM/Unit*
+• Realisasi Rata-rata : *${actualAvgHm.toFixed(1)} HM/Unit* (${hmPercent}%)
+• Total Jam Mati (DT) : *${actualDowntimeToday.toFixed(1)} Jam* (Toleransi Maks: ${targetConfig.maxDowntimeHours.toFixed(1)}h)
+  └ Cuaca: ${actualWeatherDowntimeToday.toFixed(1)}h | Breakdown: ${actualBreakdownDowntimeToday.toFixed(1)}h
+
+⚠️ *ARAHAN DIREKTUR & INSTRUKSI KERJA:*
+${isCriticalDeficit 
+  ? '1. Segera lakukan akselerasi pembukaan lahan esok hari untuk menutup defisit luas.\n2. Maksimalkan jam rintis imas dan pastikan semua operator standby tepat waktu (06:30 WIB).\n3. Laporkan segera kendala mekanis/lapangan jika membutuhkan unit alat berat tambahan.'
+  : (isWarningNeedsAttention
+      ? '1. Pertahankan stabilitas jam kerja efektif alat (HM) agar target tercapai 100%.\n2. Antisipasi cuaca sore dengan memacu produktivitas pagi.\n3. Pantau suplai solar dari tangki basecamp.'
+      : '1. Luar biasa, target harian berhasil dicapai dengan baik!\n2. Jaga konsistensi keselamatan kerja (K3) dan kebersihan rumpuk.\n3. Periksa kondisi grease dan oli sebelum rotasi esok.')
+}
+
+_Pesan ini dikirim resmi melalui Sistem RBS APPS — Executive Monitoring & Alert_`;
+  };
 
   // Equipment fuel comparison list
   const fuelComparisons = equipments.map((eq) => {
@@ -304,19 +532,174 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <span className="text-slate-600">·</span>
                   <span>Lokasi: <strong className="text-slate-200">{activeClient.location}</strong></span>
                   <span className="text-slate-600">·</span>
-                  <span>Pelaksana: <strong className="text-slate-200">PT. SURYALAND GROUP</strong></span>
+                  <span>Pelaksana: <strong className="text-slate-200">PT. RBS GROUP</strong></span>
                 </>
               ) : (
                 <>
                   <span>Konsolidasi: <strong className="text-amber-300">{metrics.targetAreaTotal} Ha</strong> di berbagai perkebunan</span>
                   <span className="text-slate-600">·</span>
-                  <span>Pelaksana Utama: <strong className="text-slate-200">PT. SURYALAND GROUP</strong></span>
+                  <span>Pelaksana Utama: <strong className="text-slate-200">PT. RBS GROUP</strong></span>
                 </>
               )}
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {/* Quick Director Daily Target Notification Popover */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsNotificationPopoverOpen(!isNotificationPopoverOpen)}
+                className={`relative flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-black transition-all duration-200 cursor-pointer shadow-sm active:scale-95 ${
+                  unreadAlertsCount > 0
+                    ? isCriticalDeficit
+                      ? 'bg-rose-500/25 hover:bg-rose-500/35 text-rose-200 border-2 border-rose-500/70 shadow-rose-950/40'
+                      : 'bg-amber-500/25 hover:bg-amber-500/35 text-amber-200 border-2 border-amber-500/70 shadow-amber-950/40'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
+                }`}
+                title="Pusat Notifikasi & Alert Target Harian Direktur"
+              >
+                {unreadAlertsCount > 0 ? (
+                  <BellRing className={`w-4 h-4 ${isCriticalDeficit ? 'text-rose-400 animate-bounce' : 'text-amber-400 animate-pulse'}`} />
+                ) : (
+                  <Bell className="w-4 h-4 text-emerald-400" />
+                )}
+                <span>Notifikasi & Alert Target</span>
+                {unreadAlertsCount > 0 ? (
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black text-white ${
+                    isCriticalDeficit ? 'bg-rose-600 animate-pulse' : 'bg-amber-600'
+                  }`}>
+                    {unreadAlertsCount} Alert
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-bold bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-500/40">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                    On-Track
+                  </span>
+                )}
+              </button>
+
+              {/* Popover Dropdown Drawer */}
+              {isNotificationPopoverOpen && (
+                <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 bg-slate-900 border-2 border-slate-700 rounded-2xl shadow-2xl z-50 p-4 space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold ${
+                        isCriticalDeficit ? 'bg-rose-500 text-white' : 'bg-amber-500 text-slate-950'
+                      }`}>
+                        <Target className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-black text-white uppercase tracking-wider">
+                          Alert Target Harian
+                        </h4>
+                        <span className="text-[10px] text-slate-400">
+                          {evalDate} • {isFiltered && activeClient ? activeClient.name : 'Semua Proyek'}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsNotificationPopoverOpen(false)}
+                      className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Summary Metric Strip */}
+                  <div className="grid grid-cols-2 gap-2 bg-slate-950/80 p-2.5 rounded-xl border border-slate-800 text-[11px]">
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Capaian Luas Hari Ini:</span>
+                      <strong className={`font-mono font-bold ${
+                        haPercent >= 100 ? 'text-emerald-400' : isCriticalDeficit ? 'text-rose-400' : 'text-amber-400'
+                      }`}>
+                        {actualHaToday.toFixed(1)} / {targetHaToday.toFixed(1)} Ha ({haPercent}%)
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Selisih Deviasi:</span>
+                      <strong className={`font-mono font-bold ${haGap >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {haGap >= 0 ? `+${haGap.toFixed(1)} Ha` : `${haGap.toFixed(1)} Ha`}
+                      </strong>
+                    </div>
+                  </div>
+
+                  {/* Alerts List */}
+                  <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                    {activeAlerts.length === 0 ? (
+                      <div className="p-3 bg-slate-950 rounded-xl text-center text-xs text-slate-400">
+                        Tidak ada alert tertunda. Semua target operasional berjalan sesuai rencana.
+                      </div>
+                    ) : (
+                      activeAlerts.map((alt) => (
+                        <div
+                          key={alt.id}
+                          className={`p-2.5 rounded-xl border text-xs space-y-1 ${
+                            alt.severity === 'critical'
+                              ? 'bg-rose-950/40 border-rose-800/80 text-rose-200'
+                              : alt.severity === 'warning'
+                              ? 'bg-amber-950/40 border-amber-800/80 text-amber-200'
+                              : 'bg-emerald-950/40 border-emerald-800/80 text-emerald-200'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-[11px] flex items-center gap-1.5">
+                              {alt.severity === 'critical' ? (
+                                <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                              ) : alt.severity === 'warning' ? (
+                                <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                              ) : (
+                                <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                              )}
+                              <span>{alt.title}</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleDismissAlert(alt.id)}
+                              className="text-[10px] text-slate-400 hover:text-white cursor-pointer px-1 py-0.5 rounded hover:bg-slate-800"
+                              title="Tandai Selesai / Abaikan"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          <p className="text-[10px] opacity-90 leading-tight">
+                            {alt.desc}
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {/* Footer Action Buttons inside Popover */}
+                  <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsNotificationPopoverOpen(false);
+                        setShowWhatsappModal(true);
+                      }}
+                      className="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+                    >
+                      <Smartphone className="w-3.5 h-3.5" />
+                      <span>Kirim WA Alert</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsNotificationPopoverOpen(false);
+                        setShowTargetConfigModal(true);
+                      }}
+                      className="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition cursor-pointer border border-slate-700"
+                    >
+                      <Sliders className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Atur Target</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {latestReport && (
               <button
                 type="button"
@@ -485,6 +868,332 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
+      {/* 2. PUSAT NOTIFIKASI & ALERT TARGET HARIAN OPERASIONAL DIREKTUR */}
+      <section className={`rounded-3xl p-5 sm:p-6 border-2 shadow-xl transition-all duration-300 ${
+        isCriticalDeficit
+          ? 'bg-gradient-to-br from-rose-950/20 via-slate-900 to-slate-950 border-rose-500/80 shadow-rose-950/40 text-white'
+          : isWarningNeedsAttention
+          ? 'bg-gradient-to-br from-amber-950/20 via-slate-900 to-slate-950 border-amber-500/80 shadow-amber-950/40 text-white'
+          : 'bg-gradient-to-br from-emerald-950/20 via-slate-900 to-slate-950 border-emerald-500/80 shadow-emerald-950/40 text-white'
+      }`}>
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+          <div className="flex items-start gap-3.5">
+            <div className={`p-3 rounded-2xl shadow-lg shrink-0 ${
+              isCriticalDeficit
+                ? 'bg-rose-500 text-white animate-pulse'
+                : isWarningNeedsAttention
+                ? 'bg-amber-500 text-slate-950'
+                : 'bg-emerald-500 text-slate-950'
+            }`}>
+              {isCriticalDeficit ? (
+                <BellRing className="w-6 h-6 animate-bounce" />
+              ) : isWarningNeedsAttention ? (
+                <AlertTriangle className="w-6 h-6" />
+              ) : (
+                <Target className="w-6 h-6" />
+              )}
+            </div>
+
+            <div>
+              <div className="flex flex-wrap items-center gap-2 mb-1">
+                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                  isCriticalDeficit
+                    ? 'bg-rose-500 text-white'
+                    : isWarningNeedsAttention
+                    ? 'bg-amber-500 text-slate-950'
+                    : 'bg-emerald-500 text-slate-950'
+                }`}>
+                  Pusat Notifikasi & Alert Target Harian
+                </span>
+                <span className="text-[11px] text-slate-400 font-mono">
+                  {evalDate} • Evaluasi Lapangan Terkini
+                </span>
+                <span className="text-slate-600">·</span>
+                <span className="text-[11px] text-amber-300 font-medium">
+                  {isFiltered && activeClient ? activeClient.name : `Konsolidasi ${clients.length} Klien`}
+                </span>
+              </div>
+
+              <h3 className="text-lg sm:text-xl font-black text-white tracking-tight flex flex-wrap items-center gap-2">
+                <span>Evaluasi Realisasi vs Target Harian Land Clearing</span>
+                {unreadAlertsCount > 0 && (
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-black text-white ${
+                    isCriticalDeficit ? 'bg-rose-600 animate-pulse' : 'bg-amber-600'
+                  }`}>
+                    {unreadAlertsCount} Alert Terdeteksi
+                  </span>
+                )}
+              </h3>
+              <p className="text-xs text-slate-300 mt-0.5">
+                Monitoring ketat target ritme pembukaan lahan (Ha/hari), efektivitas jam kerja alat berat (HM), dan toleransi jam mati cuaca/breakdown.
+              </p>
+            </div>
+          </div>
+
+          {/* Quick Action Buttons */}
+          <div className="flex flex-wrap items-center gap-2 self-start lg:self-center shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowWhatsappModal(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs shadow-md transition-all active:scale-95 cursor-pointer"
+              title="Kirim arahan & notifikasi target ke WhatsApp Pengawas"
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+              <span>Broadcast Alert WA</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setTempConfig(targetConfig);
+                setShowTargetConfigModal(true);
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs border border-slate-700 transition-all active:scale-95 cursor-pointer"
+              title="Atur target harian & batas toleransi alert"
+            >
+              <Sliders className="w-3.5 h-3.5 text-amber-400" />
+              <span>Atur Target</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowBlockBreakdownModal(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs border border-slate-700 transition-all active:scale-95 cursor-pointer"
+              title="Lihat rincian perbandingan target per blok kerja"
+            >
+              <FileText className="w-3.5 h-3.5 text-sky-400" />
+              <span>Rincian Blok</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 3 COMPARISON KPI GAUGES */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 pt-4">
+          
+          {/* TILE 1: TARGET LUAS (HA) */}
+          <div className={`p-4 rounded-2xl border transition-all duration-200 flex flex-col justify-between ${
+            isCriticalDeficit
+              ? 'bg-rose-950/30 border-rose-800/80 shadow-rose-950/20'
+              : haPercent >= 100
+              ? 'bg-emerald-950/30 border-emerald-800/80 shadow-emerald-950/20'
+              : 'bg-amber-950/30 border-amber-800/80 shadow-amber-950/20'
+          }`}>
+            <div className="flex items-center justify-between text-xs font-bold text-slate-400 uppercase tracking-wider">
+              <span>Target Luas Land Clearing</span>
+              <Target className={`w-4 h-4 ${
+                haPercent >= 100 ? 'text-emerald-400' : isCriticalDeficit ? 'text-rose-400' : 'text-amber-400'
+              }`} />
+            </div>
+
+            <div className="my-2.5">
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl sm:text-3xl font-black text-white">
+                  {actualHaToday.toFixed(1)}
+                </span>
+                <span className="text-sm font-semibold text-slate-400">
+                  / {targetHaToday.toFixed(1)} Ha / Hari
+                </span>
+              </div>
+              <div className="flex items-center justify-between mt-1 text-xs">
+                <span className={`font-black ${
+                  haPercent >= 100 ? 'text-emerald-400' : isCriticalDeficit ? 'text-rose-400' : 'text-amber-400'
+                }`}>
+                  Capaian: {haPercent}%
+                </span>
+                <span className={`font-mono text-[11px] font-bold px-1.5 py-0.5 rounded ${
+                  haGap >= 0 ? 'bg-emerald-900/60 text-emerald-300' : 'bg-rose-900/60 text-rose-300'
+                }`}>
+                  {haGap >= 0 ? `Surplus +${haGap.toFixed(1)} Ha` : `Defisit ${haGap.toFixed(1)} Ha`}
+                </span>
+              </div>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="space-y-1">
+              <div className="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    haPercent >= 100 ? 'bg-emerald-500' : isCriticalDeficit ? 'bg-rose-500' : 'bg-amber-500'
+                  }`}
+                  style={{ width: `${Math.min(100, haPercent)}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-[10px] text-slate-400">
+                <span>0 Ha</span>
+                <span>Target: {targetHaToday.toFixed(1)} Ha</span>
+              </div>
+            </div>
+          </div>
+
+          {/* TILE 2: JAM KERJA EFEKTIF (HM) */}
+          <div className="p-4 rounded-2xl border bg-slate-800/80 border-slate-700/80 flex flex-col justify-between">
+            <div className="flex items-center justify-between text-xs font-bold text-slate-400 uppercase tracking-wider">
+              <span>Efektivitas Jam Mesin (HM)</span>
+              <Clock className="w-4 h-4 text-amber-400" />
+            </div>
+
+            <div className="my-2.5">
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl sm:text-3xl font-black text-white">
+                  {actualAvgHm.toFixed(1)}
+                </span>
+                <span className="text-sm font-semibold text-slate-400">
+                  / {targetHmToday.toFixed(1)} HM / Unit
+                </span>
+              </div>
+              <div className="flex items-center justify-between mt-1 text-xs">
+                <span className={`font-black ${
+                  actualAvgHm >= targetHmToday ? 'text-emerald-400' : 'text-amber-400'
+                }`}>
+                  Utilisasi: {hmPercent}%
+                </span>
+                <span className="font-mono text-[11px] text-slate-400">
+                  {actualAvgHm >= targetHmToday ? 'Standar Terpenuhi' : `Kurang ${Math.abs(hmGap).toFixed(1)} HM`}
+                </span>
+              </div>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="space-y-1">
+              <div className="w-full bg-slate-700 h-2.5 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    actualAvgHm >= targetHmToday ? 'bg-emerald-500' : 'bg-amber-500'
+                  }`}
+                  style={{ width: `${Math.min(100, (actualAvgHm / targetHmToday) * 100)}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-[10px] text-slate-400">
+                <span>Total Unit Operasi: {metrics.operationalEquipmentCount} Unit</span>
+                <span>Standar: {targetHmToday.toFixed(1)}h</span>
+              </div>
+            </div>
+          </div>
+
+          {/* TILE 3: DOWNTIME & TOLERANSI JAM MATI */}
+          <div className={`p-4 rounded-2xl border flex flex-col justify-between ${
+            isDowntimeOverLimit
+              ? 'bg-rose-950/30 border-rose-800/80 shadow-rose-950/20'
+              : 'bg-slate-800/80 border-slate-700/80'
+          }`}>
+            <div className="flex items-center justify-between text-xs font-bold text-slate-400 uppercase tracking-wider">
+              <span>Toleransi Downtime (Jam Mati)</span>
+              <AlertTriangle className={`w-4 h-4 ${isDowntimeOverLimit ? 'text-rose-400' : 'text-emerald-400'}`} />
+            </div>
+
+            <div className="my-2.5">
+              <div className="flex items-baseline gap-2">
+                <span className={`text-2xl sm:text-3xl font-black ${
+                  isDowntimeOverLimit ? 'text-rose-400' : 'text-white'
+                }`}>
+                  {actualDowntimeToday.toFixed(1)}
+                </span>
+                <span className="text-sm font-semibold text-slate-400">
+                  / Maks {targetConfig.maxDowntimeHours.toFixed(1)} Jam
+                </span>
+              </div>
+              <div className="flex items-center justify-between mt-1 text-xs">
+                <span className={`font-black ${isDowntimeOverLimit ? 'text-rose-400' : 'text-emerald-400'}`}>
+                  {isDowntimeOverLimit ? 'Melebihi Toleransi' : 'Dalam Batas Aman'}
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  {actualWeatherDowntimeToday.toFixed(1)}h Cuaca • {actualBreakdownDowntimeToday.toFixed(1)}h Breakdown
+                </span>
+              </div>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="space-y-1">
+              <div className="w-full bg-slate-700 h-2.5 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    isDowntimeOverLimit ? 'bg-rose-500' : 'bg-emerald-500'
+                  }`}
+                  style={{ width: `${Math.min(100, (actualDowntimeToday / Math.max(1, targetConfig.maxDowntimeHours * 2)) * 100)}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-[10px] text-slate-400">
+                <span>Toleransi Max: {targetConfig.maxDowntimeHours.toFixed(1)}h</span>
+                <span>{actualDowntimeToday > targetConfig.maxDowntimeHours ? `+${(actualDowntimeToday - targetConfig.maxDowntimeHours).toFixed(1)}h Over` : 'Aman'}</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        {/* ACTIVE ALERTS TICKER & ADVICE FEED */}
+        <div className="mt-4 pt-4 border-t border-slate-800">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-black text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+              <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
+              <span>Daftar Alert & Arahan Tindakan Langsung Direksi:</span>
+            </span>
+            {dismissedAlertIds.length > 0 && (
+              <button
+                type="button"
+                onClick={handleResetDismissedAlerts}
+                className="text-[10px] text-amber-400 hover:underline cursor-pointer"
+              >
+                Tampilkan Ulang {dismissedAlertIds.length} Alert Tersembunyi
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+            {activeAlerts.map((alt) => (
+              <div
+                key={alt.id}
+                className={`p-3 rounded-2xl border text-xs space-y-1.5 transition-all ${
+                  alt.severity === 'critical'
+                    ? 'bg-rose-950/40 border-rose-700/80 text-rose-100 shadow-sm'
+                    : alt.severity === 'warning'
+                    ? 'bg-amber-950/40 border-amber-700/80 text-amber-100 shadow-sm'
+                    : 'bg-emerald-950/40 border-emerald-700/80 text-emerald-100 shadow-sm'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                      alt.severity === 'critical'
+                        ? 'bg-rose-600 text-white'
+                        : alt.severity === 'warning'
+                        ? 'bg-amber-600 text-slate-950'
+                        : 'bg-emerald-600 text-white'
+                    }`}>
+                      {alt.badge}
+                    </span>
+                    <strong className="text-xs font-bold text-white tracking-tight">
+                      {alt.title}
+                    </strong>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleDismissAlert(alt.id)}
+                    className="text-[10px] text-slate-400 hover:text-white px-1.5 py-0.5 rounded hover:bg-slate-800 transition cursor-pointer"
+                    title="Abaikan Alert"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <p className="text-[11px] text-slate-300 leading-snug">
+                  {alt.desc}
+                </p>
+
+                <div className="p-2 rounded-xl bg-slate-950/60 border border-slate-800 flex items-start gap-2 text-[11px] text-amber-300">
+                  <Info className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-400" />
+                  <div>
+                    <span className="font-bold text-slate-200">Rekomendasi Direktur: </span>
+                    <span className="text-slate-300">{alt.recommendation}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+      </section>
+
       {/* PUSAT TINDAKAN PERHATIAN DIREKTUR DAN SISTEM DETEKSI */}
       <div className="bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 rounded-2xl p-5 shadow-xl border border-amber-400">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -652,7 +1361,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               Daftar Proyek Klien Aktif (Perbandingan Capaian Ha)
             </h3>
             <p className="text-xs text-slate-500">
-              Memantau seluruh proyek klien dalam satu layar pengawasan terpadu PT. SURYALAND GROUP. Klik kartu klien untuk memfilter analisis.
+              Memantau seluruh proyek klien dalam satu layar pengawasan terpadu PT. RBS GROUP. Klik kartu klien untuk memfilter analisis.
             </p>
           </div>
           {isFiltered && (
@@ -911,7 +1620,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </span>
             </div>
             <p className="text-slate-500 text-[11px]">
-              Toleransi target operasional PT. SURYALAND GROUP adalah downtime kerusakan &lt; 5%.
+              Toleransi target operasional PT. RBS GROUP adalah downtime kerusakan &lt; 5%.
             </p>
           </div>
         </div>
@@ -1261,6 +1970,420 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               >
                 Tutup
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 1: PENGATURAN TARGET HARIAN & TOLERANSI ALERT */}
+      {showTargetConfigModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-slate-900 p-5 text-white flex items-center justify-between border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-bold">
+                  <Sliders className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-black tracking-tight">
+                    Pengaturan Target Harian & Ambang Batas Alert
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Parameter evaluasi otomatis Direksi PT. RBS GROUP
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTargetConfigModal(false)}
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSaveTargetConfig(tempConfig);
+              }}
+              className="p-5 sm:p-6 space-y-4 text-xs"
+            >
+              {/* Presets */}
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1.5">
+                  PRESET CEPAT OPERASIONAL:
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTempConfig(prev => ({
+                        ...prev,
+                        targetAreaHa: 4.0,
+                        targetEffectiveHm: 8.0,
+                        maxDowntimeHours: 1.0,
+                        alertThresholdPercent: 80,
+                      }));
+                    }}
+                    className="p-2 rounded-xl border border-slate-200 hover:border-amber-400 hover:bg-amber-50/50 text-left transition cursor-pointer"
+                  >
+                    <span className="block font-bold text-slate-900 text-[11px]">Normal</span>
+                    <span className="text-[10px] text-slate-500">4.0 Ha • 8.0 HM</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTempConfig(prev => ({
+                        ...prev,
+                        targetAreaHa: 6.0,
+                        targetEffectiveHm: 9.0,
+                        maxDowntimeHours: 0.5,
+                        alertThresholdPercent: 85,
+                      }));
+                    }}
+                    className="p-2 rounded-xl border border-slate-200 hover:border-amber-400 hover:bg-amber-50/50 text-left transition cursor-pointer"
+                  >
+                    <span className="block font-bold text-slate-900 text-[11px]">Akselerasi</span>
+                    <span className="text-[10px] text-slate-500">6.0 Ha • 9.0 HM</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTempConfig(prev => ({
+                        ...prev,
+                        targetAreaHa: 2.5,
+                        targetEffectiveHm: 6.5,
+                        maxDowntimeHours: 2.5,
+                        alertThresholdPercent: 75,
+                      }));
+                    }}
+                    className="p-2 rounded-xl border border-slate-200 hover:border-amber-400 hover:bg-amber-50/50 text-left transition cursor-pointer"
+                  >
+                    <span className="block font-bold text-slate-900 text-[11px]">Musim Hujan</span>
+                    <span className="text-[10px] text-slate-500">2.5 Ha • 6.5 HM</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Input Fields */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Target Pembukaan Lahan (Ha/Hari) *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0.5"
+                      max="50"
+                      required
+                      value={tempConfig.targetAreaHa}
+                      onChange={(e) => setTempConfig({ ...tempConfig, targetAreaHa: parseFloat(e.target.value) || 0 })}
+                      className="w-full pl-3 pr-10 py-2 border-2 border-slate-200 rounded-xl font-mono font-bold text-slate-900 focus:border-amber-500 focus:outline-none"
+                    />
+                    <span className="absolute right-3 top-2.5 text-slate-400 font-semibold text-xs">
+                      Ha
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-slate-500">Target ritme harian standar lokasi</span>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Target Jam Efektif (HM/Unit) *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="1"
+                      max="24"
+                      required
+                      value={tempConfig.targetEffectiveHm}
+                      onChange={(e) => setTempConfig({ ...tempConfig, targetEffectiveHm: parseFloat(e.target.value) || 0 })}
+                      className="w-full pl-3 pr-10 py-2 border-2 border-slate-200 rounded-xl font-mono font-bold text-slate-900 focus:border-amber-500 focus:outline-none"
+                    />
+                    <span className="absolute right-3 top-2.5 text-slate-400 font-semibold text-xs">
+                      HM
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-slate-500">Standar efektivitas kerja mesin</span>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Toleransi Downtime Maksimal (Jam) *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      max="10"
+                      required
+                      value={tempConfig.maxDowntimeHours}
+                      onChange={(e) => setTempConfig({ ...tempConfig, maxDowntimeHours: parseFloat(e.target.value) || 0 })}
+                      className="w-full pl-3 pr-10 py-2 border-2 border-slate-200 rounded-xl font-mono font-bold text-slate-900 focus:border-amber-500 focus:outline-none"
+                    />
+                    <span className="absolute right-3 top-2.5 text-slate-400 font-semibold text-xs">
+                      Jam
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-slate-500">Batas jam mati yang dapat ditoleransi</span>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Ambang Batas Alert Kritis (%) *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="5"
+                      min="50"
+                      max="100"
+                      required
+                      value={tempConfig.alertThresholdPercent}
+                      onChange={(e) => setTempConfig({ ...tempConfig, alertThresholdPercent: parseFloat(e.target.value) || 0 })}
+                      className="w-full pl-3 pr-10 py-2 border-2 border-slate-200 rounded-xl font-mono font-bold text-slate-900 focus:border-amber-500 focus:outline-none"
+                    />
+                    <span className="absolute right-3 top-2.5 text-slate-400 font-semibold text-xs">
+                      %
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-slate-500">Pencapaian di bawah % ini memicu alert merah</span>
+                </div>
+              </div>
+
+              {/* Supervisor WhatsApp Number */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Nomor WhatsApp Pengawas Lapangan
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={tempConfig.supervisorWhatsapp}
+                    onChange={(e) => setTempConfig({ ...tempConfig, supervisorWhatsapp: e.target.value })}
+                    placeholder="Contoh: 081276543210 atau +62812..."
+                    className="w-full pl-3 pr-3 py-2 border-2 border-slate-200 rounded-xl font-mono text-slate-900 focus:border-amber-500 focus:outline-none"
+                  />
+                </div>
+                <span className="text-[10px] text-slate-500">Nomor tujuan untuk pengiriman broadcast alert</span>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setShowTargetConfigModal(false)}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold hover:bg-slate-100 transition cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black shadow-md transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Simpan Target & Alert</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: BROADCAST ALERT KE WHATSAPP */}
+      {showWhatsappModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-emerald-950 p-5 text-white flex items-center justify-between border-b border-emerald-900">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500 text-slate-950 flex items-center justify-center font-bold">
+                  <Smartphone className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-black tracking-tight">
+                    Broadcast Alert Target ke WhatsApp
+                  </h3>
+                  <p className="text-[11px] text-emerald-300">
+                    Instruksi resmi Direksi PT. RBS GROUP langsung ke ponsel pengawas
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowWhatsappModal(false);
+                  setCopiedWaText(false);
+                }}
+                className="p-1.5 text-emerald-300 hover:text-white rounded-lg hover:bg-emerald-900/60 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 sm:p-6 space-y-4 text-xs">
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
+                  NOMOR TUJUAN PENGAWAS:
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={targetConfig.supervisorWhatsapp}
+                    onChange={(e) => setTargetConfig({ ...targetConfig, supervisorWhatsapp: e.target.value })}
+                    className="flex-1 px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-mono text-slate-900 font-bold"
+                  />
+                  <span className="text-[11px] text-slate-500">
+                    ({latestReport?.supervisorName || 'Pengawas'})
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
+                  PRATINJAU PESAN ALERT OTOMATIS:
+                </label>
+                <div className="p-3.5 bg-slate-900 text-emerald-300 font-mono text-[11px] rounded-2xl border border-slate-800 max-h-64 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+                  {generateWhatsappAlertMessage()}
+                </div>
+              </div>
+
+              <div className="pt-2 flex flex-col sm:flex-row items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(generateWhatsappAlertMessage());
+                    setCopiedWaText(true);
+                    setTimeout(() => setCopiedWaText(false), 2500);
+                  }}
+                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Copy className="w-4 h-4 text-slate-500" />
+                  <span>{copiedWaText ? 'Teks Tersalin!' : 'Salin Pesan'}</span>
+                </button>
+
+                <a
+                  href={`https://wa.me/${targetConfig.supervisorWhatsapp.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(generateWhatsappAlertMessage())}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full sm:flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-center shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Send className="w-4 h-4" />
+                  <span>Kirim ke WhatsApp Sekarang →</span>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: RINCIAN TARGET PER BLOK KERJA */}
+      {showBlockBreakdownModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-2xl w-full overflow-hidden shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-slate-900 p-5 text-white flex items-center justify-between border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-sky-500 text-slate-950 flex items-center justify-center font-bold">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-black tracking-tight">
+                    Rincian Evaluasi Target Land Clearing per Blok
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Perbandingan target harian, realisasi, dan deviasi tiap lokasi
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowBlockBreakdownModal(false)}
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 sm:p-6 space-y-4 text-xs">
+              <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                    <tr>
+                      <th className="py-2.5 px-3">Blok Kerja</th>
+                      <th className="py-2.5 px-3">Proyek / Klien</th>
+                      <th className="py-2.5 px-3 text-right">Target (Ha)</th>
+                      <th className="py-2.5 px-3 text-right">Realisasi (Ha)</th>
+                      <th className="py-2.5 px-3 text-right">Deviasi</th>
+                      <th className="py-2.5 px-3 text-center">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
+                    {configuredDailyTargets.length > 0 ? (
+                      configuredDailyTargets.map((item) => {
+                        const relatedReport = displayedReports.find(r => r.blockCode === item.blockCode);
+                        const actual = relatedReport ? (relatedReport.physicalProgress?.realizedAreaHa || 0) : 0;
+                        const target = item.dailyTargetAreaHa || 4.0;
+                        const dev = actual - target;
+                        const isDone = actual >= target;
+
+                        return (
+                          <tr key={item.id} className="hover:bg-slate-50 transition">
+                            <td className="py-2.5 px-3 font-bold text-slate-900">
+                              {item.blockCode}
+                            </td>
+                            <td className="py-2.5 px-3 text-slate-600">
+                              {item.clientName || 'PT. A'}
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono font-bold">
+                              {target.toFixed(1)} Ha
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">
+                              {actual.toFixed(1)} Ha
+                            </td>
+                            <td className={`py-2.5 px-3 text-right font-mono font-bold ${
+                              dev >= 0 ? 'text-emerald-600' : 'text-rose-600'
+                            }`}>
+                              {dev >= 0 ? `+${dev.toFixed(1)}` : dev.toFixed(1)} Ha
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                isDone 
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 
+                                  : 'bg-rose-100 text-rose-800 border border-rose-300'
+                              }`}>
+                                {isDone ? 'Tercapai' : 'Defisit'}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan={6} className="py-6 text-center text-slate-400">
+                          Belum ada target harian spesifik yang dikonfigurasi. Menggunakan target default sistem ({targetConfig.targetAreaHa} Ha/hari).
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="pt-2 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowBlockBreakdownModal(false)}
+                  className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold transition cursor-pointer"
+                >
+                  Tutup Rincian
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -315,7 +315,7 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
       const watermarkedList = await applyBatchWatermarks(
         fileList,
         {
-          companyName: 'PT. SURYALAND GROUP',
+          companyName: 'PT. RBS GROUP',
           clientName: activeClient?.name || 'PT. A',
           blockCode: cameraBlockCode,
           equipmentId: cameraEquipmentId,
@@ -396,7 +396,7 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
   const handleDownloadPhoto = (photo: ProcessedWatermarkedPhoto) => {
     const a = document.createElement('a');
     a.href = photo.dataUrl;
-    a.download = `SURYALAND_GEOTAG_${photo.blockCode}_${photo.fileName}`;
+    a.download = `RBS_GEOTAG_${photo.blockCode}_${photo.fileName}`;
     a.click();
   };
 
@@ -658,7 +658,7 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
                 Pusat Alat & Lapangan
               </span>
               <span className="text-xs font-semibold text-slate-400">
-                PT. SURYALAND GROUP • Zero Burning Method
+                PT. RBS GROUP • Zero Burning Method
               </span>
             </div>
             <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white">

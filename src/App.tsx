@@ -1,5 +1,5 @@
 /**
- * SURYALAND APPS - Heavy Equipment Land Clearing Plantation Project
+ * RBS APPS - Heavy Equipment Land Clearing Plantation Project
  * Zero Burning Method (Metode Tanpa Bakar)
  * PT. RBS GROUP
  */
@@ -449,7 +449,7 @@ export default function App() {
     storageService.resetToDefault();
     loadData();
     setSelectedClientId('ALL');
-    showToast('Data berhasil di-reset ke data default multi-klien PT. SURYALAND GROUP.');
+    showToast('Data berhasil di-reset ke data default multi-klien PT. RBS GROUP.');
   };
 
   const handleOpenPdfModal = (reportId: string) => {
@@ -934,10 +934,10 @@ export default function App() {
       <footer className="bg-slate-900 border-t border-slate-800 text-slate-500 text-xs py-4 text-center mb-16 lg:mb-0">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
           <div>
-            <strong className="text-slate-300">SURYALAND APPS</strong> • Sistem Pengawasan Proyek Land Clearing (Zero Burning Method)
+            <strong className="text-slate-300">RBS APPS</strong> • Sistem Pengawasan Proyek Land Clearing (Zero Burning Method)
           </div>
           <div className="text-[11px] text-slate-400">
-            Hak Cipta © 2026 PT. SURYALAND GROUP. Masuk sebagai: <span className="text-amber-400 font-bold">{authUser.username}</span> ({authUser.roleTitle})
+            Hak Cipta © 2026 PT. RBS GROUP. Masuk sebagai: <span className="text-amber-400 font-bold">{authUser.username}</span> ({authUser.roleTitle})
           </div>
         </div>
       </footer>

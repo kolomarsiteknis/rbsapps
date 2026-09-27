@@ -39,7 +39,8 @@ import {
   initialManagedUsers,
   initialWorkAssignments,
   initialCompanyProfile,
-  initialCompanyStaff
+  initialCompanyStaff,
+  createDefaultCompanyLogoSvg
 } from '../data/mockData';
 import { 
   syncDocWrite, 
@@ -2217,7 +2218,24 @@ export const storageService = {
   // IDENTITAS RESMI PERUSAHAAN & BRANDING
   // ==========================================
   getCompanyProfile(): CompanyProfile {
-    return loadFromStorage<CompanyProfile>(STORAGE_KEYS.COMPANY_PROFILE, initialCompanyProfile);
+    const profile = loadFromStorage<CompanyProfile>(STORAGE_KEYS.COMPANY_PROFILE, initialCompanyProfile);
+    if (profile.officialName?.includes('SURYALAND') || profile.shortName === 'SURYALAND') {
+      const migrated: CompanyProfile = {
+        ...profile,
+        officialName: 'PT. RBS GROUP',
+        shortName: 'RBS',
+        logoUrl: createDefaultCompanyLogoSvg('RBS', 'PT. RBS GROUP'),
+        email: profile.email?.replace(/suryaland\.co\.id/g, 'rbsgroup.co.id') || 'corporate@rbsgroup.co.id',
+        website: profile.website?.replace(/suryaland\.co\.id/g, 'rbsgroup.co.id') || 'https://rbsgroup.co.id',
+        bankAccountInfo: profile.bankAccountInfo?.replace(/SURYALAND/g, 'RBS') || 'Bank Mandiri Cabang Pekanbaru: 108-00-1234567-8 a/n PT. RBS GROUP',
+        headOfficeAddress: profile.headOfficeAddress?.replace(/Surya Graha/g, 'RBS Tower') || profile.headOfficeAddress,
+        updatedAt: new Date().toISOString(),
+      };
+      saveToStorage(STORAGE_KEYS.COMPANY_PROFILE, migrated);
+      syncDocWrite(FIRESTORE_COLLECTIONS.COMPANY_PROFILE, { ...migrated, id: 'main_profile' });
+      return migrated;
+    }
+    return profile;
   },
 
   updateCompanyProfile(updates: Partial<CompanyProfile>): CompanyProfile {
@@ -2230,7 +2248,7 @@ export const storageService = {
     saveToStorage(STORAGE_KEYS.COMPANY_PROFILE, updated);
     syncDocWrite(FIRESTORE_COLLECTIONS.COMPANY_PROFILE, { ...updated, id: 'main_profile' });
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('suryaland_company_profile_sync', { detail: updated }));
+      window.dispatchEvent(new CustomEvent('rbs_company_profile_sync', { detail: updated }));
     }
     return updated;
   },

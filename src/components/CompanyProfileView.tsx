@@ -153,7 +153,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
 
   // Reset logo to generated SVG
   const handleResetToDefaultLogo = () => {
-    const newSvg = createDefaultCompanyLogoSvg(profileForm.shortName || 'SURYALAND', profileForm.officialName || 'PT. SURYALAND GROUP');
+    const newSvg = createDefaultCompanyLogoSvg(profileForm.shortName || 'RBS', profileForm.officialName || 'PT. RBS GROUP');
     setProfileForm((prev) => ({ ...prev, logoUrl: newSvg }));
     showToast('Logo dikembalikan ke format logo resmi vektor.', 'info');
   };
@@ -166,7 +166,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
       return;
     }
     if (!profileForm.shortName.trim()) {
-      showToast('Nama Singkat Perusahaan wajib diisi (contoh: RBS, SURYALAND).', 'warning');
+      showToast('Nama Singkat Perusahaan wajib diisi (contoh: RBS).', 'warning');
       return;
     }
 
@@ -549,14 +549,14 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
                       <span className="font-black text-white text-sm tracking-wider truncate">
-                        {profileForm.shortName || 'SURYALAND'}
+                        {profileForm.shortName || 'RBS'}
                       </span>
                       <span className="text-[9px] font-black uppercase px-1 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
                         APPS
                       </span>
                     </div>
                     <span className="text-[10px] text-slate-400 truncate block">
-                      {profileForm.officialName || 'PT. SURYALAND GROUP'} • Land Clearing
+                      {profileForm.officialName || 'PT. RBS GROUP'} • Land Clearing
                     </span>
                   </div>
                 </div>
@@ -585,7 +585,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                     <input
                       type="text"
                       required
-                      placeholder="Contoh: RBS atau SURYALAND"
+                      placeholder="Contoh: RBS"
                       value={profileForm.shortName}
                       onChange={(e) => setProfileForm({ ...profileForm, shortName: e.target.value.toUpperCase() })}
                       className="w-full px-3.5 py-2.5 bg-white border border-amber-300 rounded-xl font-black text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
@@ -751,7 +751,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                     </label>
                     <input
                       type="text"
-                      placeholder="Bank Mandiri Cabang Pekanbaru: 108-00-1234567-8 a/n PT. SURYALAND GROUP"
+                      placeholder="Bank Mandiri Cabang Pekanbaru: 108-00-1234567-8 a/n PT. RBS GROUP"
                       value={profileForm.bankAccountInfo || ''}
                       onChange={(e) => setProfileForm({ ...profileForm, bankAccountInfo: e.target.value })}
                       className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"

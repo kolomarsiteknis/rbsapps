@@ -21,14 +21,14 @@ function createSimulatedFieldPhoto(title: string, subtitle: string, color: strin
     
     <!-- Icon or subject -->
     <circle cx="400" cy="180" r="70" fill="rgba(255,255,255,0.08)" stroke="#fbbf24" stroke-width="2"/>
-    <text x="400" y="175" fill="#f59e0b" font-family="system-ui, sans-serif" font-size="26" font-weight="bold" text-anchor="middle">🚜 SURYALAND</text>
+    <text x="400" y="175" fill="#f59e0b" font-family="system-ui, sans-serif" font-size="26" font-weight="bold" text-anchor="middle">🚜 RBS</text>
     <text x="400" y="210" fill="#ffffff" font-family="system-ui, sans-serif" font-size="18" font-weight="600" text-anchor="middle">${title}</text>
     <text x="400" y="235" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="13" text-anchor="middle">KLIEN: ${clientName} • ${subtitle}</text>
     
     <!-- Watermark Banner -->
     <rect x="0" y="405" width="800" height="95" fill="url(#bannerGrad)"/>
     <rect x="0" y="405" width="800" height="3" fill="#f59e0b"/>
-    <text x="24" y="432" fill="#ffffff" font-family="system-ui, sans-serif" font-size="14" font-weight="bold">PT. SURYALAND GROUP • PROYEK KLIEN: ${clientName} (ZERO BURNING)</text>
+    <text x="24" y="432" fill="#ffffff" font-family="system-ui, sans-serif" font-size="14" font-weight="bold">PT. RBS GROUP • PROYEK KLIEN: ${clientName} (ZERO BURNING)</text>
     <text x="24" y="456" fill="#fbbf24" font-family="system-ui, sans-serif" font-size="12" font-weight="600">LOKASI: ${subtitle}</text>
     <text x="24" y="480" fill="#e2e8f0" font-family="monospace" font-size="11">📍 GPS: ${lat}, ${lng}    🕒 WAKTU: ${time} WIB</text>
     
@@ -1617,7 +1617,7 @@ export const initialManagedUsers: ManagedUser[] = [
     assignedBlockCodes: ['Akses Semua Blok (Tanpa Batas)'],
     status: 'Aktif',
     createdAt: '2026-07-01T08:00:00.000Z',
-    notes: 'Owner & Superadmin Utama Direksi PT. SURYALAND GROUP (Akses Pemilik Tanpa Batasan)',
+    notes: 'Owner & Superadmin Utama Direksi PT. RBS GROUP (Akses Pemilik Tanpa Batasan)',
   },
   {
     id: 'user-usr-02',
@@ -1906,8 +1906,8 @@ export const initialWorkAssignments: WorkAssignment[] = [
 ];
 
 // Helper to generate a crisp, scalable Company Logo SVG (Data URL)
-export function createDefaultCompanyLogoSvg(shortName: string = 'SURYALAND', officialName: string = 'PT. SURYALAND GROUP'): string {
-  const displayShort = shortName || 'SURYALAND';
+export function createDefaultCompanyLogoSvg(shortName: string = 'RBS', officialName: string = 'PT. RBS GROUP'): string {
+  const displayShort = shortName || 'RBS';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300">
     <defs>
       <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -1916,31 +1916,35 @@ export function createDefaultCompanyLogoSvg(shortName: string = 'SURYALAND', off
         <stop offset="100%" stop-color="#b45309"/>
       </linearGradient>
       <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stop-color="#0f172a"/>
+        <stop offset="0%" stop-color="#090d16"/>
         <stop offset="100%" stop-color="#1e293b"/>
       </linearGradient>
+      <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#fbbf24"/>
+        <stop offset="100%" stop-color="#f59e0b"/>
+      </linearGradient>
     </defs>
-    <rect width="300" height="300" rx="48" fill="url(#bgGrad)"/>
-    <rect x="10" y="10" width="280" height="280" rx="40" fill="none" stroke="#f59e0b" stroke-width="4" stroke-opacity="0.3"/>
+    <rect width="300" height="300" rx="52" fill="url(#bgGrad)"/>
+    <rect x="8" y="8" width="284" height="284" rx="46" fill="none" stroke="#f59e0b" stroke-width="3.5" stroke-opacity="0.4"/>
     
     <!-- Shield Symbol -->
-    <path d="M150 40 L220 75 V140 C220 190 150 230 150 230 C150 230 80 190 80 140 V75 Z" fill="url(#shieldGrad)" />
+    <path d="M150 36 L224 72 V142 C224 195 150 234 150 234 C150 234 76 195 76 142 V72 Z" fill="url(#shieldGrad)" />
     
     <!-- Heavy Equipment Silhouette inside shield -->
     <!-- Tractor body & tracks -->
-    <path d="M110 140 H190 V165 H110 Z" fill="#0f172a" rx="4" />
-    <circle cx="125" cy="152" r="7" fill="#f59e0b" />
-    <circle cx="150" cy="152" r="7" fill="#f59e0b" />
-    <circle cx="175" cy="152" r="7" fill="#f59e0b" />
+    <path d="M108 142 H192 V168 H108 Z" fill="#0f172a" rx="4" />
+    <circle cx="123" cy="155" r="7" fill="#fbbf24" />
+    <circle cx="150" cy="155" r="7" fill="#fbbf24" />
+    <circle cx="177" cy="155" r="7" fill="#fbbf24" />
     <!-- Cabin -->
-    <path d="M125 110 H160 V140 H125 Z" fill="#0f172a" />
+    <path d="M124 110 H160 V142 H124 Z" fill="#0f172a" />
     <rect x="130" y="115" width="22" height="15" fill="#38bdf8" rx="2" />
     <!-- Arm / Blade -->
-    <path d="M160 120 L185 105 L195 130" fill="none" stroke="#0f172a" stroke-width="6" stroke-linecap="round" />
+    <path d="M160 120 L188 102 L198 128" fill="none" stroke="#0f172a" stroke-width="6.5" stroke-linecap="round" />
     
     <!-- Company Short Name on Badge -->
-    <rect x="35" y="240" width="230" height="36" rx="10" fill="#0f172a" stroke="#f59e0b" stroke-width="2"/>
-    <text x="150" y="264" fill="#fbbf24" font-family="system-ui, sans-serif" font-size="18" font-weight="900" letter-spacing="2" text-anchor="middle">${displayShort}</text>
+    <rect x="30" y="240" width="240" height="40" rx="12" fill="#090d16" stroke="#f59e0b" stroke-width="2"/>
+    <text x="150" y="267" fill="url(#goldGrad)" font-family="system-ui, -apple-system, sans-serif" font-size="22" font-weight="900" letter-spacing="3" text-anchor="middle">${displayShort}</text>
   </svg>`;
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
@@ -1975,19 +1979,19 @@ export function createSimulatedSignatureSvg(name: string, roleTitle: string): st
 // Initial Company Profile (Identitas Resmi Perusahaan)
 export const initialCompanyProfile: CompanyProfile = {
   id: 'company_profile_main',
-  officialName: 'PT. SURYALAND GROUP',
-  shortName: 'SURYALAND',
+  officialName: 'PT. RBS GROUP',
+  shortName: 'RBS',
   tagline: 'Heavy Equipment & Plantation Land Clearing Contractor • Zero Burning Method',
-  logoUrl: createDefaultCompanyLogoSvg('SURYALAND', 'PT. SURYALAND GROUP'),
+  logoUrl: createDefaultCompanyLogoSvg('RBS', 'PT. RBS GROUP'),
   npwp: '01.234.567.8-216.000',
   nib: '9120304561234',
   phone: '(0761) 554321',
   whatsapp: '0812-7654-3210',
-  email: 'corporate@suryaland.co.id',
-  website: 'https://suryaland.co.id',
-  headOfficeAddress: 'Jl. Jenderal Sudirman Kav. 88, Gedung Surya Graha Lt. 4, Pekanbaru, Riau 28282',
+  email: 'corporate@rbsgroup.co.id',
+  website: 'https://rbsgroup.co.id',
+  headOfficeAddress: 'Jl. Jenderal Sudirman Kav. 88, Gedung RBS Tower Lt. 4, Pekanbaru, Riau 28282',
   siteOfficeAddress: 'Basecamp Operasional Proyek Land Clearing Estate Siak & Pelalawan, Riau',
-  bankAccountInfo: 'Bank Mandiri Cabang Pekanbaru: 108-00-1234567-8 a/n PT. SURYALAND GROUP',
+  bankAccountInfo: 'Bank Mandiri Cabang Pekanbaru: 108-00-1234567-8 a/n PT. RBS GROUP',
   legalNotice: 'Kontraktor Spesialis Land Clearing Perkebunan Berizin Resmi & Ramah Lingkungan Tanpa Bakar',
   updatedAt: '2026-09-01T08:00:00Z',
 };

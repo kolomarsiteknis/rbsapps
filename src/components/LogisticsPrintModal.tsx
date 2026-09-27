@@ -482,7 +482,7 @@ export const LogisticsPrintModal: React.FC<LogisticsPrintModalProps> = ({
                     </div>
                     <div>
                       <h1 className="text-xl sm:text-2xl font-black text-slate-950 tracking-tight leading-none uppercase">
-                        {companyProfile.officialName || 'PT. SURYALAND GROUP'}
+                        {companyProfile.officialName || 'PT. RBS GROUP'}
                       </h1>
                       <span className="text-[11px] font-bold text-amber-700 uppercase tracking-widest block mt-0.5">
                         {companyProfile.tagline || 'Kontraktor Land Clearing, Heavy Equipment & Perkebunan'}
@@ -811,7 +811,7 @@ export const LogisticsPrintModal: React.FC<LogisticsPrintModalProps> = ({
                   {supervisorStaff?.fullName || 'BUDI SANTOSO'}
                 </p>
                 <p className="text-[10px] text-slate-500">
-                  {supervisorStaff?.jobRole || 'Supervisor Lapangan'} {companyProfile.officialName || 'PT. SURYALAND GROUP'}
+                  {supervisorStaff?.jobRole || 'Supervisor Lapangan'} {companyProfile.officialName || 'PT. RBS GROUP'}
                 </p>
               </div>
 
@@ -840,14 +840,14 @@ export const LogisticsPrintModal: React.FC<LogisticsPrintModalProps> = ({
                   {directorStaff?.fullName || 'IR. HENDRA WIJAYA, M.SI'}
                 </p>
                 <p className="text-[10px] text-slate-500">
-                  {directorStaff?.jobRole || 'Direktur Utama'} {companyProfile.officialName || 'PT. SURYALAND GROUP'}
+                  {directorStaff?.jobRole || 'Direktur Utama'} {companyProfile.officialName || 'PT. RBS GROUP'}
                 </p>
               </div>
             </div>
 
             {/* Document Footer Note */}
             <div className="text-[10px] text-slate-400 text-center border-t border-slate-100 pt-3">
-              Dokumen ini dihasilkan secara otomatis oleh {companyProfile.shortName || 'SURYALAND'} APPS — Sistem Pelaporan Land Clearing & Inventaris Logistik Lapangan {companyProfile.officialName || 'PT. SURYALAND GROUP'}. Seluruh catatan bersifat sah dan teraudit.
+              Dokumen ini dihasilkan secara otomatis oleh {companyProfile.shortName || 'RBS'} APPS — Sistem Pelaporan Land Clearing & Inventaris Logistik Lapangan {companyProfile.officialName || 'PT. RBS GROUP'}. Seluruh catatan bersifat sah dan teraudit.
             </div>
 
           </div>

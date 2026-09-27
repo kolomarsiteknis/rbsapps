@@ -817,7 +817,7 @@ export const DirectorFieldMonitorView: React.FC<DirectorFieldMonitorViewProps> =
 
                       <a
                         href={photo.dataUrl}
-                        download={`SURYALAND_GEOTAG_${photo.blockCode}_${photo.fileName}`}
+                        download={`RBS_GEOTAG_${photo.blockCode}_${photo.fileName}`}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 text-[11px] font-bold rounded-lg transition-all cursor-pointer shadow-xs"
                         title="Download foto original ber-watermark"
                       >
@@ -1340,7 +1340,7 @@ export const DirectorFieldMonitorView: React.FC<DirectorFieldMonitorViewProps> =
               <div className="flex items-center gap-2">
                 <a
                   href={selectedPhotoPreview.dataUrl}
-                  download={`SURYALAND_GEOTAG_${selectedPhotoPreview.blockCode}_${selectedPhotoPreview.fileName}`}
+                  download={`RBS_GEOTAG_${selectedPhotoPreview.blockCode}_${selectedPhotoPreview.fileName}`}
                   className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 text-xs font-bold rounded-xl transition-all cursor-pointer shadow-sm"
                 >
                   <Download className="w-3.5 h-3.5" />

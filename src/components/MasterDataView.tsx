@@ -1923,7 +1923,7 @@ export const MasterDataView: React.FC = () => {
               <span className="px-2.5 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-amber-500 text-slate-950">
                 Master Data Proyek
               </span>
-              <span className="text-xs text-slate-500 font-mono">PT. SURYALAND GROUP</span>
+              <span className="text-xs text-slate-500 font-mono">PT. RBS GROUP</span>
             </div>
             <h2 className="text-xl sm:text-2xl font-black text-slate-900 mt-1">
               Master Data Proyek Land Clearing

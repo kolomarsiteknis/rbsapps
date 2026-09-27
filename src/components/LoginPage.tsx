@@ -213,10 +213,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({
             </div>
             <div>
               <div className="font-black text-base text-amber-400 tracking-wider">
-                {companyProfile.shortName || 'SURYALAND'} APPS
+                {companyProfile.shortName || 'RBS'} APPS
               </div>
               <div className="text-[11px] text-slate-400 truncate max-w-[280px]">
-                {companyProfile.officialName || 'PT. SURYALAND GROUP'} • Land Clearing Heavy Equipment
+                {companyProfile.officialName || 'PT. RBS GROUP'} • Land Clearing Heavy Equipment
               </div>
             </div>
           </div>
@@ -353,7 +353,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       <footer className="border-t border-slate-800/80 bg-slate-900/60 backdrop-blur-md px-6 py-4 text-center z-10">
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2">
           <div>
-            PT. SURYALAND GROUP • Heavy Equipment Plantation Land Clearing
+            PT. RBS GROUP • Heavy Equipment Plantation Land Clearing
           </div>
           <div>
             Hak Cipta © 2026. Hak Akses Terproteksi.

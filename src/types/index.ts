@@ -624,8 +624,8 @@ export interface UserActivityLog {
 // Identitas Perusahaan & Branding Aplikasi
 export interface CompanyProfile {
   id: string;
-  officialName: string;       // Nama Resmi: PT. SURYALAND GROUP atau PT. RIAU BARA SAMUDRA (RBS)
-  shortName: string;          // Nama Singkat / Singkatan: SURYALAND atau RBS (Otomatis jadi Nama Apps)
+  officialName: string;       // Nama Resmi: PT. RBS GROUP atau PT. RIAU BARA SAMUDRA (RBS)
+  shortName: string;          // Nama Singkat / Singkatan: RBS (Otomatis jadi Nama Apps)
   tagline: string;            // Slogan / Motto Perusahaan
   logoUrl: string;            // Image Logo Perusahaan (Otomatis jadi Logo Apps & Kop Surat)
   npwp: string;               // Nomor Pokok Wajib Pajak

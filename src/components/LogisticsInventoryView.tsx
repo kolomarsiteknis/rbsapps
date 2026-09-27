@@ -498,7 +498,7 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
               <span className="px-2.5 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-amber-500 text-slate-950">
                 Logistik Lapangan & Basecamp
               </span>
-              <span className="text-xs text-slate-500 font-mono">PT. SURYALAND GROUP</span>
+              <span className="text-xs text-slate-500 font-mono">PT. RBS GROUP</span>
               {pendingInflowCount > 0 && (
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300 animate-pulse">
                   {pendingInflowCount} Menunggu Approval Direktur

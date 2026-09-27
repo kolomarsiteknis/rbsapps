@@ -54,7 +54,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
 
   const handleDownloadTxt = () => {
     const textReport = `====================================================================================================
-                                      ${companyProfile.officialName || 'PT. SURYALAND GROUP'}
+                                      ${companyProfile.officialName || 'PT. RBS GROUP'}
                            ${companyProfile.headOfficeAddress} | Telp: ${companyProfile.phone}
 ====================================================================================================
                                 LAPORAN HARIAN OPERASIONAL LAND CLEARING
@@ -66,7 +66,7 @@ INFORMASI PROYEK & KLIEN
 Klien / Pemilik Lahan : ${report.clientName.padEnd(36)} Tanggal Laporan  : ${report.date}
 Nama Proyek           : ${report.projectName.padEnd(36)} Lokasi Kerja     : ${report.blockCode}
 No. Kontrak           : ${report.contractNumber.padEnd(36)} Kondisi Cuaca    : ${report.weather}
-Pengawas Lapangan     : ${report.supervisorName} (${companyProfile.shortName || 'SURYALAND'})    Jam Efektif Keja : ${report.effectiveWorkShift}
+Pengawas Lapangan     : ${report.supervisorName} (${companyProfile.shortName || 'RBS'})    Jam Efektif Keja : ${report.effectiveWorkShift}
 
 ----------------------------------------------------------------------------------------------------
 I. HASIL KERJA HARIAN (CAPAIAN FISIK)
@@ -196,7 +196,7 @@ ${report.equipmentWorkLogs
               </div>
               <div>
                 <h1 className="text-base sm:text-lg font-black tracking-widest text-slate-900 uppercase">
-                  {companyProfile.officialName || 'PT. SURYALAND GROUP'}
+                  {companyProfile.officialName || 'PT. RBS GROUP'}
                 </h1>
                 <p className="text-[11px] sm:text-xs text-slate-600">
                   {companyProfile.headOfficeAddress} | Telp: {companyProfile.phone} • Email: {companyProfile.email}
@@ -256,7 +256,7 @@ ${report.equipmentWorkLogs
               <div className="flex">
                 <span className="w-36 text-slate-600">Pengawas Lapangan</span>
                 <span className="w-3 text-slate-400">:</span>
-                <span className="font-semibold text-slate-900">{report.supervisorName} (PT. SURYALAND)</span>
+                <span className="font-semibold text-slate-900">{report.supervisorName} (PT. RBS)</span>
               </div>
               <div className="flex">
                 <span className="w-32 text-slate-600">Jam Efektif Kerja</span>
@@ -549,7 +549,7 @@ ${report.equipmentWorkLogs
                     ( {supervisorStaff?.fullName || report.signatures.supervisor.name} )
                   </div>
                   <div className="text-[10px] text-slate-500 font-medium">
-                    {companyProfile.officialName || 'PT. SURYALAND GROUP'}
+                    {companyProfile.officialName || 'PT. RBS GROUP'}
                   </div>
                 </div>
               </div>
@@ -578,7 +578,7 @@ ${report.equipmentWorkLogs
                     ( {managerStaff?.fullName || report.signatures.siteManager?.name || 'Bambang Sugiarto, S.P.'} )
                   </div>
                   <div className="text-[10px] text-slate-500 font-medium">
-                    {companyProfile.officialName || 'PT. SURYALAND GROUP'}
+                    {companyProfile.officialName || 'PT. RBS GROUP'}
                   </div>
                 </div>
               </div>
@@ -607,7 +607,7 @@ ${report.equipmentWorkLogs
                     ( {directorStaff?.fullName || report.signatures.director?.name || 'Ir. Hendra Wijaya, M.Si'} )
                   </div>
                   <div className="text-[10px] text-slate-500 font-medium">
-                    {companyProfile.officialName || 'PT. SURYALAND GROUP'}
+                    {companyProfile.officialName || 'PT. RBS GROUP'}
                   </div>
                 </div>
               </div>
@@ -616,7 +616,7 @@ ${report.equipmentWorkLogs
 
           {/* Footer note */}
           <div className="text-[9px] text-slate-400 mt-4 text-center">
-            Dokumen ini dicetak otomatis dari {companyProfile.shortName || 'SURYALAND'} APPS. Data tervalidasi dengan sistem GPS dan kalkulasi jam kerja efektif terpusat.
+            Dokumen ini dicetak otomatis dari {companyProfile.shortName || 'RBS'} APPS. Data tervalidasi dengan sistem GPS dan kalkulasi jam kerja efektif terpusat.
           </div>
         </div>
 

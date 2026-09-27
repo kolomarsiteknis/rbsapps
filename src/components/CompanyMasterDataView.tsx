@@ -785,7 +785,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                   </div>
 
                   <span className="text-xs font-bold text-slate-800">
-                    {profileForm.shortName || 'SURYALAND'} APPS
+                    {profileForm.shortName || 'RBS'} APPS
                   </span>
                   <span className="text-[10px] text-slate-400 mt-0.5">
                     {profileForm.logoUrl ? 'Logo Kustom Terpasang' : 'Logo Bawaan Standar'}
@@ -838,14 +838,14 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
                       <span className="font-black text-white text-sm tracking-wider truncate">
-                        {profileForm.shortName || 'SURYALAND'}
+                        {profileForm.shortName || 'RBS'}
                       </span>
                       <span className="text-[9px] font-black uppercase px-1 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
                         APPS
                       </span>
                     </div>
                     <span className="text-[10px] text-slate-400 truncate block">
-                      {profileForm.officialName || 'PT. SURYALAND GROUP'} • Land Clearing
+                      {profileForm.officialName || 'PT. RBS GROUP'} • Land Clearing
                     </span>
                   </div>
                 </div>
@@ -874,7 +874,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                     <input
                       type="text"
                       required
-                      placeholder="Contoh: RBS atau SURYALAND"
+                      placeholder="Contoh: RBS"
                       value={profileForm.shortName}
                       onChange={(e) => handleProfileChange('shortName', e.target.value.toUpperCase())}
                       className="w-full px-3.5 py-2.5 bg-white border border-amber-300 rounded-xl font-black text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
@@ -892,7 +892,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                     <input
                       type="text"
                       required
-                      placeholder="Contoh: PT. SURYALAND GROUP"
+                      placeholder="Contoh: PT. RBS GROUP"
                       value={profileForm.officialName}
                       onChange={(e) => handleProfileChange('officialName', e.target.value)}
                       className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 font-bold text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"

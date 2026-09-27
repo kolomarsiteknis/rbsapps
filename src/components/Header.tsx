@@ -336,14 +336,14 @@ export const Header: React.FC<HeaderProps> = ({
                 <div className="flex flex-col">
                   <div className="flex items-center gap-1.5 leading-none">
                     <span className="text-sm sm:text-base font-black tracking-wider text-white group-hover:text-amber-400 transition-colors duration-200">
-                      {companyProfile?.shortName || 'SURYALAND'}
+                      {companyProfile?.shortName || 'RBS'}
                     </span>
                     <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
                       APPS
                     </span>
                   </div>
                   <span className="text-[10px] text-slate-400 font-medium hidden sm:inline tracking-tight mt-0.5 truncate max-w-[200px]">
-                    {companyProfile?.officialName || 'PT. SURYALAND GROUP'} • Land Clearing
+                    {companyProfile?.officialName || 'PT. RBS GROUP'} • Land Clearing
                   </span>
                 </div>
               </button>
@@ -486,10 +486,10 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
                 <div>
                   <div className="text-sm font-black text-amber-400 tracking-wider">
-                    {companyProfile?.shortName || 'SURYALAND'} APPS
+                    {companyProfile?.shortName || 'RBS'} APPS
                   </div>
                   <div className="text-[10px] text-slate-400 font-medium truncate max-w-[170px]">
-                    {companyProfile?.officialName || 'PT. SURYALAND GROUP'}
+                    {companyProfile?.officialName || 'PT. RBS GROUP'}
                   </div>
                 </div>
               </div>
@@ -683,7 +683,7 @@ export const Header: React.FC<HeaderProps> = ({
                 Reset Data ke Default
               </h3>
               <p className="text-xs text-slate-600">
-                Tindakan ini akan mengembalikan data laporan, master alat berat, dan klien ke kondisi awal PT. SURYALAND GROUP.
+                Tindakan ini akan mengembalikan data laporan, master alat berat, dan klien ke kondisi awal PT. RBS GROUP.
               </p>
             </div>
 
