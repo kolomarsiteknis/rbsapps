@@ -134,8 +134,8 @@ export const Header: React.FC<HeaderProps> = ({
         },
         {
           key: 'company-master' as TabKey,
-          label: 'Master Data Perusahaan',
-          subtitle: 'Identitas, Staff TTD & Tim Pendukung',
+          label: 'Identitas Perusahaan',
+          subtitle: 'Profil, Logo, Staff TTD & Tim Pendukung',
           icon: Building2,
           visible: true,
         },
@@ -259,7 +259,7 @@ export const Header: React.FC<HeaderProps> = ({
         {
           key: 'supervisor-tools' as TabKey,
           label: 'Fitur Cepat',
-          subtitle: 'P2H, Geotag, K3 & Kalkulator',
+          subtitle: 'P2H, Solar & Log K3',
           icon: HardHat,
           visible: true,
         },
@@ -353,7 +353,7 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-800/60 border border-slate-700/60">
               <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
               <span className="text-xs font-bold text-slate-200">
-                {navItems.find((item) => item.key === activeTab)?.label || 'Aplikasi'}
+                {navItems.find((item) => item.key === activeTab)?.label || (activeTab === 'company-profile' ? 'Identitas Perusahaan' : 'Aplikasi')}
               </span>
               {isSupervisor ? (
                 <div className="flex items-center gap-1.5 border-l border-slate-700 pl-2">
@@ -544,7 +544,7 @@ export const Header: React.FC<HeaderProps> = ({
                   .filter((item) => item.visible)
                   .map((item) => {
                     const Icon = item.icon;
-                    const isActive = activeTab === item.key;
+                    const isActive = activeTab === item.key || (item.key === 'company-master' && activeTab === 'company-profile');
                     return (
                       <button
                         key={item.key}

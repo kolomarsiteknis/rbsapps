@@ -695,7 +695,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                 type="button"
                 onClick={onNavigateToTools}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 rounded-lg shadow-sm transition-all duration-200 cursor-pointer"
-                title="Buka Fitur Cepat Pengawas: P2H, Geotag Foto, Kalkulator HM, Solar Keliling & Log K3"
+                title="Buka Fitur Cepat Pengawas: P2H, Solar Keliling & Log K3"
               >
                 <HardHat className="w-3.5 h-3.5" />
                 <span>Fitur Cepat</span>

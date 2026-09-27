@@ -45,7 +45,7 @@ import {
   ManagedUserLevel 
 } from '../types';
 import { storageService } from '../services/storageService';
-import { createSimulatedSignatureSvg } from '../data/mockData';
+import { createSimulatedSignatureSvg, createDefaultCompanyLogoSvg } from '../data/mockData';
 import { recordUserActivity } from '../utils/activityLogger';
 
 interface CompanyMasterDataViewProps {
@@ -70,6 +70,13 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
 
   // Active Sub-Tab (1. Identitas & Logo, 2. Staff, TTD Digital & Kredensial User, 3. Personil Tim pendukung)
   const [activeSubTab, setActiveSubTab] = useState<'identity' | 'staff' | 'workers'>(initialSubTab);
+
+  // Synchronize sub-tab when initialSubTab changes from parent
+  useEffect(() => {
+    if (initialSubTab) {
+      setActiveSubTab(initialSubTab);
+    }
+  }, [initialSubTab]);
 
   // =========================================================================
   // 1. IDENTITAS PERUSAHAAN & LOGO APPS STATE
@@ -97,28 +104,52 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
       return;
     }
 
-    if (file.size > 2 * 1024 * 1024) {
-      showToast('Ukuran logo maksimal 2MB untuk performa optimal offline', 'warning');
-      return;
-    }
-
     const reader = new FileReader();
     reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      if (dataUrl) {
-        setProfileForm((prev) => ({ ...prev, logoUrl: dataUrl }));
-        showToast('Logo berhasil dimuat. Klik "Simpan Perubahan Identitas" untuk menerapkan ke seluruh sistem.', 'success');
-      }
+      const result = event.target?.result as string;
+      if (!result) return;
+
+      // Resize / compress via canvas to avoid giant storage payload
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxDim = 400;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height && width > maxDim) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else if (height > maxDim) {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL('image/png', 0.9);
+          setProfileForm((prev) => ({ ...prev, logoUrl: compressedDataUrl }));
+          showToast('Logo berhasil dimuat! Klik "Simpan Perubahan Identitas Perusahaan" untuk menerapkan ke seluruh sistem.', 'success');
+        }
+      };
+      img.src = result;
     };
     reader.readAsDataURL(file);
   };
 
   const handleResetToDefaultLogo = () => {
+    const defaultSvg = createDefaultCompanyLogoSvg(
+      profileForm.shortName || 'SURYALAND',
+      profileForm.officialName || 'PT. SURYALAND GROUP'
+    );
     setProfileForm((prev) => ({
       ...prev,
-      logoUrl: '',
+      logoUrl: defaultSvg,
     }));
-    showToast('Logo direset ke ikon standar aplikasi.', 'info');
+    showToast('Logo direset ke format vektor resmi perusahaan.', 'info');
   };
 
   const handleSaveCompanyProfile = (e: React.FormEvent) => {
@@ -173,6 +204,8 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
   const [staffViewMode, setStaffViewMode] = useState<'grid' | 'table'>('grid');
   const [visiblePasswords, setVisiblePasswords] = useState<{ [staffId: string]: boolean }>({});
   const [copiedStaffId, setCopiedStaffId] = useState<string | null>(null);
+  const [staffToDelete, setStaffToDelete] = useState<CompanyStaff | null>(null);
+  const [workerToDelete, setWorkerToDelete] = useState<Worker | null>(null);
 
   // Unified Single Modal State
   const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
@@ -466,16 +499,83 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
     showToast(`Staff & Akun ${payload.fullName} (@${payload.username}) berhasil disimpan!`, 'success');
   };
 
-  const handleDeleteStaff = (staff: CompanyStaff) => {
-    if ((staff.username && staff.username.toLowerCase() === 'direktur') || staff.username === authUser?.username) {
+  const handleDeleteStaffClick = (staff: CompanyStaff) => {
+    // Validasi akun aktif sendiri
+    const isSelf = 
+      Boolean(staff.username && authUser?.username && staff.username.trim().toLowerCase() === authUser.username.trim().toLowerCase()) ||
+      Boolean(staff.fullName && authUser?.displayName && staff.fullName.trim().toLowerCase() === authUser.displayName.trim().toLowerCase()) ||
+      Boolean(authUser?.id && (staff.id === authUser.id || staff.linkedUserId === authUser.id));
+
+    if (isSelf) {
+      showToast('Akses Ditolak: Anda tidak dapat menghapus akun Anda sendiri yang sedang aktif login.', 'error');
+      return;
+    }
+
+    if (staff.username && staff.username.toLowerCase() === 'direktur') {
       showToast('Akun Direktur Utama aktif tidak dapat dihapus demi keamanan sistem.', 'warning');
       return;
     }
-    if (confirm(`Apakah Anda yakin ingin menghapus data staff & kredensial akun "${staff.fullName}" (@${staff.username || staff.jobRole})?\n\nData identitas, kredensial login, dan spesimen TTD akan dihapus permanen.`)) {
-      storageService.deleteCompanyStaff(staff.id);
-      reloadStaffAndUsers();
-      showToast(`Data staff & akun ${staff.fullName} telah dihapus.`, 'info');
+
+    // Konfirmasi window.confirm sebelum eksekusi penghapusan di UI
+    const confirmed = window.confirm(
+      `Apakah Anda yakin ingin menghapus data staff "${staff.fullName}" (@${staff.username || staff.jobRole})?\n\nData identitas, kredensial login, dan spesimen TTD digital akan dihapus permanen.`
+    );
+    if (!confirmed) {
+      return;
     }
+
+    const success = storageService.deleteStaff(staff.id, authUser);
+    if (!success) {
+      showToast('Gagal menghapus staff: Anda tidak dapat menghapus akun Anda sendiri yang sedang login.', 'error');
+      return;
+    }
+
+    reloadStaffAndUsers();
+    setStaffToDelete(null);
+
+    recordUserActivity({
+      userId: authUser?.id,
+      userName: authUser?.displayName || 'Direktur',
+      userRole: 'director',
+      actionCategory: 'USER_MANAGEMENT',
+      actionTitle: `Hapus Staff & Akun: ${staff.fullName}`,
+      actionDescription: `Menghapus data staff ${staff.fullName} (@${staff.username || staff.jobRole}) beserta kredensial login & spesimen TTD.`,
+      targetEntity: staff.fullName,
+    });
+
+    showToast(`Data staff & akun ${staff.fullName} berhasil dihapus!`, 'success');
+  };
+
+  const executeDeleteStaff = () => {
+    if (!staffToDelete) return;
+    const target = staffToDelete;
+
+    // Konfirmasi window.confirm sebelum eksekusi penghapusan di UI
+    if (!window.confirm(`Konfirmasi akhir: Hapus data staff "${target.fullName}" (@${target.username || target.jobRole}) secara permanen?`)) {
+      return;
+    }
+
+    const success = storageService.deleteStaff(target.id, authUser);
+    if (!success) {
+      showToast('Gagal menghapus: Anda tidak dapat menghapus akun Anda sendiri yang sedang login.', 'error');
+      setStaffToDelete(null);
+      return;
+    }
+
+    reloadStaffAndUsers();
+    setStaffToDelete(null);
+
+    recordUserActivity({
+      userId: authUser?.id,
+      userName: authUser?.displayName || 'Direktur',
+      userRole: 'director',
+      actionCategory: 'USER_MANAGEMENT',
+      actionTitle: `Hapus Staff & Akun: ${target.fullName}`,
+      actionDescription: `Menghapus data staff ${target.fullName} (@${target.username || target.jobRole}) beserta kredensial login & spesimen TTD.`,
+      targetEntity: target.fullName,
+    });
+
+    showToast(`Data staff & akun ${target.fullName} berhasil dihapus!`, 'success');
   };
 
   const handleCopyStaffCredentials = (staff: CompanyStaff) => {
@@ -622,12 +722,28 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
     showToast(`Personil ${newWorker.name} (${newWorker.category}) berhasil disimpan!`, 'success');
   };
 
-  const handleDeleteWorker = (w: Worker) => {
-    if (confirm(`Apakah Anda yakin ingin menghapus personil "${w.name}" (${w.category})?`)) {
-      storageService.deleteWorker(w.id);
-      reloadWorkers();
-      showToast(`Personil ${w.name} telah dihapus.`, 'info');
-    }
+  const handleDeleteWorkerClick = (w: Worker) => {
+    setWorkerToDelete(w);
+  };
+
+  const executeDeleteWorker = () => {
+    if (!workerToDelete) return;
+    const target = workerToDelete;
+    storageService.deleteWorker(target.id);
+    reloadWorkers();
+    setWorkerToDelete(null);
+
+    recordUserActivity({
+      userId: authUser?.id,
+      userName: authUser?.displayName || 'Direktur',
+      userRole: 'director',
+      actionCategory: 'MASTER_DATA',
+      actionTitle: `Hapus Personil: ${target.name}`,
+      actionDescription: `Menghapus data personil ${target.name} (${target.category}) dari Tim Pendukung.`,
+      targetEntity: target.name,
+    });
+
+    showToast(`Personil ${target.name} telah dihapus.`, 'info');
   };
 
   // Filtered workers list
@@ -1215,7 +1331,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleDeleteStaff(staff)}
+                              onClick={() => handleDeleteStaffClick(staff)}
                               className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
                               title="Hapus Staff & Akun"
                             >
@@ -1439,7 +1555,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => handleDeleteStaff(staff)}
+                                  onClick={() => handleDeleteStaffClick(staff)}
                                   className="p-1.5 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
                                   title="Hapus Staff & Akun"
                                 >
@@ -1576,7 +1692,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleDeleteWorker(w)}
+                          onClick={() => handleDeleteWorkerClick(w)}
                           className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
                           title="Hapus Personil"
                         >
@@ -2179,6 +2295,124 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: KONFIRMASI HAPUS DATA STAFF & AKUN USER */}
+      {staffToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl border border-rose-100 space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900 leading-tight">
+                  Hapus Staff & Akun Pengguna
+                </h3>
+                <p className="text-xs text-rose-600 font-bold mt-0.5">
+                  Sub Menu 2: Staff, TTD Digital & Kredensial User
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-500 font-medium">Nama Staff:</span>
+                <span className="font-black text-slate-900">{staffToDelete.fullName}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-500 font-medium">Jabatan:</span>
+                <span className="font-bold text-slate-800">{staffToDelete.jobRole}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-500 font-medium">Username Login:</span>
+                <span className="font-mono font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded border border-sky-200">
+                  @{staffToDelete.username || '-'}
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-500 font-medium">Level Akses:</span>
+                <span className="font-bold text-slate-800">{staffToDelete.userLevel || staffToDelete.staffLevel}</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Apakah Anda yakin ingin menghapus data staff ini? Profil identitas, spesimen tanda tangan digital (TTD), serta akun kredensial login (@{staffToDelete.username || staffToDelete.fullName}) akan dihapus permanen.
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setStaffToDelete(null)}
+                className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 font-bold text-xs transition cursor-pointer"
+              >
+                Batalkan
+              </button>
+              <button
+                type="button"
+                onClick={executeDeleteStaff}
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs shadow-md transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Ya, Hapus Data Staff</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: KONFIRMASI HAPUS PERSONIL TIM PENDUKUNG */}
+      {workerToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl border border-rose-100 space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900 leading-tight">
+                  Hapus Personil Tim Pendukung
+                </h3>
+                <p className="text-xs text-rose-600 font-bold mt-0.5">
+                  Sub Menu 3: Personil Tim Pendukung
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-500 font-medium">Nama Personil:</span>
+                <span className="font-black text-slate-900">{workerToDelete.name}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-500 font-medium">Kategori / Peran:</span>
+                <span className="font-bold text-slate-800">{workerToDelete.category}</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Apakah Anda yakin ingin menghapus personil &ldquo;{workerToDelete.name}&rdquo; dari daftar tim pendukung lapangan?
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setWorkerToDelete(null)}
+                className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 font-bold text-xs transition cursor-pointer"
+              >
+                Batalkan
+              </button>
+              <button
+                type="button"
+                onClick={executeDeleteWorker}
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs shadow-md transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Ya, Hapus Personil</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

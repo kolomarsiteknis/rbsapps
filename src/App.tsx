@@ -675,7 +675,7 @@ export default function App() {
               <ShieldAlert className="w-12 h-12 text-rose-500 mx-auto" />
               <h3 className="font-black text-slate-900 text-base">Akses Khusus Pengawas Lapangan</h3>
               <p className="text-xs text-slate-600">
-                Fitur Cepat Operasional (P2H, Kamera Geotagging, Kalkulator HM, Penerimaan Solar Keliling, dan Log Insiden Lahan) hanya dikhususkan bagi Pengawas Lapangan.
+                Fitur Cepat Operasional (P2H, Penerimaan Solar Keliling, dan Log Insiden Lahan) hanya dikhususkan bagi Pengawas Lapangan.
               </p>
               <button
                 onClick={() => setActiveTab('dashboard')}
@@ -774,8 +774,6 @@ export default function App() {
               companyProfile={companyProfile}
               onUpdateCompanyProfile={(updated) => {
                 setCompanyProfile(updated);
-                storageService.saveCompanyProfile(updated);
-                showToast(`Identitas Perusahaan berhasil diperbarui! Logo dan Nama Singkat (${updated.shortName}) otomatis diterapkan.`, 'success');
               }}
               authUser={authUser}
               showToast={showToast}

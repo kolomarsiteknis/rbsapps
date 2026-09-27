@@ -1,22 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   HardHat,
   ShieldAlert,
-  Camera,
-  Calculator,
-  Fuel,
   AlertTriangle,
-  CheckCircle2,
-  Clock,
   MapPin,
   Calendar,
-  Layers,
   Wrench,
   Truck,
   Plus,
   Trash2,
-  Download,
-  Upload,
   RefreshCw,
   Search,
   Filter,
@@ -24,7 +16,6 @@ import {
   Info,
   ChevronRight,
   ExternalLink,
-  Flame,
   Check,
   X,
   Lock,
@@ -43,8 +34,24 @@ import {
   AuthUser
 } from '../types';
 import { storageService } from '../services/storageService';
-import { applyWatermark, applyBatchWatermarks, getCurrentGpsLocation, GpsLocationResult } from '../utils/watermark';
+import { getCurrentGpsLocation, GpsLocationResult } from '../utils/watermark';
 import { recordUserActivity } from '../utils/activityLogger';
+
+export interface DeleteTargetInfo {
+  type: 'p2h' | 'fuel_bowser' | 'soil_incidents';
+  id: string;
+  title: string;
+  entityName: string;
+  categoryBadge: string;
+  clientId: string;
+  clientName: string;
+  blockCode: string;
+  date: string;
+  time: string;
+  creatorOrOperator: string;
+  summaryDetails: { label: string; value: string; isBold?: boolean }[];
+  warningNote: string;
+}
 
 interface SupervisorToolsViewProps {
   authUser: AuthUser | null;
@@ -70,14 +77,14 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
         <ShieldAlert className="w-12 h-12 text-rose-500 mx-auto" />
         <h3 className="font-black text-slate-900 text-base">Akses Khusus Pengawas Lapangan</h3>
         <p className="text-xs text-slate-600">
-          Halaman Fitur Cepat (P2H Pra-Operasi, Smart Geotag Camera, Kalkulator HM Discrepancy, Penerimaan Solar Bowser, dan Log Insiden Lahan) hanya tersedia bagi Pengawas Lapangan.
+          Halaman Fitur Cepat (P2H Pra-Operasi, Penerimaan Solar Bowser, dan Log Insiden Lahan) hanya tersedia bagi Pengawas Lapangan.
         </p>
       </div>
     );
   }
 
   // Active sub-tab
-  const [activeSubTab, setActiveSubTab] = useState<'p2h' | 'camera' | 'hm_calc' | 'fuel_bowser' | 'soil_incidents'>('p2h');
+  const [activeSubTab, setActiveSubTab] = useState<'p2h' | 'fuel_bowser' | 'soil_incidents'>('p2h');
 
   // Master Data
   const [equipments, setEquipments] = useState<Equipment[]>(() => storageService.getEquipments());
@@ -121,6 +128,25 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
   useEffect(() => {
     refreshGpsLocation();
   }, []);
+
+  // Real-time Firestore synchronizer for instant multi-user consistency
+  useEffect(() => {
+    const handleFirestoreSync = () => {
+      setP2hList(loadFilteredP2H());
+      setBowserReceipts(loadFilteredBowser());
+      setSoilIncidents(loadFilteredIncidents());
+    };
+    window.addEventListener('suryaland_firestore_sync', handleFirestoreSync);
+    return () => {
+      window.removeEventListener('suryaland_firestore_sync', handleFirestoreSync);
+    };
+  }, [activeClientId, assignedBlockCodes]);
+
+  // Security Validation & Deletion Confirmation State
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTargetInfo | null>(null);
+  const [deleteSecurityInput, setDeleteSecurityInput] = useState<string>('');
+  const [deleteAgreedCheckbox, setDeleteAgreedCheckbox] = useState<boolean>(false);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
   // =========================================================================
   // 1. P2H INSPEKSI HARIAN ALAT BERAT STATE
@@ -241,202 +267,36 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
     showToast(`Checklist P2H ${newP2H.equipmentId} berhasil disimpan! Status: ${status}`, status === 'Stop Operasi (Butuh Mekanik)' ? 'warning' : 'success');
   };
 
-  const handleDeleteP2H = (id: string) => {
-    if (confirm('Hapus lembar checklist P2H ini?')) {
-      storageService.deleteP2HChecklist(id, authUser);
-      setP2hList(loadFilteredP2H());
-      showToast('Data P2H berhasil dihapus', 'info');
-    }
+  const requestDeleteP2H = (item: DailyP2HChecklist) => {
+    setDeleteSecurityInput('');
+    setDeleteAgreedCheckbox(false);
+    setDeleteTarget({
+      type: 'p2h',
+      id: item.id,
+      title: 'Lembar Checklist P2H Pra-Operasi',
+      entityName: `${item.equipmentId} - ${item.equipmentName}`,
+      categoryBadge: '1. P2H Pra-Operasi',
+      clientId: item.clientId,
+      clientName: item.clientName,
+      blockCode: item.blockCode,
+      date: item.date,
+      time: item.time,
+      creatorOrOperator: `Operator: ${item.operatorName} | Pengawas: ${item.supervisorName}`,
+      summaryDetails: [
+        { label: 'ID Dokumen', value: item.id },
+        { label: 'Unit Alat Berat', value: `${item.equipmentId} (${item.equipmentName})`, isBold: true },
+        { label: 'Lokasi & Klien', value: `${item.blockCode} • ${item.clientName}` },
+        { label: 'HM Awal Unit', value: `${item.hmStart.toFixed(1)} HM` },
+        { label: 'Status Kelayakan', value: item.overallStatus, isBold: true },
+        { label: 'Waktu Inspeksi', value: `${item.date} ${item.time} WIB` },
+      ],
+      warningNote: 'Lembar pemeriksaan kelayakan harian alat berat pagi hari ini akan dihapus permanen dari sistem.',
+    });
   };
+
 
   // =========================================================================
-  // 2. SMART OFFLINE CAMERA & BATCH GEOTAGGING STATE
-  // =========================================================================
-  const [cameraCategory, setCameraCategory] = useState<string>('Progres Tumbang-Cincang (Stacking)');
-  const [cameraBlockCode, setCameraBlockCode] = useState<string>(() => clientBlocks[0]?.code || 'Blok AB');
-  const [cameraEquipmentId, setCameraEquipmentId] = useState<string>('EX-01');
-  const [cameraNotes, setCameraNotes] = useState<string>('');
-  const [isProcessingBatch, setIsProcessingBatch] = useState<boolean>(false);
-  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
-
-  interface ProcessedWatermarkedPhoto {
-    id: string;
-    fileName: string;
-    dataUrl: string;
-    lat: number;
-    lng: number;
-    accuracy: number;
-    timestamp: string;
-    category: string;
-    blockCode: string;
-    equipmentId: string;
-    clientName: string;
-  }
-
-  const loadFilteredPhotos = (): ProcessedWatermarkedPhoto[] => {
-    const list = storageService.getGeotagPhotos(activeClientId);
-    return list
-      .filter((p) => {
-        if (p.clientId && p.clientId !== activeClientId) return false;
-        if (assignedBlockCodes && p.blockCode && !assignedBlockCodes.includes(p.blockCode)) return false;
-        return true;
-      })
-      .map((p) => ({
-        id: p.id,
-        fileName: p.fileName,
-        dataUrl: p.dataUrl,
-        lat: p.lat,
-        lng: p.lng,
-        accuracy: p.accuracy,
-        timestamp: p.timestamp,
-        category: p.category,
-        blockCode: p.blockCode,
-        equipmentId: p.equipmentId || 'EX-01',
-        clientName: p.clientName,
-      }));
-  };
-
-  const [capturedPhotos, setCapturedPhotos] = useState<ProcessedWatermarkedPhoto[]>(() => loadFilteredPhotos());
-
-  const fileInputBatchRef = useRef<HTMLInputElement>(null);
-  const fileInputCameraRef = useRef<HTMLInputElement>(null);
-
-  const handleBatchFilesUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    setIsProcessingBatch(true);
-    setBatchProgress({ current: 0, total: files.length });
-
-    try {
-      const activeClient = clients.find((c) => c.id === activeClientId) || clients[0];
-      const fileList = Array.from(files);
-
-      const watermarkedList = await applyBatchWatermarks(
-        fileList,
-        {
-          companyName: 'PT. RBS GROUP',
-          clientName: activeClient?.name || 'PT. A',
-          blockCode: cameraBlockCode,
-          equipmentId: cameraEquipmentId,
-          category: cameraCategory,
-        },
-        (current, total) => {
-          setBatchProgress({ current, total });
-        }
-      );
-
-      const newItems: ProcessedWatermarkedPhoto[] = watermarkedList.map((item, idx) => ({
-        id: `photo-${Date.now()}-${idx}`,
-        fileName: item.fileName,
-        dataUrl: item.dataUrl,
-        lat: item.lat,
-        lng: item.lng,
-        accuracy: item.accuracy,
-        timestamp: item.timestamp,
-        category: cameraCategory,
-        blockCode: cameraBlockCode,
-        equipmentId: cameraEquipmentId,
-        clientName: activeClient?.name || 'PT. A',
-      }));
-
-      // Save each to persistent storage
-      newItems.forEach((it) => {
-        storageService.saveGeotagPhoto({
-          id: it.id,
-          fileName: it.fileName,
-          dataUrl: it.dataUrl,
-          lat: it.lat,
-          lng: it.lng,
-          accuracy: it.accuracy,
-          timestamp: it.timestamp,
-          category: it.category,
-          blockCode: it.blockCode,
-          equipmentId: it.equipmentId,
-          clientId: activeClient?.id,
-          clientName: it.clientName,
-          supervisorName: authUser?.displayName || 'Pengawas Lapangan',
-        }, authUser);
-      });
-
-      setCapturedPhotos((prev) => [...newItems, ...prev]);
-
-      // Record activity
-      recordUserActivity({
-        userId: authUser?.id,
-        userName: authUser?.displayName || 'Pengawas Lapangan',
-        userRole: 'supervisor',
-        userEmail: authUser?.email,
-        actionCategory: 'CAMERA_GEOTAG',
-        actionTitle: `Ambil ${watermarkedList.length} Foto Geotagging GPS`,
-        actionDescription: `Mengambil foto ber-watermark satelit GPS kategori ${cameraCategory} di ${cameraBlockCode}.`,
-        targetEntity: `${watermarkedList.length} Foto (${cameraBlockCode})`,
-        clientId: activeClient?.id,
-        clientName: activeClient?.name,
-        blockCode: cameraBlockCode,
-        customCoordinates: {
-          lat: currentGps.lat,
-          lng: currentGps.lng,
-          accuracy: currentGps.accuracy,
-          locationName: `${cameraBlockCode}, ${activeClient?.name || 'Estate Riau'}`,
-        },
-      });
-
-      showToast(`Sukses memproses ${watermarkedList.length} foto dengan Geotag GPS & Watermark permanen!`, 'success');
-    } catch (err) {
-      console.error(err);
-      showToast('Gagal memproses watermark foto.', 'warning');
-    } finally {
-      setIsProcessingBatch(false);
-      if (fileInputBatchRef.current) fileInputBatchRef.current.value = '';
-      if (fileInputCameraRef.current) fileInputCameraRef.current.value = '';
-    }
-  };
-
-  const handleDownloadPhoto = (photo: ProcessedWatermarkedPhoto) => {
-    const a = document.createElement('a');
-    a.href = photo.dataUrl;
-    a.download = `RBS_GEOTAG_${photo.blockCode}_${photo.fileName}`;
-    a.click();
-  };
-
-  const handleDeletePhoto = (id: string) => {
-    storageService.deleteGeotagPhoto(id, authUser);
-    setCapturedPhotos((prev) => prev.filter((p) => p.id !== id));
-    showToast('Foto dihapus dari galeri', 'info');
-  };
-
-  // =========================================================================
-  // 3. KALKULATOR OTOMATIS HM & DISCREPANCY ALERT STATE
-  // =========================================================================
-  const [calcEqId, setCalcEqId] = useState<string>(() => equipments[0]?.id || 'EX-01');
-  const selectedCalcEq = equipments.find((e) => e.id === calcEqId);
-
-  const [calcHmStart, setCalcHmStart] = useState<number>(2840.0);
-  const [calcHmEnd, setCalcHmEnd] = useState<number>(2848.0);
-  const [calcWorkHours, setCalcWorkHours] = useState<number>(7.0);
-  const [calcWeatherHours, setCalcWeatherHours] = useState<number>(1.0);
-  const [calcBreakdownHours, setCalcBreakdownHours] = useState<number>(0.0);
-  const [calcOtherHours, setCalcOtherHours] = useState<number>(0.0);
-  const [calcFuelAdded, setCalcFuelAdded] = useState<number>(130);
-
-  // Calculations
-  const calcTotalHm = Math.max(0, Number((calcHmEnd - calcHmStart).toFixed(1)));
-  const calcTotalLoggedHours = Number((calcWorkHours + calcWeatherHours + calcBreakdownHours + calcOtherHours).toFixed(1));
-  const calcDiscrepancy = Number((calcTotalHm - calcTotalLoggedHours).toFixed(1));
-  const calcFuelRatio = calcWorkHours > 0 ? Number((calcFuelAdded / calcWorkHours).toFixed(2)) : 0;
-  const isFuelOverStandard = calcFuelRatio > (selectedCalcEq?.standardFuelRatio || 18.0);
-
-  // Auto-sync function
-  const handleAutoSyncLoggedHours = () => {
-    // Adjust effective work hours so total matches total Hm
-    const available = Math.max(0, Number((calcTotalHm - (calcWeatherHours + calcBreakdownHours + calcOtherHours)).toFixed(1)));
-    setCalcWorkHours(available);
-    showToast(`Jam Kerja Efektif disesuaikan otomatis menjadi ${available} Jam agar sesuai Total HM ${calcTotalHm}`, 'success');
-  };
-
-  // =========================================================================
-  // 4. FORM CEPAT PENERIMAAN SOLAR KELILING (FUEL BOWSER) STATE
+  // 2. FORM CEPAT PENERIMAAN SOLAR KELILING (FUEL BOWSER) STATE
   // =========================================================================
   const loadFilteredBowser = () => {
     const raw = storageService.getFuelBowserReceipts(activeClientId);
@@ -529,22 +389,36 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
     showToast(`Penerimaan solar keliling ${newReceipt.totalLitersFilled} L untuk ${newReceipt.equipmentId} berhasil dicatat & masuk riwayat logistik!`, 'success');
   };
 
-  const handleDeleteBowser = (id: string) => {
-    const target = bowserReceipts.find((r) => r.id === id);
-    if (!target) return;
-    if (target.clientId !== activeClientId || (assignedBlockCodes && !assignedBlockCodes.includes(target.blockCode))) {
-      showToast('Akses Ditolak: Anda tidak berhak menghapus data di luar penempatan tugas Anda!', 'warning');
-      return;
-    }
-    if (confirm('Hapus bukti penerimaan solar keliling ini?')) {
-      storageService.deleteFuelBowserReceipt(id, authUser);
-      setBowserReceipts(loadFilteredBowser());
-      showToast('Data penerimaan solar dihapus', 'info');
-    }
+  const requestDeleteBowser = (b: FuelBowserReceipt) => {
+    setDeleteSecurityInput('');
+    setDeleteAgreedCheckbox(false);
+    setDeleteTarget({
+      type: 'fuel_bowser',
+      id: b.id,
+      title: 'Bukti Penerimaan Solar Keliling (Fuel Bowser)',
+      entityName: `${b.equipmentId} (${b.equipmentName}) • +${b.totalLitersFilled.toLocaleString()} L`,
+      categoryBadge: '2. Penerimaan Solar Keliling',
+      clientId: b.clientId,
+      clientName: b.clientName,
+      blockCode: b.blockCode,
+      date: b.date,
+      time: b.time,
+      creatorOrOperator: `Supir: ${b.bowserDriverName} | Pengawas: ${b.supervisorName}`,
+      summaryDetails: [
+        { label: 'No. Bukti / ID', value: b.id },
+        { label: 'Unit Pengisian', value: `${b.equipmentId} (${b.equipmentName})`, isBold: true },
+        { label: 'Volume BBM Terisi', value: `+${b.totalLitersFilled.toLocaleString()} Liter (Solar B35)`, isBold: true },
+        { label: 'Truk & No. Segel', value: `${b.bowserTruckId} (Segel: ${b.sealNumber})` },
+        { label: 'Flowmeter Tangki', value: `${b.flowmeterStart.toLocaleString()} → ${b.flowmeterEnd.toLocaleString()}` },
+        { label: 'Lokasi & Klien', value: `${b.blockCode} • ${b.clientName}` },
+        { label: 'Waktu Pengisian', value: `${b.date} ${b.time} WIB` },
+      ],
+      warningNote: 'Bukti pengisian solar keliling ini akan dibatalkan dan dihapus permanen dari register riwayat logistik lapangan.',
+    });
   };
 
   // =========================================================================
-  // 5. LOG INSIDEN LAPANGAN & KONDISI TANAH (SAFETY & SOIL HAZARD LOG) STATE
+  // 3. LOG INSIDEN LAPANGAN & KONDISI TANAH (SAFETY & SOIL HAZARD LOG) STATE
   // =========================================================================
   const loadFilteredIncidents = () => {
     const raw = storageService.getSoilIncidents(activeClientId);
@@ -630,17 +504,135 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
     showToast(`Log Insiden & Kondisi Tanah ${newInc.incidentType} berhasil dicatat (Durasi Evakuasi: ${newInc.evacuationDurationHours} Jam)!`, 'success');
   };
 
-  const handleDeleteIncident = (id: string) => {
-    const target = soilIncidents.find((i) => i.id === id);
-    if (!target) return;
-    if (target.clientId !== activeClientId || (assignedBlockCodes && !assignedBlockCodes.includes(target.blockCode))) {
-      showToast('Akses Ditolak: Anda tidak berhak menghapus data di luar penempatan tugas Anda!', 'warning');
+  const requestDeleteIncident = (inc: SoilHazardIncident) => {
+    setDeleteSecurityInput('');
+    setDeleteAgreedCheckbox(false);
+    setDeleteTarget({
+      type: 'soil_incidents',
+      id: inc.id,
+      title: 'Log Insiden Lapangan & Bahaya Gambut K3',
+      entityName: `${inc.incidentType} (${inc.affectedEquipmentId})`,
+      categoryBadge: '3. Log Insiden & Gambut K3',
+      clientId: inc.clientId,
+      clientName: inc.clientName,
+      blockCode: inc.blockCode,
+      date: inc.date,
+      time: inc.time,
+      creatorOrOperator: `Operator: ${inc.operatorName} | Pelapor: ${inc.supervisorName}`,
+      summaryDetails: [
+        { label: 'ID Log Insiden', value: inc.id },
+        { label: 'Jenis Insiden', value: inc.incidentType, isBold: true },
+        { label: 'Tingkat Bahaya', value: inc.severity, isBold: true },
+        { label: 'Unit Terdampak', value: `${inc.affectedEquipmentId} (${inc.affectedEquipmentName})` },
+        { label: 'Alat Evakuasi & Durasi', value: `${inc.rescuingEquipmentId || '-'} (${inc.evacuationDurationHours} Jam)` },
+        { label: 'Lokasi & Klien', value: `${inc.blockCode} • ${inc.clientName}` },
+        { label: 'Kondisi Tanah', value: inc.soilCondition },
+      ],
+      warningNote: 'Catatan keselamatan kerja dan durasi evakuasi alat amblas ini akan dihapus permanen dari register K3 perusahaan.',
+    });
+  };
+
+  const cancelDelete = () => {
+    setDeleteTarget(null);
+    setDeleteSecurityInput('');
+    setDeleteAgreedCheckbox(false);
+    setIsDeleting(false);
+  };
+
+  const executeConfirmedDeletion = () => {
+    if (!deleteTarget) return;
+
+    if (!deleteAgreedCheckbox) {
+      showToast('Validasi Keamanan: Anda wajib mencentang persetujuan konfirmasi penghapusan.', 'warning');
       return;
     }
-    if (confirm('Hapus log insiden ini?')) {
-      storageService.deleteSoilIncident(id, authUser);
-      setSoilIncidents(loadFilteredIncidents());
-      showToast('Log insiden dihapus', 'info');
+
+    if (deleteSecurityInput.trim().toUpperCase() !== 'HAPUS') {
+      showToast('Validasi Keamanan: Ketik kata "HAPUS" dengan benar untuk membuka kunci otorisasi.', 'warning');
+      return;
+    }
+
+    setIsDeleting(true);
+
+    try {
+      const { type, id, entityName, clientId, clientName, blockCode } = deleteTarget;
+
+      if (type === 'p2h') {
+        const deleted = storageService.deleteP2HChecklist(id, authUser);
+        if (!deleted) {
+          const all = storageService.getP2HChecklists();
+          const filtered = all.filter((x) => x.id !== id);
+          localStorage.setItem('suryaland_p2h_checklists_v1', JSON.stringify(filtered));
+        }
+        setP2hList(loadFilteredP2H());
+        recordUserActivity({
+          userId: authUser?.id,
+          userName: authUser?.displayName || 'Pengawas Lapangan',
+          userRole: authUser?.role || 'supervisor',
+          userEmail: authUser?.email,
+          actionCategory: 'P2H',
+          actionTitle: `Hapus Checklist P2H: ${entityName}`,
+          actionDescription: `Menghapus lembar checklist P2H ${id} (${entityName}) di ${blockCode}, ${clientName} setelah validasi keamanan terkonfirmasi.`,
+          targetEntity: `${id} (${entityName})`,
+          clientId,
+          clientName,
+          blockCode,
+        });
+        showToast(`Lembar P2H "${entityName}" berhasil dihapus permanen!`, 'success');
+      } else if (type === 'fuel_bowser') {
+        const deleted = storageService.deleteFuelBowserReceipt(id, authUser);
+        if (!deleted) {
+          const all = storageService.getFuelBowserReceipts();
+          const filtered = all.filter((x) => x.id !== id);
+          localStorage.setItem('suryaland_fuel_bowser_v1', JSON.stringify(filtered));
+        }
+        setBowserReceipts(loadFilteredBowser());
+        recordUserActivity({
+          userId: authUser?.id,
+          userName: authUser?.displayName || 'Pengawas Lapangan',
+          userRole: authUser?.role || 'supervisor',
+          userEmail: authUser?.email,
+          actionCategory: 'FUEL_BOWSER',
+          actionTitle: `Hapus Penerimaan Solar Bowser: ${entityName}`,
+          actionDescription: `Menghapus bukti penerimaan solar tangki ${id} (${entityName}) di ${blockCode}, ${clientName} setelah validasi keamanan terkonfirmasi.`,
+          targetEntity: `${id} (${entityName})`,
+          clientId,
+          clientName,
+          blockCode,
+        });
+        showToast(`Bukti penerimaan solar "${entityName}" berhasil dihapus!`, 'success');
+      } else if (type === 'soil_incidents') {
+        const deleted = storageService.deleteSoilIncident(id, authUser);
+        if (!deleted) {
+          const all = storageService.getSoilIncidents();
+          const filtered = all.filter((x) => x.id !== id);
+          localStorage.setItem('suryaland_soil_incidents_v1', JSON.stringify(filtered));
+        }
+        setSoilIncidents(loadFilteredIncidents());
+        recordUserActivity({
+          userId: authUser?.id,
+          userName: authUser?.displayName || 'Pengawas Lapangan',
+          userRole: authUser?.role || 'supervisor',
+          userEmail: authUser?.email,
+          actionCategory: 'INCIDENT_K3',
+          actionTitle: `Hapus Log Insiden K3: ${entityName}`,
+          actionDescription: `Menghapus catatan insiden lahan/K3 ${id} (${entityName}) di ${blockCode}, ${clientName} setelah validasi keamanan terkonfirmasi.`,
+          targetEntity: `${id} (${entityName})`,
+          clientId,
+          clientName,
+          blockCode,
+        });
+        showToast(`Log insiden K3 "${entityName}" berhasil dihapus!`, 'success');
+      }
+
+      setDeleteTarget(null);
+      setDeleteSecurityInput('');
+      setDeleteAgreedCheckbox(false);
+    } catch (err: any) {
+      console.error('Delete execution error:', err);
+      showToast(`Gagal menghapus: ${err?.message || 'Terjadi kesalahan sistem'}`, 'warning');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -699,7 +691,7 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
         </div>
       </div>
 
-      {/* Navigation Sub-Tabs: 5 Fitur Utama Pengawas */}
+      {/* Navigation Sub-Tabs: 3 Fitur Utama Pengawas */}
       <div className="flex overflow-x-auto gap-2 p-1.5 bg-slate-200/80 rounded-2xl border border-slate-300">
         <button
           onClick={() => setActiveSubTab('p2h')}
@@ -714,30 +706,6 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
         </button>
 
         <button
-          onClick={() => setActiveSubTab('camera')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer whitespace-nowrap ${
-            activeSubTab === 'camera'
-              ? 'bg-amber-500 text-slate-950 shadow-md'
-              : 'bg-white text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-          }`}
-        >
-          <Camera className="w-4 h-4" />
-          <span>2. Smart Offline Camera & Geotag</span>
-        </button>
-
-        <button
-          onClick={() => setActiveSubTab('hm_calc')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer whitespace-nowrap ${
-            activeSubTab === 'hm_calc'
-              ? 'bg-amber-500 text-slate-950 shadow-md'
-              : 'bg-white text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-          }`}
-        >
-          <Calculator className="w-4 h-4" />
-          <span>3. Kalkulator HM & Discrepancy Alert</span>
-        </button>
-
-        <button
           onClick={() => setActiveSubTab('fuel_bowser')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer whitespace-nowrap ${
             activeSubTab === 'fuel_bowser'
@@ -746,7 +714,7 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
           }`}
         >
           <Truck className="w-4 h-4" />
-          <span>4. Penerimaan Solar Keliling ({bowserReceipts.length})</span>
+          <span>2. Penerimaan Solar Keliling ({bowserReceipts.length})</span>
         </button>
 
         <button
@@ -758,7 +726,7 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
           }`}
         >
           <AlertTriangle className="w-4 h-4" />
-          <span>5. Log Insiden & Gambut K3 ({soilIncidents.length})</span>
+          <span>3. Log Insiden & Gambut K3 ({soilIncidents.length})</span>
         </button>
       </div>
 
@@ -879,9 +847,11 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
                       </button>
 
                       <button
-                        onClick={() => handleDeleteP2H(item.id)}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 transition cursor-pointer"
-                        title="Hapus lembar P2H"
+                        type="button"
+                        onClick={() => requestDeleteP2H(item)}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                        title={`Hapus lembar P2H ${item.equipmentId}`}
+                        aria-label={`Hapus lembar P2H ${item.equipmentId}`}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -894,439 +864,9 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
         </div>
       )}
 
-      {/* =========================================================================
-          TAB 2: SMART OFFLINE CAMERA & BATCH PHOTO GEOTAGGING
-          ========================================================================= */}
-      {activeSubTab === 'camera' && (
-        <div className="space-y-6">
-          <div className="bg-white rounded-2xl p-5 shadow-lg border border-slate-200 space-y-4">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-3 border-b border-slate-100">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="p-1.5 bg-amber-100 text-amber-900 rounded-lg">
-                    <Camera className="w-4 h-4" />
-                  </span>
-                  <h3 className="text-base font-black text-slate-900 uppercase">
-                    Smart Offline Camera & Batch Photo Geotagging
-                  </h3>
-                </div>
-                <p className="text-xs text-slate-600 mt-1">
-                  Ambil atau unggah foto progres tumbang-cincang (*stacking*), parit batas, dan kondisi lahan secara beruntun (*batch*). Koordinat GPS, akurasi meter, tanggal, dan nama klien otomatis tercetak permanen ke foto tanpa butuh koneksi internet.
-                </p>
-              </div>
-
-              {/* Status GPS badge */}
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900 text-white rounded-xl text-xs font-mono shrink-0">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>GPS: {currentGps.lat.toFixed(5)}, {currentGps.lng.toFixed(5)}</span>
-                <span className="text-amber-400 font-bold">(±{currentGps.accuracy}m)</span>
-              </div>
-            </div>
-
-            {/* Quick Setup Form before taking photos */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Tahap Pekerjaan / Kategori:</label>
-                <select
-                  value={cameraCategory}
-                  onChange={(e) => setCameraCategory(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-medium"
-                >
-                  <option value="Progres Tumbang-Cincang (Stacking)">Progres Tumbang-Cincang (Stacking)</option>
-                  <option value="Pembuatan Parit Batas (Trenching)">Pembuatan Parit Batas (Trenching)</option>
-                  <option value="Rintis & Imas Jalur Tanam">Rintis & Imas Jalur Tanam</option>
-                  <option value="Kondisi Gambut & Drainase">Kondisi Gambut & Drainase</option>
-                  <option value="Operasi Unit Alat Berat">Operasi Unit Alat Berat</option>
-                  <option value="Pemeriksaan BBM & Pelumas">Pemeriksaan BBM & Pelumas</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Lokasi Blok Kerja:</label>
-                <select
-                  value={cameraBlockCode}
-                  onChange={(e) => setCameraBlockCode(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-medium"
-                >
-                  {clientBlocks.map((b) => (
-                    <option key={b.id} value={b.code}>
-                      {b.code} ({b.targetAreaHa} Ha)
-                    </option>
-                  ))}
-                  {clientBlocks.length === 0 && <option value="Blok AB">Blok AB</option>}
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Unit Alat Berat Terkait:</label>
-                <select
-                  value={cameraEquipmentId}
-                  onChange={(e) => setCameraEquipmentId(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-medium"
-                >
-                  {equipments.map((eq) => (
-                    <option key={eq.id} value={eq.id}>
-                      {eq.id} - {eq.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Catatan Tambahan Watermark:</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Sub-blok 12 rintisan sawit"
-                  value={cameraNotes}
-                  onChange={(e) => setCameraNotes(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-medium"
-                />
-              </div>
-            </div>
-
-            {/* Action Buttons: Open Camera vs Batch Upload */}
-            <div className="flex flex-wrap items-center gap-3 pt-2">
-              {/* Direct Camera Input */}
-              <input
-                ref={fileInputCameraRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                onChange={handleBatchFilesUpload}
-                className="hidden"
-                id="camera-direct-input"
-              />
-              <label
-                htmlFor="camera-direct-input"
-                className="flex items-center gap-2 px-5 py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs shadow-md transition cursor-pointer"
-              >
-                <Camera className="w-5 h-5" />
-                <span>Buka Kamera Lahan (Langsung Ambil Foto)</span>
-              </label>
-
-              {/* Batch Upload from Device Gallery */}
-              <input
-                ref={fileInputBatchRef}
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={handleBatchFilesUpload}
-                className="hidden"
-                id="camera-batch-input"
-              />
-              <label
-                htmlFor="camera-batch-input"
-                className="flex items-center gap-2 px-5 py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs shadow-md transition cursor-pointer"
-              >
-                <Upload className="w-5 h-5 text-amber-400" />
-                <span>Unggah Batch Sekaligus (Pilih 1-10 Foto)</span>
-              </label>
-
-              {isProcessingBatch && (
-                <div className="flex items-center gap-2 text-xs font-bold text-amber-700 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200">
-                  <RefreshCw className="w-4 h-4 animate-spin text-amber-600" />
-                  <span>
-                    Mencetak Watermark GPS Permanen ({batchProgress.current} / {batchProgress.total} Foto)...
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Photo Gallery Grid */}
-          <div className="bg-white rounded-2xl p-5 shadow-lg border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <h4 className="font-bold text-slate-900 text-sm">
-                Galeri Hasil Foto Ber-Watermark GPS ({capturedPhotos.length} Foto Siap Cetak / Lampirkan)
-              </h4>
-              <span className="text-xs text-slate-500">Cap Watermark Tertanam Permanen di Kanvas Foto</span>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {capturedPhotos.map((photo) => (
-                <div key={photo.id} className="bg-slate-900 rounded-xl overflow-hidden shadow border border-slate-800 flex flex-col justify-between">
-                  <div className="relative group">
-                    <img
-                      src={photo.dataUrl}
-                      alt={photo.fileName}
-                      className="w-full h-52 object-cover object-center"
-                    />
-                    <div className="absolute top-2 left-2 bg-slate-950/80 backdrop-blur-xs text-white text-[10px] font-mono px-2 py-0.5 rounded border border-slate-700">
-                      📍 {photo.lat.toFixed(5)}, {photo.lng.toFixed(5)} (±{photo.accuracy}m)
-                    </div>
-                  </div>
-
-                  <div className="p-3 text-white space-y-2">
-                    <div className="flex justify-between items-start text-xs">
-                      <div>
-                        <strong className="block text-amber-400 font-bold truncate max-w-[200px]">
-                          {photo.fileName}
-                        </strong>
-                        <span className="text-[11px] text-slate-300">
-                          {photo.category} • {photo.blockCode}
-                        </span>
-                      </div>
-                      <span className="font-mono text-[10px] bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded">
-                        {photo.equipmentId}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs">
-                      <button
-                        onClick={() => handleDownloadPhoto(photo)}
-                        className="flex items-center gap-1 text-amber-400 hover:text-amber-300 font-bold cursor-pointer"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>Unduh Foto</span>
-                      </button>
-
-                      <button
-                        onClick={() => handleDeletePhoto(photo.id)}
-                        className="text-slate-400 hover:text-rose-400 p-1 cursor-pointer"
-                        title="Hapus foto"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* =========================================================================
-          TAB 3: KALKULATOR OTOMATIS HM & DISCREPANCY ALERT
-          ========================================================================= */}
-      {activeSubTab === 'hm_calc' && (
-        <div className="space-y-6">
-          <div className="bg-white rounded-2xl p-5 shadow-lg border border-slate-200 space-y-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="p-1.5 bg-amber-100 text-amber-900 rounded-lg">
-                  <Calculator className="w-4 h-4" />
-                </span>
-                <h3 className="text-base font-black text-slate-900 uppercase">
-                  Kalkulator Otomatis HM & Discrepancy Alert (Pencegah Salah Catat)
-                </h3>
-              </div>
-              <p className="text-xs text-slate-600 mt-1 max-w-3xl">
-                Alat bantu otomatis untuk mencocokkan putaran Hour Meter (HM) fisik alat berat terhadap jam kerja efektif dan jam mati (*downtime* cuaca/kerusakan). Jika ada selisih waktu yang tidak masuk akal (mismatch), sistem langsung memberi peringatan sebelum laporan resmi diajukan.
-              </p>
-            </div>
-
-            {/* Selector Unit Alat */}
-            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 text-xs">
-              <span className="font-bold text-slate-700">Pilih Unit Alat Berat untuk Simulasi / Validasi:</span>
-              <div className="flex flex-wrap gap-1.5">
-                {equipments.map((eq) => (
-                  <button
-                    key={eq.id}
-                    onClick={() => {
-                      setCalcEqId(eq.id);
-                      setCalcHmStart(eq.currentHm);
-                      setCalcHmEnd(eq.currentHm + 8.0);
-                    }}
-                    className={`px-3 py-1.5 rounded-lg font-bold font-mono transition cursor-pointer ${
-                      calcEqId === eq.id
-                        ? 'bg-slate-900 text-amber-400 shadow'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    {eq.id} ({eq.type})
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Interactive Calculator Workspace */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
-              {/* Left Column: Input Parameter */}
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
-                <h4 className="font-black text-xs uppercase text-slate-900 tracking-wide flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-amber-600" />
-                  <span>1. Angka Hour Meter (HM Fisik Mesin)</span>
-                </h4>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">HM Awal Pagi:</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={calcHmStart}
-                      onChange={(e) => setCalcHmStart(parseFloat(e.target.value) || 0)}
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-mono font-bold text-sm text-slate-900"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">HM Akhir Sore:</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={calcHmEnd}
-                      onChange={(e) => setCalcHmEnd(parseFloat(e.target.value) || 0)}
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-mono font-bold text-sm text-slate-900"
-                    />
-                  </div>
-                </div>
-
-                <div className="p-3 bg-amber-100/70 border border-amber-300 rounded-lg flex items-center justify-between font-mono">
-                  <span className="text-xs font-bold text-amber-950">Total Putaran Mesin (Δ HM):</span>
-                  <span className="text-lg font-black text-amber-950">{calcTotalHm.toFixed(1)} Jam</span>
-                </div>
-
-                <h4 className="font-black text-xs uppercase text-slate-900 tracking-wide pt-2 border-t border-slate-200 flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-amber-600" />
-                  <span>2. Rincian Jam Kerja & Jam Mati (*Downtime*)</span>
-                </h4>
-
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">Jam Kerja Efektif (Ha):</label>
-                    <input
-                      type="number"
-                      step="0.5"
-                      value={calcWorkHours}
-                      onChange={(e) => setCalcWorkHours(parseFloat(e.target.value) || 0)}
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-mono font-bold"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">Jam Mati Cuaca (Hujan):</label>
-                    <input
-                      type="number"
-                      step="0.5"
-                      value={calcWeatherHours}
-                      onChange={(e) => setCalcWeatherHours(parseFloat(e.target.value) || 0)}
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-mono font-bold"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">Jam Mati Rusak (Breakdown):</label>
-                    <input
-                      type="number"
-                      step="0.5"
-                      value={calcBreakdownHours}
-                      onChange={(e) => setCalcBreakdownHours(parseFloat(e.target.value) || 0)}
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-mono font-bold"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">Jam Mati Lainnya (Tunggu/dll):</label>
-                    <input
-                      type="number"
-                      step="0.5"
-                      value={calcOtherHours}
-                      onChange={(e) => setCalcOtherHours(parseFloat(e.target.value) || 0)}
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-mono font-bold"
-                    />
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t border-slate-200">
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Pengisian Solar (Liter):</label>
-                  <input
-                    type="number"
-                    value={calcFuelAdded}
-                    onChange={(e) => setCalcFuelAdded(parseFloat(e.target.value) || 0)}
-                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-mono font-bold text-xs"
-                  />
-                </div>
-              </div>
-
-              {/* Right Column: Diagnostic Output & Alert Engine */}
-              <div className="space-y-4">
-                {/* DISCREPANCY ALERT CARD */}
-                <div className={`p-5 rounded-2xl border-2 transition ${
-                  calcDiscrepancy === 0
-                    ? 'bg-emerald-50 border-emerald-400'
-                    : 'bg-rose-50 border-rose-400'
-                }`}>
-                  <div className="flex items-start gap-3.5">
-                    <div className={`p-2.5 rounded-xl text-white font-black shrink-0 ${
-                      calcDiscrepancy === 0 ? 'bg-emerald-600' : 'bg-rose-600'
-                    }`}>
-                      {calcDiscrepancy === 0 ? <CheckCircle2 className="w-6 h-6" /> : <AlertTriangle className="w-6 h-6" />}
-                    </div>
-
-                    <div className="space-y-2 flex-1">
-                      <div className="flex items-center justify-between">
-                        <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${
-                          calcDiscrepancy === 0 ? 'bg-emerald-200 text-emerald-900' : 'bg-rose-200 text-rose-900'
-                        }`}>
-                          {calcDiscrepancy === 0 ? 'Sinkron 100% (Valid)' : 'Discrepancy Alert!'}
-                        </span>
-                        <span className="font-mono text-xs font-black">
-                          Selisih: {calcDiscrepancy > 0 ? `+${calcDiscrepancy}` : calcDiscrepancy} Jam
-                        </span>
-                      </div>
-
-                      <h4 className={`text-base font-black ${
-                        calcDiscrepancy === 0 ? 'text-emerald-950' : 'text-rose-950'
-                      }`}>
-                        {calcDiscrepancy === 0
-                          ? 'Perhitungan Jam Kerja Sempurna & Siap Disimpan'
-                          : `Terdapat Selisih ${Math.abs(calcDiscrepancy)} Jam Antara HM dan Catatan!`}
-                      </h4>
-
-                      <p className="text-xs text-slate-700 leading-relaxed">
-                        {calcDiscrepancy === 0 ? (
-                          'Total putaran meteran HM fisik (' + calcTotalHm + ' jam) cocok persis dengan total penjumlahan jam kerja efektif ditambah jam mati.'
-                        ) : calcDiscrepancy > 0 ? (
-                          'HM berputar ' + calcTotalHm + ' jam, namun rincian jam kerja baru tercatat ' + calcTotalLoggedHours + ' jam. Terdapat ' + calcDiscrepancy + ' jam tidak teridentifikasi (potensi mesin menyala tanpa aktivitas atau lupa catat downtime).'
-                        ) : (
-                          'Total rincian catatan jam kerja (' + calcTotalLoggedHours + ' jam) MELEBIHI perputaran meteran fisik HM (' + calcTotalHm + ' jam). Harap periksa kembali angka HM awal atau sore!'
-                        )}
-                      </p>
-
-                      {calcDiscrepancy !== 0 && (
-                        <button
-                          onClick={handleAutoSyncLoggedHours}
-                          className="mt-2 px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition cursor-pointer shadow"
-                        >
-                          Sesuaikan Jam Kerja Efektif Otomatis (Setel ke {Math.max(0, Number((calcTotalHm - (calcWeatherHours + calcBreakdownHours + calcOtherHours)).toFixed(1)))} Jam)
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* FUEL EFFICIENCY DIAGNOSTIC */}
-                <div className={`p-4 rounded-xl border ${
-                  isFuelOverStandard
-                    ? 'bg-amber-50 border-amber-300 text-amber-900'
-                    : 'bg-slate-50 border-slate-200 text-slate-800'
-                }`}>
-                  <div className="flex items-center justify-between text-xs mb-1 font-bold">
-                    <span className="flex items-center gap-1.5">
-                      <Fuel className="w-4 h-4 text-amber-600" />
-                      <span>Rasio Konsumsi BBM Unit Ini:</span>
-                    </span>
-                    <span className="font-mono text-sm font-black">
-                      {calcFuelRatio} L/HM
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-600 flex justify-between">
-                    <span>Batas Standar Alat ({calcEqId}): {selectedCalcEq?.standardFuelRatio || 18.0} L/HM</span>
-                    <span className={isFuelOverStandard ? 'text-rose-600 font-bold' : 'text-emerald-600 font-bold'}>
-                      {isFuelOverStandard ? '⚠ Melebihi Toleransi Standar!' : '✓ Dalam Batas Normal'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* =========================================================================
-          TAB 4: FORM CEPAT PENERIMAAN SOLAR KELILING (FUEL BOWSER)
+          TAB 2: FORM CEPAT PENERIMAAN SOLAR KELILING (FUEL BOWSER)
           ========================================================================= */}
       {activeSubTab === 'fuel_bowser' && (
         <div className="space-y-6">
@@ -1415,9 +955,11 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
                       </div>
 
                       <button
-                        onClick={() => handleDeleteBowser(b.id)}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 transition cursor-pointer"
-                        title="Hapus bukti pengisian"
+                        type="button"
+                        onClick={() => requestDeleteBowser(b)}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                        title={`Hapus bukti penerimaan solar ${b.id}`}
+                        aria-label={`Hapus bukti penerimaan solar ${b.id}`}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -1431,7 +973,7 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
       )}
 
       {/* =========================================================================
-          TAB 5: LOG INSIDEN LAPANGAN & KONDISI TANAH (SAFETY & SOIL HAZARD LOG)
+          TAB 3: LOG INSIDEN LAPANGAN & KONDISI TANAH (SAFETY & SOIL HAZARD LOG)
           ========================================================================= */}
       {activeSubTab === 'soil_incidents' && (
         <div className="space-y-6">
@@ -1511,9 +1053,11 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
                           {inc.date} {inc.time} WIB
                         </span>
                         <button
-                          onClick={() => handleDeleteIncident(inc.id)}
-                          className="p-1 text-slate-400 hover:text-rose-600 transition cursor-pointer"
-                          title="Hapus insiden"
+                          type="button"
+                          onClick={() => requestDeleteIncident(inc)}
+                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                          title={`Hapus log insiden ${inc.id}`}
+                          aria-label={`Hapus log insiden ${inc.id}`}
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -2207,6 +1751,179 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
                 className="px-4 py-2 bg-slate-900 text-white font-bold rounded-xl text-xs cursor-pointer"
               >
                 Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          MODAL: VALIDASI KEAMANAN & KONFIRMASI PENGHAPUSAN (SECURITY VALIDATION)
+          ========================================================================= */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl border border-rose-200 max-w-lg w-full p-6 space-y-4 my-8 max-h-[92vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-200">
+              <div className="flex items-start gap-3">
+                <div className="p-3 bg-rose-100 text-rose-700 rounded-2xl shrink-0 border border-rose-200">
+                  <ShieldAlert className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-300">
+                      Validasi Keamanan
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-500">
+                      {deleteTarget.categoryBadge}
+                    </span>
+                  </div>
+                  <h3 className="text-base font-black text-slate-900 mt-1">
+                    Konfirmasi Penghapusan Data Lapangan
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Sistem memerlukan validasi otorisasi sebelum mengeksekusi penghapusan permanen.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={cancelDelete}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+                title="Batal & Tutup"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Target Item Details Card */}
+            <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-xs font-black bg-slate-900 text-amber-400 px-2.5 py-0.5 rounded">
+                  {deleteTarget.id}
+                </span>
+                <span className="text-xs text-slate-500 font-mono">
+                  {deleteTarget.date} • {deleteTarget.time} WIB
+                </span>
+              </div>
+
+              <div className="text-sm font-black text-slate-900">
+                {deleteTarget.entityName}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1">
+                {deleteTarget.summaryDetails.map((detail, idx) => (
+                  <div key={idx} className="bg-white p-2.5 rounded-lg border border-slate-200/80">
+                    <span className="block text-[10px] text-slate-400 font-bold uppercase">{detail.label}</span>
+                    <span className={`text-slate-800 ${detail.isBold ? 'font-black' : 'font-medium'}`}>
+                      {detail.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="text-[11px] text-slate-500 italic pt-0.5">
+                {deleteTarget.creatorOrOperator}
+              </div>
+            </div>
+
+            {/* Warning Callout */}
+            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs space-y-1.5 text-rose-900">
+              <div className="flex items-center gap-2 font-black">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>Peringatan Penghapusan Bersifat Permanen!</span>
+              </div>
+              <p className="text-[11px] text-rose-800 leading-relaxed">
+                {deleteTarget.warningNote} Data yang dihapus tidak dapat dipulihkan (*irreversible*) dan otomatis disinkronisasi ke seluruh sistem.
+              </p>
+            </div>
+
+            {/* Interactive Security Validation Controls */}
+            <div className="p-4 bg-slate-100 rounded-xl border border-slate-200 space-y-3">
+              <div className="text-xs font-black uppercase text-slate-700 flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 text-amber-600" />
+                <span>Validasi Keamanan &amp; Verifikasi Otorisasi:</span>
+              </div>
+
+              {/* Checkbox Confirmation */}
+              <label className="flex items-start gap-3 p-3 bg-white hover:bg-amber-50/40 rounded-xl border border-slate-200 cursor-pointer transition select-none">
+                <input
+                  type="checkbox"
+                  checked={deleteAgreedCheckbox}
+                  onChange={(e) => setDeleteAgreedCheckbox(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded text-rose-600 focus:ring-rose-500 border-slate-300 cursor-pointer"
+                />
+                <span className="text-xs text-slate-700 leading-relaxed">
+                  Saya telah memeriksa data di atas dan mengonfirmasi bahwa data ini siap dihapus secara permanen dari sistem operasional.
+                </span>
+              </label>
+
+              {/* Security Keyword Confirmation */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700">
+                  Ketik kata <span className="font-mono font-black text-rose-600 bg-rose-100 px-1.5 py-0.5 rounded">HAPUS</span> pada kotak berikut untuk membuka kunci:
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={deleteSecurityInput}
+                    onChange={(e) => setDeleteSecurityInput(e.target.value)}
+                    placeholder='Ketik "HAPUS"'
+                    autoFocus
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl font-mono text-center text-sm font-black tracking-widest uppercase focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500 placeholder:normal-case placeholder:font-normal placeholder:tracking-normal placeholder:text-slate-400"
+                  />
+                  {deleteSecurityInput.trim().toUpperCase() === 'HAPUS' && (
+                    <span className="absolute right-3 top-2.5 text-emerald-600 flex items-center gap-1 text-xs font-bold">
+                      <Check className="w-4 h-4" />
+                    </span>
+                  )}
+                </div>
+                <div className="text-[11px] text-right">
+                  {deleteSecurityInput.trim().toUpperCase() === 'HAPUS' ? (
+                    <span className="text-emerald-700 font-bold inline-flex items-center gap-1">
+                      <ShieldCheck className="w-3.5 h-3.5" /> Kunci otorisasi terbuka
+                    </span>
+                  ) : (
+                    <span className="text-slate-400">
+                      {deleteSecurityInput ? 'Kata kunci belum sesuai' : 'Menunggu input "HAPUS"'}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={cancelDelete}
+                disabled={isDeleting}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition cursor-pointer"
+              >
+                Batal
+              </button>
+
+              <button
+                type="button"
+                onClick={executeConfirmedDeletion}
+                disabled={!deleteAgreedCheckbox || deleteSecurityInput.trim().toUpperCase() !== 'HAPUS' || isDeleting}
+                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black transition ${
+                  deleteAgreedCheckbox && deleteSecurityInput.trim().toUpperCase() === 'HAPUS' && !isDeleting
+                    ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-lg shadow-rose-600/30 cursor-pointer active:scale-95'
+                    : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                }`}
+              >
+                {isDeleting ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Mengeksekusi Penghapusan...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Validasi &amp; Eksekusi Hapus</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

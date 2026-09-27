@@ -1383,23 +1383,21 @@ export const storageService = {
   },
 
   deleteP2HChecklist(id: string, authUser?: AuthUser | null): boolean {
-    const list = this.getP2HChecklists();
+    const list = loadFromStorage<DailyP2HChecklist[]>(STORAGE_KEYS.P2H_CHECKLISTS, initialP2HChecklists as unknown as DailyP2HChecklist[]);
     const target = list.find((i) => i.id === id);
     if (!target) return false;
 
     if (authUser && authUser.role === 'supervisor') {
-      if (!this.canSupervisorAccess(target.clientId, target.blockCode, authUser)) {
+      const isClientMatch = !authUser.assignedClientId || authUser.assignedClientId === 'all' || authUser.assignedClientId === target.clientId;
+      if (!isClientMatch && !this.canSupervisorAccess(target.clientId, target.blockCode, authUser)) {
         return false;
       }
     }
 
     const filtered = list.filter((i) => i.id !== id);
-    if (filtered.length !== list.length) {
-      saveToStorage(STORAGE_KEYS.P2H_CHECKLISTS, filtered);
-      syncDocDelete(FIRESTORE_COLLECTIONS.P2H, id);
-      return true;
-    }
-    return false;
+    saveToStorage(STORAGE_KEYS.P2H_CHECKLISTS, filtered);
+    syncDocDelete(FIRESTORE_COLLECTIONS.P2H, id);
+    return true;
   },
 
   // 4. Fuel Bowser Field Receipts
@@ -1483,23 +1481,21 @@ export const storageService = {
   },
 
   deleteFuelBowserReceipt(id: string, authUser?: AuthUser | null): boolean {
-    const list = this.getFuelBowserReceipts();
+    const list = loadFromStorage<FuelBowserReceipt[]>(STORAGE_KEYS.FUEL_BOWSER, initialFuelBowserReceipts as unknown as FuelBowserReceipt[]);
     const target = list.find((r) => r.id === id);
     if (!target) return false;
 
     if (authUser && authUser.role === 'supervisor') {
-      if (!this.canSupervisorAccess(target.clientId, target.blockCode, authUser)) {
+      const isClientMatch = !authUser.assignedClientId || authUser.assignedClientId === 'all' || authUser.assignedClientId === target.clientId;
+      if (!isClientMatch && !this.canSupervisorAccess(target.clientId, target.blockCode, authUser)) {
         return false;
       }
     }
 
     const filtered = list.filter((r) => r.id !== id);
-    if (filtered.length !== list.length) {
-      saveToStorage(STORAGE_KEYS.FUEL_BOWSER, filtered);
-      syncDocDelete(FIRESTORE_COLLECTIONS.BOWSER, id);
-      return true;
-    }
-    return false;
+    saveToStorage(STORAGE_KEYS.FUEL_BOWSER, filtered);
+    syncDocDelete(FIRESTORE_COLLECTIONS.BOWSER, id);
+    return true;
   },
 
   // 5. Soil & Safety Hazard Incidents
@@ -1558,23 +1554,21 @@ export const storageService = {
   },
 
   deleteSoilIncident(id: string, authUser?: AuthUser | null): boolean {
-    const list = this.getSoilIncidents();
+    const list = loadFromStorage<SoilHazardIncident[]>(STORAGE_KEYS.SOIL_INCIDENTS, initialSoilIncidents as unknown as SoilHazardIncident[]);
     const target = list.find((i) => i.id === id);
     if (!target) return false;
 
     if (authUser && authUser.role === 'supervisor') {
-      if (!this.canSupervisorAccess(target.clientId, target.blockCode, authUser)) {
+      const isClientMatch = !authUser.assignedClientId || authUser.assignedClientId === 'all' || authUser.assignedClientId === target.clientId;
+      if (!isClientMatch && !this.canSupervisorAccess(target.clientId, target.blockCode, authUser)) {
         return false;
       }
     }
 
     const filtered = list.filter((i) => i.id !== id);
-    if (filtered.length !== list.length) {
-      saveToStorage(STORAGE_KEYS.SOIL_INCIDENTS, filtered);
-      syncDocDelete(FIRESTORE_COLLECTIONS.SOIL, id);
-      return true;
-    }
-    return false;
+    saveToStorage(STORAGE_KEYS.SOIL_INCIDENTS, filtered);
+    syncDocDelete(FIRESTORE_COLLECTIONS.SOIL, id);
+    return true;
   },
 
   // 2. Geotag Photos Management
@@ -2171,7 +2165,27 @@ export const storageService = {
     return normalizedUser;
   },
 
-  deleteManagedUser(userId: string): boolean {
+  deleteManagedUser(userId: string, currentAuthUser?: AuthUser | null): boolean {
+    let activeUser = currentAuthUser;
+    if (!activeUser && typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('suryaland_auth_user_v1');
+        if (raw) activeUser = JSON.parse(raw);
+      } catch {
+        // ignore
+      }
+    }
+    if (activeUser) {
+      const targetUser = this.getManagedUserById(userId);
+      if (
+        (activeUser.id && activeUser.id === userId) ||
+        (activeUser.username && targetUser?.username && activeUser.username.trim().toLowerCase() === targetUser.username.trim().toLowerCase())
+      ) {
+        console.warn(`[storageService] Keamanan: Akun user '${activeUser.username}' yang sedang aktif tidak dapat menghapus dirinya sendiri.`);
+        return false;
+      }
+    }
+
     const list = this.getManagedUsers();
     const filtered = list.filter((u) => u.id !== userId);
     if (filtered.length !== list.length) {
@@ -2272,6 +2286,7 @@ export const storageService = {
     syncDocWrite(FIRESTORE_COLLECTIONS.COMPANY_PROFILE, { ...updated, id: 'main_profile' });
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('rbs_company_profile_sync', { detail: updated }));
+      window.dispatchEvent(new CustomEvent('suryaland_company_profile_sync', { detail: updated }));
     }
     return updated;
   },
@@ -2382,17 +2397,63 @@ export const storageService = {
     return payload;
   },
 
-  deleteCompanyStaff(id: string): boolean {
+  // Menghapus data staff beserta akun & TTD digital dengan proteksi self-deletion
+  deleteStaff(id: string, currentAuthUser?: AuthUser | null): boolean {
     const staffList = this.getCompanyStaff();
     const target = staffList.find((s) => s.id === id);
     if (!target) return false;
 
+    // Deteksi akun yang sedang aktif/login
+    let activeUser = currentAuthUser;
+    if (!activeUser && typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('suryaland_auth_user_v1');
+        if (raw) activeUser = JSON.parse(raw);
+      } catch {
+        // ignore
+      }
+    }
+
+    // VALIDASI: Akun yang sedang login tidak bisa menghapus dirinya sendiri
+    if (activeUser) {
+      const activeUsername = (activeUser.username || '').trim().toLowerCase();
+      const activeDisplayName = (activeUser.displayName || '').trim().toLowerCase();
+      const activeId = activeUser.id;
+
+      const targetUsername = (target.username || '').trim().toLowerCase();
+      const targetFullName = (target.fullName || '').trim().toLowerCase();
+      const targetLinkedId = target.linkedUserId;
+      const targetId = target.id;
+
+      const isSelf = 
+        Boolean(activeId && (targetId === activeId || targetLinkedId === activeId)) ||
+        Boolean(activeUsername && targetUsername && activeUsername === targetUsername) ||
+        Boolean(activeDisplayName && targetFullName && activeDisplayName === targetFullName);
+
+      if (isSelf) {
+        console.warn(`[storageService] Keamanan: Akun staff '${target.fullName}' (@${target.username}) yang sedang login tidak diizinkan menghapus dirinya sendiri.`);
+        return false;
+      }
+    }
+
+    // Proteksi akun Direktur Utama sistem
+    if (target.username && target.username.trim().toLowerCase() === 'direktur') {
+      console.warn('[storageService] Keamanan: Akun Direktur Utama tidak dapat dihapus.');
+      return false;
+    }
+
     // Also delete linked ManagedUser account if exists
     if (target.linkedUserId) {
-      this.deleteManagedUser(target.linkedUserId);
-    } else if (target.username) {
+      this.deleteManagedUser(target.linkedUserId, activeUser);
+    } 
+    if (target.username) {
       const u = this.getManagedUserByUsername(target.username);
-      if (u) this.deleteManagedUser(u.id);
+      if (u) this.deleteManagedUser(u.id, activeUser);
+    }
+    const fullNameLower = (target.fullName || '').trim().toLowerCase();
+    if (fullNameLower) {
+      const uByName = this.getManagedUsers().find((u) => (u.fullName || '').trim().toLowerCase() === fullNameLower);
+      if (uByName) this.deleteManagedUser(uByName.id, activeUser);
     }
 
     const filtered = staffList.filter((s) => s.id !== id);
@@ -2402,6 +2463,10 @@ export const storageService = {
       window.dispatchEvent(new CustomEvent('suryaland_company_staff_sync', { detail: { deletedId: id } }));
     }
     return true;
+  },
+
+  deleteCompanyStaff(id: string, currentAuthUser?: AuthUser | null): boolean {
+    return this.deleteStaff(id, currentAuthUser);
   },
 
   // Clear all data in Master Data Proyek (Clients, Blocks, Equipments, Work Assignments, Daily Targets)
