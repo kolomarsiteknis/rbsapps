@@ -85,6 +85,21 @@ export const initialClients: Client[] = [
     clearedAreaHa: 18.0,
     status: 'Aktif',
   },
+  {
+    id: 'client-gudang',
+    name: 'PT. GUDANG',
+    fullCompanyName: 'PT. GUGUS KOMODITAS KONDANG (PT. GUDANG)',
+    address: 'Kawasan Perkebunan Sawit Terpadu, Riau',
+    contactPerson: 'Bambang Sugiarto, S.P.',
+    phone: '+62 812-3456-7890',
+    email: 'ops@guguskomoditas.co.id',
+    contractNumber: 'B/0001/33/GKK/9/2026',
+    projectName: 'Pembersihan & Pembukaan Lahan PT. GUGUS KOMODITAS KONDANG (460 Ha)',
+    location: 'Kabupaten Siak / Pelalawan, Provinsi Riau',
+    totalAreaHa: 460,
+    clearedAreaHa: 135.5,
+    status: 'Aktif',
+  },
 ];
 
 export const initialProjects: Project[] = [
@@ -115,6 +130,16 @@ export const initialProjects: Project[] = [
     location: 'Indragiri Hulu, Provinsi Riau',
     method: 'Zero Burning Method (Metode Tanpa Bakar)',
     totalTargetHa: 260,
+    startDate: '2026-09-01',
+    targetCompletionDate: '2026-12-31',
+  },
+  {
+    id: 'proj-gudang',
+    clientId: 'client-gudang',
+    name: 'Land Clearing PT. GUGUS KOMODITAS KONDANG',
+    location: 'Kabupaten Siak / Pelalawan, Provinsi Riau',
+    method: 'Zero Burning Method (Metode Tanpa Bakar)',
+    totalTargetHa: 460,
     startDate: '2026-09-01',
     targetCompletionDate: '2026-12-31',
   },
@@ -252,6 +277,84 @@ export const initialBlocks: Block[] = [
     clearedAreaHa: 18.0,
     status: 'Dalam Pengerjaan',
   },
+  // PT. GUDANG (PT. GUGUS KOMODITAS KONDANG) Blocks (460 Ha)
+  {
+    id: 'blk-i33',
+    projectId: 'proj-gudang',
+    clientId: 'client-gudang',
+    code: 'BLOK I33',
+    targetAreaHa: 90.0,
+    dailyTargetAreaHa: 4.5,
+    clearedAreaHa: 45.0,
+    status: 'Dalam Pengerjaan',
+    workItems: [
+      { id: 'wi-i33-1', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', targetVolume: 90 },
+      { id: 'wi-i33-2', name: 'BATANG KUBUR', unit: 'POHON', targetVolume: 50 },
+      { id: 'wi-i33-3', name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'Ha', targetVolume: 90 },
+      { id: 'wi-i33-4', name: 'MAINROAD', unit: 'm', targetVolume: 500 },
+      { id: 'wi-i33-5', name: 'COLLECTION ROAD', unit: 'm', targetVolume: 300 },
+    ],
+  },
+  {
+    id: 'blk-j31',
+    projectId: 'proj-gudang',
+    clientId: 'client-gudang',
+    code: 'BLOK J31',
+    targetAreaHa: 90.0,
+    dailyTargetAreaHa: 4.5,
+    clearedAreaHa: 40.5,
+    status: 'Dalam Pengerjaan',
+    workItems: [
+      { id: 'wi-j31-1', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', targetVolume: 90 },
+      { id: 'wi-j31-2', name: 'BATANG KUBUR', unit: 'POHON', targetVolume: 40 },
+      { id: 'wi-j31-3', name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'Ha', targetVolume: 90 },
+    ],
+  },
+  {
+    id: 'blk-j34',
+    projectId: 'proj-gudang',
+    clientId: 'client-gudang',
+    code: 'BLOK J34',
+    targetAreaHa: 90.0,
+    dailyTargetAreaHa: 4.5,
+    clearedAreaHa: 30.0,
+    status: 'Dalam Pengerjaan',
+    workItems: [
+      { id: 'wi-j34-1', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', targetVolume: 90 },
+      { id: 'wi-j34-2', name: 'BATANG KUBUR', unit: 'POHON', targetVolume: 45 },
+      { id: 'wi-j34-3', name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'Ha', targetVolume: 90 },
+    ],
+  },
+  {
+    id: 'blk-j35',
+    projectId: 'proj-gudang',
+    clientId: 'client-gudang',
+    code: 'BLOK J35',
+    targetAreaHa: 95.0,
+    dailyTargetAreaHa: 4.5,
+    clearedAreaHa: 10.0,
+    status: 'Dalam Pengerjaan',
+    workItems: [
+      { id: 'wi-j35-1', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', targetVolume: 95 },
+      { id: 'wi-j35-2', name: 'BATANG KUBUR', unit: 'POHON', targetVolume: 35 },
+      { id: 'wi-j35-3', name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'Ha', targetVolume: 95 },
+    ],
+  },
+  {
+    id: 'blk-j36',
+    projectId: 'proj-gudang',
+    clientId: 'client-gudang',
+    code: 'BLOK J36',
+    targetAreaHa: 95.0,
+    dailyTargetAreaHa: 4.5,
+    clearedAreaHa: 10.0,
+    status: 'Belum Dimulai',
+    workItems: [
+      { id: 'wi-j36-1', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', targetVolume: 95 },
+      { id: 'wi-j36-2', name: 'BATANG KUBUR', unit: 'POHON', targetVolume: 40 },
+      { id: 'wi-j36-3', name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'Ha', targetVolume: 95 },
+    ],
+  },
 ];
 
 export const initialEquipments: Equipment[] = [
@@ -285,6 +388,17 @@ export const initialEquipments: Equipment[] = [
     serialNumber: 'HTC-ZX210-66412',
     currentHm: 1620.0,
     standardFuelRatio: 17.5,
+    status: 'Operasional',
+    operatorName: 'Hendri Gunawan',
+  },
+  {
+    id: 'EX-04',
+    name: 'Excavator Kobelco SK200-10',
+    type: 'Excavator',
+    model: 'SK200-10 SuperX',
+    serialNumber: 'KOB-SK200-99215',
+    currentHm: 1450.0,
+    standardFuelRatio: 17.0,
     status: 'Operasional',
     operatorName: 'Hendri Gunawan',
   },
@@ -493,6 +607,74 @@ export const initialWorkers: Worker[] = [
     teamName: 'Tim Pengawas & K3',
     assignedClientId: 'client-3',
     assignedBlockId: 'blk-6'
+  },
+
+  // PT. GUDANG (PT. GUGUS KOMODITAS KONDANG) - Penugasan Tim Kerja
+  { 
+    id: 'w-g-1', 
+    name: 'Bambang Sugiarto, S.P.', 
+    category: 'Site Manager', 
+    role: 'Site Manager Lapangan', 
+    phone: '+62 812-3456-7890', 
+    status: 'Hadir',
+    teamName: 'Tim Manajemen Proyek',
+    assignedClientId: 'client-gudang',
+    assignedBlockId: 'ALL'
+  },
+  { 
+    id: 'w-g-2', 
+    name: 'Ahmad Noor', 
+    category: 'Pengawas', 
+    role: 'Pengawas Lapangan (Blok I33, J31, J34)', 
+    phone: '+62 813-1122-3344', 
+    status: 'Hadir',
+    teamName: 'Tim Pengawas & K3',
+    assignedClientId: 'client-gudang',
+    assignedBlockId: 'blk-i33'
+  },
+  { 
+    id: 'w-g-3', 
+    name: 'Dedi Kurniawan', 
+    category: 'Pengawas', 
+    role: 'Pengawas Lapangan (Blok J35, J36)', 
+    phone: '+62 813-5566-7788', 
+    status: 'Hadir',
+    teamName: 'Tim Pengawas & K3',
+    assignedClientId: 'client-gudang',
+    assignedBlockId: 'blk-j35'
+  },
+  { 
+    id: 'w-g-4', 
+    name: 'Anton', 
+    category: 'Mekanik', 
+    role: 'Mekanik Alat Berat', 
+    phone: '+62 812-7766-5544', 
+    status: 'Hadir',
+    teamName: 'Tim Mekanik Maintenance',
+    assignedClientId: 'client-gudang',
+    assignedBlockId: 'ALL'
+  },
+  { 
+    id: 'w-g-5', 
+    name: 'Bowo', 
+    category: 'Logistik', 
+    role: 'Logistik & BBM', 
+    phone: '+62 812-6655-4433', 
+    status: 'Hadir',
+    teamName: 'Tim Logistik & BBM',
+    assignedClientId: 'client-gudang',
+    assignedBlockId: 'ALL'
+  },
+  { 
+    id: 'w-g-6', 
+    name: 'Jaya', 
+    category: 'Pendukung', 
+    role: 'Tim Pendukung & Rintis Jalur', 
+    phone: '+62 812-5544-3322', 
+    status: 'Hadir',
+    teamName: 'Tim Pendukung Lapangan',
+    assignedClientId: 'client-gudang',
+    assignedBlockId: 'ALL'
   },
 ];
 
@@ -1516,6 +1698,100 @@ export const initialManagedUsers: ManagedUser[] = [
 ];
 
 export const initialWorkAssignments: WorkAssignment[] = [
+  {
+    id: 'asg-gudang-1',
+    assignmentNumber: '001/ST-LC/GKK/IX/2026',
+    clientId: 'client-gudang',
+    clientName: 'PT. GUGUS KOMODITAS KONDANG (PT. GUDANG)',
+    contractNumber: 'B/0001/33/GKK/9/2026',
+    totalAreaHa: 460,
+    assignedDate: '2026-09-01',
+    status: 'Aktif',
+    notes: 'Penugasan Tim Kerja Operasional Proyek Land Clearing 460 Ha. Seluruh tim wajib mematuhi SOP Zero Burning Method dan standar K3.',
+    createdAt: '2026-09-01T07:00:00Z',
+
+    // Tim Staff (bekerja diseluruh blok kerja SPK terpilih)
+    siteManagerName: 'Bambang Sugiarto, S.P.',
+    siteManagerPhone: '+62 812-3456-7890',
+    supervisors: [
+      {
+        id: 'spv-1',
+        name: 'Ahmad Noor',
+        phone: '+62 813-1122-3344',
+        coverageType: 'CUSTOM',
+        assignedBlockIds: ['blk-i33', 'blk-j31', 'blk-j34'],
+        assignedBlockCodes: ['BLOK I33', 'BLOK J31', 'BLOK J34'],
+      },
+      {
+        id: 'spv-2',
+        name: 'Dedi Kurniawan',
+        phone: '+62 813-5566-7788',
+        coverageType: 'CUSTOM',
+        assignedBlockIds: ['blk-j35', 'blk-j36'],
+        assignedBlockCodes: ['BLOK J35', 'BLOK J36'],
+      },
+    ],
+
+    // Tim Pendukung (bekerja diseluruh blok kerja SPK terpilih)
+    supportTeam: [
+      {
+        id: 'sup-1',
+        role: 'Operator',
+        workerName: 'Hendri Gunawan',
+        equipmentId: 'EX-04',
+        equipmentName: 'Excavator Kobelco SK200-10',
+      },
+      {
+        id: 'sup-2',
+        role: 'Operator',
+        workerName: 'Agus Santoso',
+        equipmentId: 'EX-01',
+        equipmentName: 'Excavator Komatsu PC200-8',
+      },
+      {
+        id: 'sup-3',
+        role: 'Operator',
+        workerName: 'Rian Hidayat',
+        equipmentId: 'EX-02',
+        equipmentName: 'Excavator Komatsu PC200-8',
+      },
+      {
+        id: 'sup-4',
+        role: 'Operator',
+        workerName: 'Bambang Supriyanto',
+        equipmentId: 'DZ-02',
+        equipmentName: 'Bulldozer CAT D6R',
+      },
+      {
+        id: 'sup-5',
+        role: 'Mekanik',
+        workerName: 'Anton',
+        notes: 'Maintenance & Service Alat Berat',
+      },
+      {
+        id: 'sup-6',
+        role: 'Logistik',
+        workerName: 'Bowo',
+        notes: 'Manajemen Stok BBM & Sparepart',
+      },
+      {
+        id: 'sup-7',
+        role: 'Pendukung',
+        workerName: 'Jaya',
+        notes: 'Tim Rintis & Helper Lapangan',
+      },
+    ],
+
+    // Backward compatibility fields
+    staffName: 'Bambang Sugiarto, S.P.',
+    staffLevel: 'Site Manager',
+    workerName: 'Hendri Gunawan dkk (7 Personil Tim Pendukung)',
+    workerCategory: 'Operator & Tim Pendukung',
+    equipmentId: 'EX-04',
+    equipmentName: 'Excavator Kobelco SK200-10 dkk',
+    blockId: 'ALL',
+    blockCode: 'Seluruh Blok Kerja SPK Terpilih',
+  },
   {
     id: 'asg-1',
     assignmentNumber: '001/ST-LC/PTA/VIII/2026',

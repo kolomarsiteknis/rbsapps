@@ -32,14 +32,30 @@ import {
   HardHat,
   Key,
   Clock,
-  Eye
+  Eye,
+  Info,
+  UserPlus,
+  X
 } from 'lucide-react';
-import { Equipment, Worker, Block, Client, Project, DailyLocationTarget, DailyItemRitmeTarget, BlockWorkItem, WorkAssignment, CompanyStaff } from '../types';
+import { 
+  Equipment, 
+  Worker, 
+  Block, 
+  Client, 
+  Project, 
+  DailyLocationTarget, 
+  DailyItemRitmeTarget, 
+  BlockWorkItem, 
+  WorkAssignment, 
+  CompanyStaff,
+  StaffSupervisorAssignment,
+  SupportTeamMemberAssignment
+} from '../types';
 import { storageService } from '../services/storageService';
 import { DEFAULT_WORK_ITEMS_CATALOG } from '../data/mockData';
 
 export const MasterDataView: React.FC = () => {
-  const [activeSubTab, setActiveSubTab] = useState<'client' | 'blocks' | 'workers' | 'equipments' | 'assignments' | 'dailyTargets'>('client');
+  const [activeSubTab, setActiveSubTab] = useState<'client' | 'blocks' | 'equipments' | 'assignments' | 'dailyTargets'>('client');
   
   const [clients, setClients] = useState<Client[]>(() => storageService.getClients());
   const [blocks, setBlocks] = useState<Block[]>(() => storageService.getBlocks());
@@ -155,35 +171,6 @@ export const MasterDataView: React.FC = () => {
       return matchCode || matchClientName || matchClientFull || matchSpk || matchWorkItem;
     });
 
-  // Worker Modal & Filter State (Superadmin Personil & Lokasi Penugasan)
-  const DEFAULT_WORKER_CATEGORIES = ['Operator', 'Mekanik', 'Logistik', 'Pendukung', 'Pengawas'];
-  const [customWorkerCategories, setCustomWorkerCategories] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem('SL_CUSTOM_WORKER_CATEGORIES');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [isAddingNewCategory, setIsAddingNewCategory] = useState<boolean>(false);
-  const [newCategoryInput, setNewCategoryInput] = useState<string>('');
-
-  const [selectedClientForWorker, setSelectedClientForWorker] = useState<string>('ALL');
-  const [selectedBlockForWorker, setSelectedBlockForWorker] = useState<string>('ALL');
-  const [selectedTeamForWorker, setSelectedTeamForWorker] = useState<string>('ALL');
-  const [isWorkerModalOpen, setIsWorkerModalOpen] = useState(false);
-  const [editingWorkerId, setEditingWorkerId] = useState<string | null>(null);
-  const [workerForm, setWorkerForm] = useState<Partial<Worker>>({
-    name: '',
-    category: 'Operator',
-    role: 'Operator',
-    assignedEquipmentId: '',
-    phone: '',
-    status: 'Hadir',
-    teamName: 'Tim Operator',
-    assignedClientId: 'client-1',
-    assignedBlockId: 'ALL',
-  });
 
   // Daily Target State & Filters (CRUD Target Harian Ha per Hari per Lokasi Kerja)
   const [dailyTargets, setDailyTargets] = useState<DailyLocationTarget[]>(() => storageService.getDailyTargets());
@@ -308,16 +295,30 @@ export const MasterDataView: React.FC = () => {
         const standardItems: BlockWorkItem[] = DEFAULT_WORK_ITEMS_CATALOG.map((item, idx) => ({
           id: `wi-std-${idx + 1}`,
           name: item.name,
-          unit: item.unit,
+          unit: item.unit === 'HEKTAR' || item.unit === 'Hektar' ? 'Ha' : item.unit,
           targetVolume: item.defaultTargetVolume,
         }));
+        const items = (selected.workItems && selected.workItems.length > 0)
+          ? selected.workItems.map((wi) => {
+              let unit = wi.unit;
+              if (unit === 'HEKTAR' || unit === 'Hektar') unit = 'Ha';
+              if (unit === 'METER LARI') unit = 'm';
+              if (unit === 'METER KUBIK') unit = 'm³';
+              return { ...wi, unit };
+            })
+          : standardItems;
+        const drafts: Record<string, string> = {};
+        items.forEach((wi) => {
+          drafts[wi.name.toUpperCase()] = wi.targetVolume !== undefined ? String(wi.targetVolume).replace('.', ',') : '10';
+        });
+        setItemVolumeDrafts(drafts);
         setBlockForm((prev) => ({
           ...prev,
           selectedExistingBlockId: selected.id,
           code: selected.code,
           targetAreaInput: selected.targetAreaHa !== undefined ? String(selected.targetAreaHa).replace('.', ',') : '35,5',
           status: selected.status,
-          workItems: (selected.workItems && selected.workItems.length > 0) ? selected.workItems : standardItems,
+          workItems: items,
         }));
       }
     }
@@ -431,8 +432,12 @@ export const MasterDataView: React.FC = () => {
       alert('Mohon masukkan nama item pekerjaan yang ingin ditambahkan.');
       return;
     }
-    const rawVol = blockForm.customItemVolume ? parseFloat(blockForm.customItemVolume.replace(',', '.')) : 10;
-    const unitName = blockForm.customItemUnit.trim() === 'HEKTAR' ? 'Ha' : blockForm.customItemUnit.trim();
+    const cleanVolumeStr = (blockForm.customItemVolume || '10').trim();
+    const rawVol = parseFloat(cleanVolumeStr.replace(',', '.'));
+    let unitName = blockForm.customItemUnit.trim();
+    if (unitName === 'HEKTAR' || unitName === 'Hektar') unitName = 'Ha';
+    if (unitName === 'METER LARI') unitName = 'm';
+    if (unitName === 'METER KUBIK') unitName = 'm³';
     const newItemName = blockForm.customItemName.trim().toUpperCase();
     const newItem: BlockWorkItem = {
       id: `wi-custom-${Date.now()}`,
@@ -442,7 +447,7 @@ export const MasterDataView: React.FC = () => {
     };
     setItemVolumeDrafts((prev) => ({
       ...prev,
-      [newItemName]: blockForm.customItemVolume || (isNaN(rawVol) ? '10' : String(rawVol).replace('.', ',')),
+      [newItemName]: cleanVolumeStr,
     }));
     setBlockForm({
       ...blockForm,
@@ -556,19 +561,8 @@ export const MasterDataView: React.FC = () => {
     });
     setTargetItemRitmes(initialRitmes);
 
-    // Otomatis panggil No Penugasan & Personel dari Menu 5 yang sesuai SPK dan Blok ini
-    const matchingAsg = workAssignments.filter(
-      (a) => a.clientId === chosenClientId && (a.blockId === chosenBlock?.id || a.blockId === 'ALL')
-    );
-    const asgNumbers = Array.from(new Set(matchingAsg.map((a) => a.assignmentNumber).filter(Boolean)));
-    const personnel = matchingAsg.map((a) => ({
-      workerId: a.workerId,
-      workerName: a.workerName,
-      workerCategory: a.workerCategory,
-      equipmentId: a.equipmentId,
-      equipmentName: a.equipmentName,
-      assignmentNumber: a.assignmentNumber,
-    }));
+    // Otomatis panggil No Penugasan & Personel dari Menu 4 yang sesuai SPK dan Blok ini
+    const { asgNumbers, personnel } = getPersonnelForBlockFromAssignments(chosenClientId, chosenBlock?.id);
 
     setTargetForm({
       clientId: chosenBlock?.clientId || chosenClientId,
@@ -584,8 +578,8 @@ export const MasterDataView: React.FC = () => {
       assignmentNumbers: asgNumbers,
       assignedPersonnel: personnel,
       itemTargets: initialRitmes,
-      assignedEquipmentCount: matchingAsg.filter((a) => a.equipmentId).length || 3,
-      assignedWorkerCount: matchingAsg.length || 8,
+      assignedEquipmentCount: personnel.filter((a) => a.equipmentId).length || 3,
+      assignedWorkerCount: personnel.length || 8,
     });
     setIsTargetModalOpen(true);
   };
@@ -617,19 +611,8 @@ export const MasterDataView: React.FC = () => {
     }
     setTargetItemRitmes(itemsToSet);
 
-    // Otomatis sinkronkan penugasan terbaru dari Menu 5
-    const matchingAsg = workAssignments.filter(
-      (a) => a.clientId === target.clientId && (a.blockId === target.blockId || a.blockId === 'ALL')
-    );
-    const asgNumbers = Array.from(new Set(matchingAsg.map((a) => a.assignmentNumber).filter(Boolean)));
-    const personnel = matchingAsg.map((a) => ({
-      workerId: a.workerId,
-      workerName: a.workerName,
-      workerCategory: a.workerCategory,
-      equipmentId: a.equipmentId,
-      equipmentName: a.equipmentName,
-      assignmentNumber: a.assignmentNumber,
-    }));
+    // Otomatis sinkronkan penugasan terbaru dari Menu 4
+    const { asgNumbers, personnel } = getPersonnelForBlockFromAssignments(target.clientId, target.blockId);
 
     setTargetForm({
       ...target,
@@ -665,18 +648,7 @@ export const MasterDataView: React.FC = () => {
     });
     setTargetItemRitmes(newRitmes);
 
-    const matchingAsg = workAssignments.filter(
-      (a) => a.clientId === newClientId && (a.blockId === chosenBlock?.id || a.blockId === 'ALL')
-    );
-    const asgNumbers = Array.from(new Set(matchingAsg.map((a) => a.assignmentNumber).filter(Boolean)));
-    const personnel = matchingAsg.map((a) => ({
-      workerId: a.workerId,
-      workerName: a.workerName,
-      workerCategory: a.workerCategory,
-      equipmentId: a.equipmentId,
-      equipmentName: a.equipmentName,
-      assignmentNumber: a.assignmentNumber,
-    }));
+    const { asgNumbers, personnel } = getPersonnelForBlockFromAssignments(newClientId, chosenBlock?.id);
 
     setTargetForm((prev) => ({
       ...prev,
@@ -689,8 +661,8 @@ export const MasterDataView: React.FC = () => {
       assignmentNumbers: asgNumbers,
       assignedPersonnel: personnel,
       itemTargets: newRitmes,
-      assignedEquipmentCount: matchingAsg.filter((a) => a.equipmentId).length || 3,
-      assignedWorkerCount: matchingAsg.length || 8,
+      assignedEquipmentCount: personnel.filter((a) => a.equipmentId).length || 3,
+      assignedWorkerCount: personnel.length || 8,
     }));
   };
 
@@ -715,18 +687,7 @@ export const MasterDataView: React.FC = () => {
     });
     setTargetItemRitmes(newRitmes);
 
-    const matchingAsg = workAssignments.filter(
-      (a) => a.clientId === targetForm.clientId && (a.blockId === newBlockId || a.blockId === 'ALL')
-    );
-    const asgNumbers = Array.from(new Set(matchingAsg.map((a) => a.assignmentNumber).filter(Boolean)));
-    const personnel = matchingAsg.map((a) => ({
-      workerId: a.workerId,
-      workerName: a.workerName,
-      workerCategory: a.workerCategory,
-      equipmentId: a.equipmentId,
-      equipmentName: a.equipmentName,
-      assignmentNumber: a.assignmentNumber,
-    }));
+    const { asgNumbers, personnel } = getPersonnelForBlockFromAssignments(targetForm.clientId || '', newBlockId);
 
     setTargetForm((prev) => ({
       ...prev,
@@ -736,8 +697,8 @@ export const MasterDataView: React.FC = () => {
       assignmentNumbers: asgNumbers,
       assignedPersonnel: personnel,
       itemTargets: newRitmes,
-      assignedEquipmentCount: matchingAsg.filter((a) => a.equipmentId).length || 3,
-      assignedWorkerCount: matchingAsg.length || 8,
+      assignedEquipmentCount: personnel.filter((a) => a.equipmentId).length || 3,
+      assignedWorkerCount: personnel.length || 8,
     }));
   };
 
@@ -771,18 +732,7 @@ export const MasterDataView: React.FC = () => {
 
     const targetId = editingTargetId || `TGT-${targetForm.date}-${targetForm.blockId}-${Date.now().toString().slice(-4)}`;
 
-    const matchingAsg = workAssignments.filter(
-      (a) => a.clientId === targetForm.clientId && (a.blockId === targetForm.blockId || a.blockId === 'ALL')
-    );
-    const asgNumbers = Array.from(new Set(matchingAsg.map((a) => a.assignmentNumber).filter(Boolean)));
-    const personnel = matchingAsg.map((a) => ({
-      workerId: a.workerId,
-      workerName: a.workerName,
-      workerCategory: a.workerCategory,
-      equipmentId: a.equipmentId,
-      equipmentName: a.equipmentName,
-      assignmentNumber: a.assignmentNumber,
-    }));
+    const { asgNumbers, personnel } = getPersonnelForBlockFromAssignments(targetForm.clientId || '', targetForm.blockId);
 
     const saved: DailyLocationTarget = {
       id: targetId,
@@ -796,8 +746,8 @@ export const MasterDataView: React.FC = () => {
       assignmentNumbers: asgNumbers.length > 0 ? asgNumbers : (targetForm.assignmentNumbers || []),
       assignedPersonnel: personnel.length > 0 ? personnel : (targetForm.assignedPersonnel || []),
       itemTargets: targetItemRitmes,
-      assignedEquipmentCount: matchingAsg.filter((a) => a.equipmentId).length || targetForm.assignedEquipmentCount || 3,
-      assignedWorkerCount: matchingAsg.length || targetForm.assignedWorkerCount || 8,
+      assignedEquipmentCount: personnel.filter((a) => a.equipmentId).length || targetForm.assignedEquipmentCount || 3,
+      assignedWorkerCount: personnel.length || targetForm.assignedWorkerCount || 8,
       shift: targetForm.shift || 'Siang (07:00 - 17:00)',
       notes: targetForm.notes?.trim() || '',
       status: targetForm.status || 'Terjadwal',
@@ -960,196 +910,701 @@ export const MasterDataView: React.FC = () => {
     }
   };
 
-  // Work Assignment State & Filters (Superadmin Modul 5. Penugasan Kerja)
+  // Work Assignment State & Filters (Superadmin Modul 4. Penugasan Kerja)
   const [isAssignmentModalOpen, setIsAssignmentModalOpen] = useState(false);
   const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null);
   const [assignmentToDelete, setAssignmentToDelete] = useState<WorkAssignment | null>(null);
+  const [viewingAssignmentDetail, setViewingAssignmentDetail] = useState<WorkAssignment | null>(null);
 
   const [assignmentSearch, setAssignmentSearch] = useState<string>('');
   const [assignmentClientFilter, setAssignmentClientFilter] = useState<string>('ALL');
   const [assignmentCategoryFilter, setAssignmentCategoryFilter] = useState<string>('ALL');
   const [assignmentStatusFilter, setAssignmentStatusFilter] = useState<string>('ALL');
+  const [manualWorkerInputMode, setManualWorkerInputMode] = useState<Record<string, boolean>>({});
 
   interface AssignmentFormState {
+    id?: string;
     assignmentNumber: string;
-    // 1. Data Staff (Level Staff, Nama Lengkap Staff) dari Master Data Perusahaan
-    staffId: string;
-    staffLevel: string;
-    staffName: string;
-    // 2. Data Personel & Kategori Penugasan (Tanpa Pengawas & Site Manager)
-    workerCategory: string;
-    workerId: string;
-    workerName: string;
-    // 3. Alokasi Alat Berat
-    equipmentType: string;
-    equipmentId: string;
-    // 4. Penugasan Lokasi Kerja SPK & Blok
     clientId: string;
-    blockId: string;
-    // 5. Status & Tanggal Penugasan
+    assignedDate: string; // Tanggal Mulai Penugasan *
     status: 'Aktif' | 'Standby' | 'Selesai' | 'BKO / Bantuan';
-    assignedDate: string;
-    notes: string;
+    notes: string; // Catatan / Instruksi Kerja (Opsional)
+
+    // A. TIM STAFF (bekerja diseluruh blok kerja SPK terpilih)
+    siteManagerName: string;
+    siteManagerPhone: string;
+    supervisors: StaffSupervisorAssignment[];
+
+    // B. TIM PENDUKUNG (bekerja diseluruh blok kerja SPK terpilih)
+    supportTeam: SupportTeamMemberAssignment[];
   }
 
   const [assignmentForm, setAssignmentForm] = useState<AssignmentFormState>(() => {
-    const currentStaff = storageService.getCompanyStaff();
-    const defaultStaff = currentStaff[0];
     return {
-      assignmentNumber: '',
-      staffId: defaultStaff?.id || '',
-      staffLevel: defaultStaff?.staffLevel || 'Pengawas',
-      staffName: defaultStaff?.fullName || '',
-      workerCategory: 'Operator',
-      workerId: '',
-      workerName: '',
-      equipmentType: 'Excavator',
-      equipmentId: '',
-      clientId: 'client-1',
-      blockId: 'ALL',
+      assignmentNumber: '001/ST-LC/GKK/IX/2026',
+      clientId: 'client-gudang',
+      assignedDate: '2026-09-01',
       status: 'Aktif',
-      assignedDate: new Date().toISOString().slice(0, 10),
-      notes: '',
+      notes: 'Penugasan Tim Kerja Operasional Proyek Land Clearing 460 Ha. Seluruh tim wajib mematuhi SOP Zero Burning Method dan standar K3.',
+      siteManagerName: 'Bambang Sugiarto, S.P.',
+      siteManagerPhone: '+62 812-3456-7890',
+      supervisors: [
+        {
+          id: 'spv-1',
+          name: 'Ahmad Noor',
+          phone: '+62 813-1122-3344',
+          coverageType: 'CUSTOM',
+          assignedBlockIds: ['blk-i33', 'blk-j31', 'blk-j34'],
+          assignedBlockCodes: ['BLOK I33', 'BLOK J31', 'BLOK J34'],
+        },
+        {
+          id: 'spv-2',
+          name: 'Dedi Kurniawan',
+          phone: '+62 813-5566-7788',
+          coverageType: 'CUSTOM',
+          assignedBlockIds: ['blk-j35', 'blk-j36'],
+          assignedBlockCodes: ['BLOK J35', 'BLOK J36'],
+        },
+      ],
+      supportTeam: [
+        {
+          id: 'sup-1',
+          role: 'Operator',
+          workerName: 'Hendri Gunawan',
+          equipmentId: 'EX-04',
+          equipmentName: 'Excavator Kobelco SK200-10',
+        },
+        {
+          id: 'sup-2',
+          role: 'Operator',
+          workerName: 'Agus Santoso',
+          equipmentId: 'EX-01',
+          equipmentName: 'Excavator Komatsu PC200-8',
+        },
+        {
+          id: 'sup-3',
+          role: 'Operator',
+          workerName: 'Rian Hidayat',
+          equipmentId: 'EX-02',
+          equipmentName: 'Excavator Komatsu PC200-8',
+        },
+        {
+          id: 'sup-4',
+          role: 'Operator',
+          workerName: 'Bambang Supriyanto',
+          equipmentId: 'DZ-02',
+          equipmentName: 'Bulldozer CAT D6R',
+        },
+        {
+          id: 'sup-5',
+          role: 'Mekanik',
+          workerName: 'Anton',
+          notes: 'Maintenance & Service Unit',
+        },
+        {
+          id: 'sup-6',
+          role: 'Logistik',
+          workerName: 'Bowo',
+          notes: 'BBM & Sparepart',
+        },
+        {
+          id: 'sup-7',
+          role: 'Pendukung',
+          workerName: 'Jaya',
+          notes: 'Helper & Rintis Jalur',
+        },
+      ],
     };
   });
 
+  // Helper untuk mengekstrak seluruh personil & alat berat untuk suatu blok dari data Penugasan Kerja
+  const getPersonnelForBlockFromAssignments = (targetClientId: string, targetBlockId?: string) => {
+    const matchingAssignments = workAssignments.filter(
+      (a) => a.clientId === targetClientId && a.status === 'Aktif'
+    );
+    const asgNumbers = Array.from(new Set(matchingAssignments.map((a) => a.assignmentNumber).filter(Boolean)));
+    const personnel: Array<{
+      workerId: string;
+      workerName: string;
+      workerCategory: string;
+      equipmentId?: string;
+      equipmentName?: string;
+      assignmentNumber: string;
+    }> = [];
+
+    matchingAssignments.forEach((asg) => {
+      // 1. Site Manager
+      if (asg.siteManagerName) {
+        personnel.push({
+          workerId: `sm-${asg.id}`,
+          workerName: asg.siteManagerName,
+          workerCategory: 'Site Manager',
+          assignmentNumber: asg.assignmentNumber,
+        });
+      }
+
+      // 2. Pengawas
+      if (asg.supervisors && asg.supervisors.length > 0) {
+        asg.supervisors.forEach((spv, sIdx) => {
+          const covers = spv.coverageType === 'ALL' || !targetBlockId || targetBlockId === 'ALL' || spv.assignedBlockIds?.includes(targetBlockId);
+          if (covers) {
+            personnel.push({
+              workerId: spv.id || `spv-${asg.id}-${sIdx}`,
+              workerName: spv.name,
+              workerCategory: 'Pengawas',
+              assignmentNumber: asg.assignmentNumber,
+            });
+          }
+        });
+      }
+
+      // 3. Tim Pendukung (bekerja diseluruh blok kerja SPK)
+      if (asg.supportTeam && asg.supportTeam.length > 0) {
+        asg.supportTeam.forEach((sup, supIdx) => {
+          personnel.push({
+            workerId: sup.workerId || `sup-${asg.id}-${supIdx}`,
+            workerName: sup.workerName,
+            workerCategory: sup.role,
+            equipmentId: sup.equipmentId,
+            equipmentName: sup.equipmentName,
+            assignmentNumber: asg.assignmentNumber,
+          });
+        });
+      }
+
+      // 4. Fallback legacy
+      if (asg.workerName && (!asg.supportTeam || asg.supportTeam.length === 0)) {
+        if (asg.blockId === 'ALL' || !targetBlockId || targetBlockId === 'ALL' || asg.blockId === targetBlockId) {
+          personnel.push({
+            workerId: asg.workerId || `w-${asg.id}`,
+            workerName: asg.workerName,
+            workerCategory: asg.workerCategory || 'Operator',
+            equipmentId: asg.equipmentId,
+            equipmentName: asg.equipmentName,
+            assignmentNumber: asg.assignmentNumber,
+          });
+        }
+      }
+    });
+
+    return { asgNumbers, personnel };
+  };
+
   const handleOpenAddAssignment = () => {
     setEditingAssignmentId(null);
+    setManualWorkerInputMode({});
     const currentStaffList = storageService.getCompanyStaff();
     setCompanyStaffList(currentStaffList);
+    setWorkers(storageService.getWorkers());
+    setEquipments(storageService.getEquipments());
 
-    const initialClientId = clients[0]?.id || 'client-1';
+    const initialClientId = clients.some((c) => c.id === 'client-gudang')
+      ? 'client-gudang'
+      : (clients[0]?.id || 'client-1');
     const targetClient = clients.find((c) => c.id === initialClientId) || clients[0];
     const todayStr = new Date().toISOString().slice(0, 10);
-
-    // Eligible workers excluding Pengawas and Site Manager
-    const eligibleWorkers = workers.filter((w) => {
-      const catLower = (w.category || '').toLowerCase();
-      const roleLower = (w.role || '').toLowerCase();
-      return !catLower.includes('pengawas') && !catLower.includes('site manager') && !catLower.includes('manager') &&
-             !roleLower.includes('pengawas') && !roleLower.includes('site manager') && !roleLower.includes('manager');
-    });
-
-    const operatorWorkers = eligibleWorkers.filter((w) => w.category === 'Operator');
-    const defaultWorker = operatorWorkers[0] || eligibleWorkers[0];
-    const isOp = defaultWorker?.category === 'Operator';
-    const defaultEquip = equipments.find((e) => e.type === 'Excavator') || equipments[0];
-
-    // Default staff from Master Data Perusahaan
-    const defaultStaff = currentStaffList.find((s) => s.staffLevel === 'Pengawas') || currentStaffList[0];
-
-    // Otomatis generate No Penugasan standar resmi seperti No Kontrak/SPK
     const generatedNo = storageService.generateAssignmentNumber(targetClient, todayStr, workAssignments);
+    const availableBlocks = blocks.filter((b) => b.clientId === initialClientId);
 
-    setAssignmentForm({
-      assignmentNumber: generatedNo,
-      staffId: defaultStaff?.id || '',
-      staffLevel: defaultStaff?.staffLevel || 'Pengawas',
-      staffName: defaultStaff?.fullName || '',
-      workerCategory: defaultWorker?.category || 'Operator',
-      workerId: defaultWorker?.id || '',
-      workerName: defaultWorker?.name || '',
-      equipmentType: isOp ? (defaultEquip?.type || 'Excavator') : '',
-      equipmentId: isOp ? (defaultEquip?.id || '') : '',
-      clientId: initialClientId,
-      blockId: 'ALL',
-      status: 'Aktif',
-      assignedDate: todayStr,
-      notes: '',
-    });
+    if (initialClientId === 'client-gudang') {
+      setAssignmentForm({
+        assignmentNumber: generatedNo,
+        clientId: 'client-gudang',
+        assignedDate: todayStr,
+        status: 'Aktif',
+        notes: 'Penugasan Tim Kerja Operasional Proyek Land Clearing 460 Ha. Seluruh tim wajib mematuhi SOP Zero Burning Method dan standar K3.',
+        siteManagerName: 'Bambang Sugiarto, S.P.',
+        siteManagerPhone: '+62 812-3456-7890',
+        supervisors: [
+          {
+            id: 'spv-1',
+            name: 'Ahmad Noor',
+            phone: '+62 813-1122-3344',
+            coverageType: 'CUSTOM',
+            assignedBlockIds: ['blk-i33', 'blk-j31', 'blk-j34'],
+            assignedBlockCodes: ['BLOK I33', 'BLOK J31', 'BLOK J34'],
+          },
+          {
+            id: 'spv-2',
+            name: 'Dedi Kurniawan',
+            phone: '+62 813-5566-7788',
+            coverageType: 'CUSTOM',
+            assignedBlockIds: ['blk-j35', 'blk-j36'],
+            assignedBlockCodes: ['BLOK J35', 'BLOK J36'],
+          },
+        ],
+        supportTeam: [
+          {
+            id: `sup-${Date.now()}-1`,
+            role: 'Operator',
+            workerName: 'Hendri Gunawan',
+            equipmentId: 'EX-04',
+            equipmentName: 'Excavator Kobelco SK200-10',
+          },
+          {
+            id: `sup-${Date.now()}-2`,
+            role: 'Operator',
+            workerName: 'Agus Santoso',
+            equipmentId: 'EX-01',
+            equipmentName: 'Excavator Komatsu PC200-8',
+          },
+          {
+            id: `sup-${Date.now()}-3`,
+            role: 'Operator',
+            workerName: 'Rian Hidayat',
+            equipmentId: 'EX-02',
+            equipmentName: 'Excavator Komatsu PC200-8',
+          },
+          {
+            id: `sup-${Date.now()}-4`,
+            role: 'Operator',
+            workerName: 'Bambang Supriyanto',
+            equipmentId: 'DZ-02',
+            equipmentName: 'Bulldozer CAT D6R',
+          },
+          {
+            id: `sup-${Date.now()}-5`,
+            role: 'Mekanik',
+            workerName: 'Anton',
+            notes: 'Maintenance & Service Unit',
+          },
+          {
+            id: `sup-${Date.now()}-6`,
+            role: 'Logistik',
+            workerName: 'Bowo',
+            notes: 'BBM & Sparepart',
+          },
+          {
+            id: `sup-${Date.now()}-7`,
+            role: 'Pendukung',
+            workerName: 'Jaya',
+            notes: 'Helper & Rintis Jalur',
+          },
+        ],
+      });
+    } else {
+      setAssignmentForm({
+        assignmentNumber: generatedNo,
+        clientId: initialClientId,
+        assignedDate: todayStr,
+        status: 'Aktif',
+        notes: 'Penugasan Tim Kerja Operasional Proyek Land Clearing.',
+        siteManagerName: 'Bambang Sugiarto, S.P.',
+        siteManagerPhone: '+62 812-3456-7890',
+        supervisors: [
+          {
+            id: `spv-${Date.now()}-1`,
+            name: 'Ahmad Noor',
+            phone: '+62 813-1122-3344',
+            coverageType: 'ALL',
+            assignedBlockIds: availableBlocks.map((b) => b.id),
+            assignedBlockCodes: availableBlocks.map((b) => b.code),
+          },
+        ],
+        supportTeam: [
+          {
+            id: `sup-${Date.now()}-1`,
+            role: 'Operator',
+            workerName: 'Hendri Gunawan',
+            equipmentId: 'EX-04',
+            equipmentName: 'Excavator Kobelco SK200-10',
+          },
+          {
+            id: `sup-${Date.now()}-2`,
+            role: 'Operator',
+            workerName: 'Agus Santoso',
+            equipmentId: 'EX-01',
+            equipmentName: 'Excavator Komatsu PC200-8',
+          },
+          {
+            id: `sup-${Date.now()}-3`,
+            role: 'Mekanik',
+            workerName: 'Anton',
+          },
+          {
+            id: `sup-${Date.now()}-4`,
+            role: 'Logistik',
+            workerName: 'Bowo',
+          },
+          {
+            id: `sup-${Date.now()}-5`,
+            role: 'Pendukung',
+            workerName: 'Jaya',
+          },
+        ],
+      });
+    }
     setIsAssignmentModalOpen(true);
   };
 
   const handleOpenEditAssignment = (asg: WorkAssignment) => {
     setEditingAssignmentId(asg.id);
-    const currentStaffList = storageService.getCompanyStaff();
-    setCompanyStaffList(currentStaffList);
+    setManualWorkerInputMode({});
+    setWorkers(storageService.getWorkers());
+    setEquipments(storageService.getEquipments());
+    const clientBlocks = blocks.filter((b) => b.clientId === asg.clientId);
 
-    const isOp = asg.workerCategory === 'Operator';
-    const client = clients.find((c) => c.id === asg.clientId);
-    const asgNo = asg.assignmentNumber || storageService.generateAssignmentNumber(client, asg.assignedDate, workAssignments);
+    let sups: StaffSupervisorAssignment[] = [];
+    if (asg.supervisors && asg.supervisors.length > 0) {
+      sups = asg.supervisors;
+    } else {
+      sups = [
+        {
+          id: `spv-${asg.id}-1`,
+          name: asg.staffName || 'Ahmad Noor',
+          phone: '+62 813-1122-3344',
+          coverageType: asg.blockId === 'ALL' ? 'ALL' : 'CUSTOM',
+          assignedBlockIds: asg.blockId === 'ALL' ? clientBlocks.map((b) => b.id) : (asg.blockId ? [asg.blockId] : []),
+          assignedBlockCodes: asg.blockId === 'ALL' ? clientBlocks.map((b) => b.code) : (asg.blockCode ? [asg.blockCode] : []),
+        },
+      ];
+    }
 
-    const matchedStaff = currentStaffList.find((s) => s.id === asg.staffId || s.fullName === asg.staffName);
+    let supTeam: SupportTeamMemberAssignment[] = [];
+    if (asg.supportTeam && asg.supportTeam.length > 0) {
+      supTeam = asg.supportTeam;
+    } else if (asg.workerName) {
+      supTeam = [
+        {
+          id: `sup-${asg.id}-1`,
+          role: asg.workerCategory || 'Operator',
+          workerId: asg.workerId,
+          workerName: asg.workerName,
+          equipmentId: asg.equipmentId,
+          equipmentName: asg.equipmentName,
+        },
+      ];
+    } else {
+      supTeam = [
+        {
+          id: `sup-${Date.now()}-1`,
+          role: 'Operator',
+          workerName: 'Hendri Gunawan',
+          equipmentId: 'EX-04',
+          equipmentName: 'Excavator Kobelco SK200-10',
+        },
+      ];
+    }
 
     setAssignmentForm({
-      assignmentNumber: asgNo,
-      staffId: asg.staffId || matchedStaff?.id || '',
-      staffLevel: asg.staffLevel || matchedStaff?.staffLevel || 'Pengawas',
-      staffName: asg.staffName || matchedStaff?.fullName || '',
-      workerCategory: asg.workerCategory,
-      workerId: asg.workerId,
-      workerName: asg.workerName,
-      equipmentType: isOp ? (asg.equipmentType || 'Excavator') : '',
-      equipmentId: isOp ? (asg.equipmentId || '') : '',
+      id: asg.id,
+      assignmentNumber: asg.assignmentNumber,
       clientId: asg.clientId,
-      blockId: asg.blockId || 'ALL',
-      status: asg.status,
       assignedDate: asg.assignedDate || new Date().toISOString().slice(0, 10),
+      status: asg.status,
       notes: asg.notes || '',
+      siteManagerName: asg.siteManagerName || (asg.staffLevel === 'Site Manager' ? asg.staffName || '' : 'Bambang Sugiarto, S.P.'),
+      siteManagerPhone: asg.siteManagerPhone || '+62 812-3456-7890',
+      supervisors: sups,
+      supportTeam: supTeam,
     });
     setIsAssignmentModalOpen(true);
   };
 
-  const handleSaveAssignment = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!assignmentForm.workerId) {
-      alert('Mohon pilih Nama Lengkap Personel yang ditugaskan.');
+  const handleAssignmentClientChange = (newClientId: string) => {
+    const targetClient = clients.find((c) => c.id === newClientId);
+    const newAssignedDate = assignmentForm.assignedDate || new Date().toISOString().slice(0, 10);
+    const newAsgNo = storageService.generateAssignmentNumber(targetClient, newAssignedDate, workAssignments);
+    const newBlocks = blocks.filter((b) => b.clientId === newClientId);
+
+    if (newClientId === 'client-gudang') {
+      setAssignmentForm((prev) => ({
+        ...prev,
+        clientId: newClientId,
+        assignmentNumber: newAsgNo,
+        siteManagerName: 'Bambang Sugiarto, S.P.',
+        siteManagerPhone: '+62 812-3456-7890',
+        supervisors: [
+          {
+            id: 'spv-1',
+            name: 'Ahmad Noor',
+            phone: '+62 813-1122-3344',
+            coverageType: 'CUSTOM',
+            assignedBlockIds: ['blk-i33', 'blk-j31', 'blk-j34'],
+            assignedBlockCodes: ['BLOK I33', 'BLOK J31', 'BLOK J34'],
+          },
+          {
+            id: 'spv-2',
+            name: 'Dedi Kurniawan',
+            phone: '+62 813-5566-7788',
+            coverageType: 'CUSTOM',
+            assignedBlockIds: ['blk-j35', 'blk-j36'],
+            assignedBlockCodes: ['BLOK J35', 'BLOK J36'],
+          },
+        ],
+        supportTeam: [
+          {
+            id: 'sup-1',
+            role: 'Operator',
+            workerName: 'Hendri Gunawan',
+            equipmentId: 'EX-04',
+            equipmentName: 'Excavator Kobelco SK200-10',
+          },
+          {
+            id: 'sup-2',
+            role: 'Operator',
+            workerName: 'Agus Santoso',
+            equipmentId: 'EX-01',
+            equipmentName: 'Excavator Komatsu PC200-8',
+          },
+          {
+            id: 'sup-3',
+            role: 'Operator',
+            workerName: 'Rian Hidayat',
+            equipmentId: 'EX-02',
+            equipmentName: 'Excavator Komatsu PC200-8',
+          },
+          {
+            id: 'sup-4',
+            role: 'Operator',
+            workerName: 'Bambang Supriyanto',
+            equipmentId: 'DZ-02',
+            equipmentName: 'Bulldozer CAT D6R',
+          },
+          {
+            id: 'sup-5',
+            role: 'Mekanik',
+            workerName: 'Anton',
+            notes: 'Maintenance & Service Unit',
+          },
+          {
+            id: 'sup-6',
+            role: 'Logistik',
+            workerName: 'Bowo',
+            notes: 'BBM & Sparepart',
+          },
+          {
+            id: 'sup-7',
+            role: 'Pendukung',
+            workerName: 'Jaya',
+            notes: 'Helper & Rintis Jalur',
+          },
+        ],
+      }));
+    } else {
+      setAssignmentForm((prev) => ({
+        ...prev,
+        clientId: newClientId,
+        assignmentNumber: newAsgNo,
+        supervisors: prev.supervisors.map((spv) => ({
+          ...spv,
+          assignedBlockIds: spv.coverageType === 'ALL' ? newBlocks.map((b) => b.id) : [],
+          assignedBlockCodes: spv.coverageType === 'ALL' ? newBlocks.map((b) => b.code) : [],
+        })),
+      }));
+    }
+  };
+
+  // Supervisor helpers
+  const handleAddSupervisor = () => {
+    const newSpv: StaffSupervisorAssignment = {
+      id: `spv-${Date.now()}`,
+      name: '',
+      phone: '',
+      coverageType: 'CUSTOM',
+      assignedBlockIds: [],
+      assignedBlockCodes: [],
+    };
+    setAssignmentForm((prev) => ({
+      ...prev,
+      supervisors: [...prev.supervisors, newSpv],
+    }));
+  };
+
+  const handleRemoveSupervisor = (index: number) => {
+    if (assignmentForm.supervisors.length <= 1) {
+      alert('Minimal harus ada 1 Pengawas Lapangan.');
       return;
     }
+    setAssignmentForm((prev) => ({
+      ...prev,
+      supervisors: prev.supervisors.filter((_, i) => i !== index),
+    }));
+  };
 
-    const isOperator = assignmentForm.workerCategory === 'Operator';
+  const handleSupervisorChange = (index: number, field: keyof StaffSupervisorAssignment, value: any) => {
+    setAssignmentForm((prev) => {
+      const nextSups = [...prev.supervisors];
+      const cur = { ...nextSups[index] };
+      if (field === 'coverageType') {
+        cur.coverageType = value;
+        if (value === 'ALL') {
+          const clientBlocks = blocks.filter((b) => b.clientId === prev.clientId);
+          cur.assignedBlockIds = clientBlocks.map((b) => b.id);
+          cur.assignedBlockCodes = clientBlocks.map((b) => b.code);
+        }
+      } else {
+        (cur as any)[field] = value;
+        if (field === 'name') {
+          const foundWorker = workers.find((w) => w.name.toLowerCase() === (value || '').toLowerCase());
+          const foundStaff = companyStaffList.find((s) => s.fullName?.toLowerCase() === (value || '').toLowerCase());
+          const matchedPhone = foundWorker?.phone || foundStaff?.phone;
+          if (matchedPhone && !cur.phone) {
+            cur.phone = matchedPhone;
+          }
+        }
+      }
+      nextSups[index] = cur;
+      return { ...prev, supervisors: nextSups };
+    });
+  };
 
-    if (isOperator && !assignmentForm.equipmentId) {
-      alert('Untuk kategori Operator, wajib memilih Kode Unit Alat Berat.');
+  const handleToggleSupervisorBlock = (spvIndex: number, blockId: string, blockCode: string) => {
+    setAssignmentForm((prev) => {
+      const nextSups = [...prev.supervisors];
+      const cur = { ...nextSups[spvIndex] };
+      const ids = [...(cur.assignedBlockIds || [])];
+      const codes = [...(cur.assignedBlockCodes || [])];
+      const existsIdx = ids.indexOf(blockId);
+      if (existsIdx >= 0) {
+        ids.splice(existsIdx, 1);
+        codes.splice(existsIdx, 1);
+      } else {
+        ids.push(blockId);
+        codes.push(blockCode);
+      }
+      cur.assignedBlockIds = ids;
+      cur.assignedBlockCodes = codes;
+      nextSups[spvIndex] = cur;
+      return { ...prev, supervisors: nextSups };
+    });
+  };
+
+  // Support Team helpers
+  const handleAddSupportMember = () => {
+    const newMember: SupportTeamMemberAssignment = {
+      id: `sup-${Date.now()}`,
+      role: 'Operator',
+      workerName: '',
+      equipmentId: '',
+      equipmentName: '',
+      notes: '',
+    };
+    setAssignmentForm((prev) => ({
+      ...prev,
+      supportTeam: [...prev.supportTeam, newMember],
+    }));
+  };
+
+  const handleRemoveSupportMember = (index: number) => {
+    if (assignmentForm.supportTeam.length <= 1) {
+      alert('Minimal harus ada 1 personil dalam Tim Pendukung.');
+      return;
+    }
+    setAssignmentForm((prev) => ({
+      ...prev,
+      supportTeam: prev.supportTeam.filter((_, i) => i !== index),
+    }));
+  };
+
+  const handleSupportMemberChange = (index: number, field: keyof SupportTeamMemberAssignment, value: any) => {
+    setAssignmentForm((prev) => {
+      const nextTeam = [...prev.supportTeam];
+      const cur = { ...nextTeam[index], [field]: value };
+      if (field === 'role' && value !== 'Operator') {
+        cur.equipmentId = undefined;
+        cur.equipmentName = undefined;
+      }
+      if (field === 'workerName') {
+        const foundWorker = workers.find((w) => w.name.toLowerCase() === (value || '').toLowerCase());
+        if (foundWorker) {
+          cur.workerId = foundWorker.id;
+          cur.phone = foundWorker.phone;
+          // If operator and no equipment chosen yet, try to auto-select from equipment or worker
+          if (cur.role === 'Operator' && !cur.equipmentId) {
+            if (foundWorker.assignedEquipmentId) {
+              const eq = equipments.find((e) => e.id === foundWorker.assignedEquipmentId);
+              if (eq) {
+                cur.equipmentId = eq.id;
+                cur.equipmentName = eq.name;
+              }
+            } else {
+              const eq = equipments.find((e) => e.operatorName && e.operatorName.toLowerCase() === foundWorker.name.toLowerCase());
+              if (eq) {
+                cur.equipmentId = eq.id;
+                cur.equipmentName = eq.name;
+              }
+            }
+          }
+        }
+      }
+      if (field === 'equipmentId') {
+        const foundEq = equipments.find((e) => e.id === value);
+        if (foundEq) {
+          cur.equipmentName = foundEq.name;
+          // If workerName is empty and foundEq has operatorName, auto-fill operator from module 3 workers
+          if (!cur.workerName && foundEq.operatorName) {
+            const opWorker = workers.find((w) => w.name.toLowerCase() === foundEq.operatorName.toLowerCase());
+            if (opWorker) {
+              cur.workerName = opWorker.name;
+              cur.workerId = opWorker.id;
+              cur.phone = opWorker.phone;
+            } else {
+              cur.workerName = foundEq.operatorName;
+            }
+          }
+        } else {
+          cur.equipmentName = undefined;
+        }
+      }
+      nextTeam[index] = cur;
+      return { ...prev, supportTeam: nextTeam };
+    });
+  };
+
+  const handleSaveAssignment = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!assignmentForm.clientId) {
+      alert('Mohon pilih Klien & Nomor SPK.');
+      return;
+    }
+    if (!assignmentForm.siteManagerName?.trim()) {
+      alert('Mohon isi nama Site Manager.');
+      return;
+    }
+    if (assignmentForm.supervisors.length === 0 || !assignmentForm.supervisors[0].name?.trim()) {
+      alert('Mohon isi minimal 1 Pengawas Lapangan.');
+      return;
+    }
+    if (assignmentForm.supportTeam.length === 0) {
+      alert('Mohon tambahkan minimal 1 personil Tim Pendukung.');
       return;
     }
 
     const selectedClient = clients.find((c) => c.id === assignmentForm.clientId) || clients[0];
-    const selectedWorker = workers.find((w) => w.id === assignmentForm.workerId);
-    const selectedEquip = isOperator ? equipments.find((e) => e.id === assignmentForm.equipmentId) : undefined;
-    const selectedStaff = companyStaffList.find((s) => s.id === assignmentForm.staffId) ||
-      companyStaffList.find((s) => s.fullName === assignmentForm.staffName);
-
-    let blockCode = 'Seluruh Blok Kerja pada SPK Terpilih';
-    if (assignmentForm.blockId !== 'ALL') {
-      const bObj = blocks.find((b) => b.id === assignmentForm.blockId);
-      if (bObj) {
-        blockCode = `${bObj.code}${bObj.targetAreaHa ? ` (${bObj.targetAreaHa} Ha)` : ''}`;
-      }
-    }
-
     const finalAssignmentNo = assignmentForm.assignmentNumber?.trim() || storageService.generateAssignmentNumber(selectedClient, assignmentForm.assignedDate, workAssignments);
-
     const assignmentId = editingAssignmentId || `asg-${Date.now()}`;
+
+    const firstOperator = assignmentForm.supportTeam.find((s) => s.role === 'Operator');
+    const firstSupervisor = assignmentForm.supervisors[0];
+
     const newAsg: WorkAssignment = {
       id: assignmentId,
       assignmentNumber: finalAssignmentNo,
-      // 1. Data Staff dari Master Data Perusahaan
-      staffId: assignmentForm.staffId || selectedStaff?.id || undefined,
-      staffLevel: assignmentForm.staffLevel || selectedStaff?.staffLevel || undefined,
-      staffName: assignmentForm.staffName || selectedStaff?.fullName || undefined,
-      // 2. Data Personel Tim pendukung Lapangan
-      workerId: assignmentForm.workerId,
-      workerName: selectedWorker?.name || assignmentForm.workerName || 'Personel',
-      workerCategory: assignmentForm.workerCategory,
-      // 3. Alokasi Alat Berat
-      equipmentId: isOperator ? (selectedEquip?.id || undefined) : undefined,
-      equipmentType: isOperator ? (selectedEquip?.type || assignmentForm.equipmentType || undefined) : undefined,
-      equipmentName: isOperator ? (selectedEquip?.name || undefined) : undefined,
-      equipmentModel: isOperator ? (selectedEquip?.model || undefined) : undefined,
-      // 4. Penugasan Lokasi SPK & Blok
       clientId: selectedClient?.id || 'client-1',
       clientName: selectedClient?.name || 'Klien',
       contractNumber: selectedClient?.contractNumber || 'Tanpa SPK',
-      blockId: assignmentForm.blockId || 'ALL',
-      blockCode: blockCode,
-      // 5. Status & Tanggal
-      status: assignmentForm.status,
+      totalAreaHa: selectedClient?.totalAreaHa || 460,
       assignedDate: assignmentForm.assignedDate,
+      status: assignmentForm.status,
       notes: assignmentForm.notes?.trim() || undefined,
       createdAt: editingAssignmentId 
         ? (workAssignments.find((a) => a.id === editingAssignmentId)?.createdAt || new Date().toISOString()) 
         : new Date().toISOString(),
+
+      siteManagerName: assignmentForm.siteManagerName.trim(),
+      siteManagerPhone: assignmentForm.siteManagerPhone.trim() || undefined,
+      supervisors: assignmentForm.supervisors,
+      supportTeam: assignmentForm.supportTeam,
+
+      staffName: assignmentForm.siteManagerName || firstSupervisor?.name,
+      staffLevel: 'Site Manager',
+      workerName: `${firstOperator?.workerName || 'Tim Pendukung'} dkk (${assignmentForm.supportTeam.length} Personil)`,
+      workerCategory: 'Operator & Tim Pendukung',
+      equipmentId: firstOperator?.equipmentId,
+      equipmentName: firstOperator?.equipmentName,
+      blockId: 'ALL',
+      blockCode: 'Seluruh Blok Kerja SPK Terpilih',
     };
 
     storageService.saveWorkAssignment(newAsg);
@@ -1457,74 +1912,6 @@ export const MasterDataView: React.FC = () => {
     setBlocks(storageService.getBlocks());
   };
 
-  // Add custom worker category handler
-  const handleAddCategory = () => {
-    const trimmed = newCategoryInput.trim();
-    if (!trimmed) return;
-    const updated = Array.from(new Set([...customWorkerCategories, trimmed]));
-    setCustomWorkerCategories(updated);
-    try {
-      localStorage.setItem('SL_CUSTOM_WORKER_CATEGORIES', JSON.stringify(updated));
-    } catch {}
-    setWorkerForm((prev) => ({ ...prev, category: trimmed }));
-    setIsAddingNewCategory(false);
-    setNewCategoryInput('');
-  };
-
-  // Save Worker (Create or Update)
-  const handleSaveWorker = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!workerForm.name?.trim()) {
-      alert('Mohon isi Nama Lengkap Personil.');
-      return;
-    }
-
-    const workerId = editingWorkerId || `w-${Date.now()}`;
-    const chosenCategory = workerForm.category || 'Operator';
-    const newWorker: Worker = {
-      id: workerId,
-      name: workerForm.name.trim(),
-      category: chosenCategory,
-      role: chosenCategory,
-      assignedEquipmentId: workerForm.assignedEquipmentId || undefined,
-      phone: workerForm.phone || '-',
-      status: (workerForm.status as any) || 'Hadir',
-      teamName: `Tim ${chosenCategory}`,
-      assignedClientId: workerForm.assignedClientId || 'ALL',
-      assignedBlockId: workerForm.assignedBlockId || 'ALL',
-    };
-
-    storageService.saveWorker(newWorker);
-    setWorkers([...storageService.getWorkers()]);
-    setIsWorkerModalOpen(false);
-    setEditingWorkerId(null);
-    setIsAddingNewCategory(false);
-  };
-
-  // Edit Worker
-  const handleEditWorker = (worker: Worker) => {
-    setEditingWorkerId(worker.id);
-    const cat = worker.category || 'Operator';
-    setWorkerForm({
-      name: worker.name,
-      category: cat,
-      role: worker.role || cat,
-      assignedEquipmentId: worker.assignedEquipmentId || '',
-      phone: worker.phone,
-      status: worker.status,
-      teamName: worker.teamName || `Tim ${cat}`,
-      assignedClientId: worker.assignedClientId || 'ALL',
-      assignedBlockId: worker.assignedBlockId || 'ALL',
-    });
-    setIsAddingNewCategory(false);
-    setIsWorkerModalOpen(true);
-  };
-
-  // Delete Worker
-  const handleDeleteWorker = (id: string, _name: string) => {
-    storageService.deleteWorker(id);
-    setWorkers([...storageService.getWorkers()]);
-  };
 
   return (
     <div className="max-w-7xl mx-auto py-6 px-3 sm:px-6 space-y-6">
@@ -2076,24 +2463,35 @@ export const MasterDataView: React.FC = () => {
         </div>
       )}
 
-      {/* SUB-TAB 5: PENUGASAN KERJA (PERSONEL & ALAT BERAT PER SPK & BLOK KERJA) */}
+      {/* SUB-TAB 4: PENUGASAN KERJA (TIM STAFF & TIM PENDUKUNG PER SPK KLIEN) */}
       {activeSubTab === 'assignments' && (() => {
         const filteredAssignments = workAssignments.filter((asg) => {
           const matchClient = assignmentClientFilter === 'ALL' || asg.clientId === assignmentClientFilter;
-          const matchCategory = assignmentCategoryFilter === 'ALL' || asg.workerCategory === assignmentCategoryFilter;
           const matchStatus = assignmentStatusFilter === 'ALL' || asg.status === assignmentStatusFilter;
-          const q = (assignmentSearch || '').toLowerCase();
+          const matchCategory = assignmentCategoryFilter === 'ALL' || 
+            (asg.supportTeam && asg.supportTeam.some((m) => m.role.toLowerCase() === assignmentCategoryFilter.toLowerCase())) ||
+            (asg.workerCategory && asg.workerCategory.toLowerCase() === assignmentCategoryFilter.toLowerCase());
+          
+          const q = (assignmentSearch || '').trim().toLowerCase();
+          if (!q) return matchClient && matchCategory && matchStatus;
+
           const matchSearch =
-            !assignmentSearch ||
-            (asg.workerName && asg.workerName.toLowerCase().includes(q)) ||
-            (asg.workerCategory && asg.workerCategory.toLowerCase().includes(q)) ||
-            (asg.staffName && asg.staffName.toLowerCase().includes(q)) ||
-            (asg.staffLevel && asg.staffLevel.toLowerCase().includes(q)) ||
-            (asg.equipmentId && asg.equipmentId.toLowerCase().includes(q)) ||
-            (asg.equipmentName && asg.equipmentName.toLowerCase().includes(q)) ||
+            (asg.assignmentNumber && asg.assignmentNumber.toLowerCase().includes(q)) ||
             (asg.contractNumber && asg.contractNumber.toLowerCase().includes(q)) ||
             (asg.clientName && asg.clientName.toLowerCase().includes(q)) ||
-            (asg.blockCode && asg.blockCode.toLowerCase().includes(q));
+            (asg.siteManagerName && asg.siteManagerName.toLowerCase().includes(q)) ||
+            (asg.supervisors && asg.supervisors.some((s) => 
+              s.name.toLowerCase().includes(q) || 
+              s.assignedBlockCodes?.some((b) => b.toLowerCase().includes(q))
+            )) ||
+            (asg.supportTeam && asg.supportTeam.some((m) => 
+              m.workerName.toLowerCase().includes(q) || 
+              m.role.toLowerCase().includes(q) || 
+              (m.equipmentName && m.equipmentName.toLowerCase().includes(q))
+            )) ||
+            (asg.notes && asg.notes.toLowerCase().includes(q)) ||
+            (asg.staffName && asg.staffName.toLowerCase().includes(q)) ||
+            (asg.workerName && asg.workerName.toLowerCase().includes(q));
 
           return matchClient && matchCategory && matchStatus && matchSearch;
         });
@@ -2101,23 +2499,43 @@ export const MasterDataView: React.FC = () => {
         // Metrics calculations
         const totalAssignments = workAssignments.length;
         const activeAssignments = workAssignments.filter((a) => a.status === 'Aktif').length;
-        const assignedWorkersCount = new Set(workAssignments.filter((a) => a.status === 'Aktif').map((a) => a.workerId)).size;
-        const assignedEquipmentsCount = new Set(workAssignments.filter((a) => a.status === 'Aktif' && a.equipmentId).map((a) => a.equipmentId)).size;
+        const activeAsgs = workAssignments.filter((a) => a.status === 'Aktif');
+
+        let totalActiveStaffAndSupervisors = 0;
+        let totalActiveSupportPersonnel = 0;
+        let totalActiveEquipments = 0;
+
+        activeAsgs.forEach((a) => {
+          if (a.siteManagerName) totalActiveStaffAndSupervisors += 1;
+          if (a.supervisors && a.supervisors.length > 0) {
+            totalActiveStaffAndSupervisors += a.supervisors.length;
+          } else if (a.staffName && !a.siteManagerName) {
+            totalActiveStaffAndSupervisors += 1;
+          }
+
+          if (a.supportTeam && a.supportTeam.length > 0) {
+            totalActiveSupportPersonnel += a.supportTeam.length;
+            totalActiveEquipments += a.supportTeam.filter((s) => s.role === 'Operator' && (s.equipmentId || s.equipmentName)).length;
+          } else if (a.workerName) {
+            totalActiveSupportPersonnel += 1;
+            if (a.equipmentId) totalActiveEquipments += 1;
+          }
+        });
 
         return (
           <div className="space-y-4">
-            {/* Header Card Sub-Tab 5 */}
+            {/* Header Card Sub-Tab 4 */}
             <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-200 space-y-4">
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div>
                   <div className="flex items-center gap-2">
                     <ClipboardList className="w-5 h-5 text-amber-600" />
                     <h3 className="text-base font-black text-slate-900 uppercase">
-                      5. PENUGASAN KERJA ({workAssignments.length} DATA AKTIF)
+                      4. PENUGASAN KERJA ({workAssignments.length} DATA SPK)
                     </h3>
                   </div>
                   <p className="text-xs text-slate-500 mt-1 max-w-2xl">
-                    Matriks alokasi resmi penugasan staff penanggung jawab (Master Data Perusahaan), personil tim pendukung lapangan, dan armada alat berat per No Kontrak/SPK klien &amp; lokasi blok kerja.
+                    Matriks penugasan Tim Staff (Site Manager &amp; Pengawas Blok Kerja) serta Tim Pendukung (Operator Alat Berat, Mekanik, Logistik, Pendukung) per No. Kontrak/SPK Klien untuk seluruh blok kerja proyek.
                   </p>
                 </div>
 
@@ -2136,10 +2554,10 @@ export const MasterDataView: React.FC = () => {
               {/* Quick Metrics Bar */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-slate-100">
                 <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Total Penugasan</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Total Penugasan SPK</span>
                   <div className="text-xl font-black text-slate-900 mt-0.5">{totalAssignments}</div>
                   <span className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-1">
-                    <ClipboardList className="w-3 h-3 text-amber-600" /> Seluruh Riwayat
+                    <ClipboardList className="w-3 h-3 text-amber-600" /> Seluruh Riwayat SPK
                   </span>
                 </div>
 
@@ -2147,23 +2565,23 @@ export const MasterDataView: React.FC = () => {
                   <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider block">Penugasan Aktif</span>
                   <div className="text-xl font-black text-amber-950 mt-0.5">{activeAssignments}</div>
                   <span className="text-[10px] text-amber-700 mt-0.5 flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Sedang Bertugas
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Operasional Lapangan
                   </span>
                 </div>
 
-                <div className="bg-sky-50/70 border border-sky-200 rounded-xl p-3">
-                  <span className="text-[10px] font-bold text-sky-800 uppercase tracking-wider block">Personel Lapangan</span>
-                  <div className="text-xl font-black text-sky-950 mt-0.5">{assignedWorkersCount}</div>
-                  <span className="text-[10px] text-sky-700 mt-0.5 flex items-center gap-1">
-                    <Users className="w-3 h-3 text-sky-600" /> Terploting di Lokasi
+                <div className="bg-indigo-50/70 border border-indigo-200 rounded-xl p-3">
+                  <span className="text-[10px] font-bold text-indigo-800 uppercase tracking-wider block">Tim Staff &amp; Pengawas</span>
+                  <div className="text-xl font-black text-indigo-950 mt-0.5">{totalActiveStaffAndSupervisors}</div>
+                  <span className="text-[10px] text-indigo-700 mt-0.5 flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3 text-indigo-600" /> Site Manager &amp; Pengawas
                   </span>
                 </div>
 
                 <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3">
-                  <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">Armada Alat Berat</span>
-                  <div className="text-xl font-black text-emerald-950 mt-0.5">{assignedEquipmentsCount}</div>
+                  <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">Tim Pendukung &amp; Alat Berat</span>
+                  <div className="text-xl font-black text-emerald-950 mt-0.5">{totalActiveSupportPersonnel} Org / {totalActiveEquipments} Unit</div>
                   <span className="text-[10px] text-emerald-700 mt-0.5 flex items-center gap-1">
-                    <Truck className="w-3 h-3 text-emerald-600" /> Unit Bekerja
+                    <Truck className="w-3 h-3 text-emerald-600" /> Operator, Mekanik &amp; Logistik
                   </span>
                 </div>
               </div>
@@ -2172,11 +2590,11 @@ export const MasterDataView: React.FC = () => {
               <div className="flex flex-col sm:flex-row flex-wrap items-center justify-between gap-2.5 pt-3 border-t border-slate-100">
                 <div className="flex flex-wrap items-center gap-2 flex-1 w-full sm:w-auto">
                   {/* Search box */}
-                  <div className="relative min-w-[200px] flex-1 sm:max-w-xs">
+                  <div className="relative min-w-[220px] flex-1 sm:max-w-xs">
                     <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       type="text"
-                      placeholder="Cari staff, personil, kode alat, SPK..."
+                      placeholder="Cari Site Manager, pengawas, operator, alat, SPK..."
                       value={assignmentSearch}
                       onChange={(e) => setAssignmentSearch(e.target.value)}
                       className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium focus:outline-none focus:ring-1 focus:ring-amber-500"
@@ -2197,24 +2615,17 @@ export const MasterDataView: React.FC = () => {
                     ))}
                   </select>
 
-                  {/* Kategori Personel Lapangan Filter */}
+                  {/* Kategori Tim Pendukung Filter */}
                   <select
                     value={assignmentCategoryFilter}
                     onChange={(e) => setAssignmentCategoryFilter(e.target.value)}
                     className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer"
                   >
-                    <option value="ALL">Semua Kategori Personil Pendukung</option>
-                    <option value="Operator">Operator</option>
+                    <option value="ALL">Semua Peran Tim Pendukung</option>
+                    <option value="Operator">Operator Alat Berat</option>
                     <option value="Mekanik">Mekanik</option>
                     <option value="Logistik">Logistik</option>
                     <option value="Pendukung">Pendukung</option>
-                    {customWorkerCategories
-                      .filter((c) => !['Operator', 'Mekanik', 'Logistik', 'Pendukung', 'Pengawas', 'Site Manager'].includes(c))
-                      .map((c) => (
-                        <option key={c} value={c}>
-                          {c} (Kustom)
-                        </option>
-                      ))}
                   </select>
 
                   {/* Status Penugasan Filter */}
@@ -2232,7 +2643,7 @@ export const MasterDataView: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
-                  <span>Menampilkan {filteredAssignments.length} dari {workAssignments.length} penugasan</span>
+                  <span>Menampilkan {filteredAssignments.length} dari {workAssignments.length} penugasan SPK</span>
                   {(assignmentSearch || assignmentClientFilter !== 'ALL' || assignmentCategoryFilter !== 'ALL' || assignmentStatusFilter !== 'ALL') && (
                     <button
                       type="button"
@@ -2251,13 +2662,13 @@ export const MasterDataView: React.FC = () => {
               </div>
             </div>
 
-            {/* Assignments Table & Card View */}
+            {/* Assignments Table View */}
             {filteredAssignments.length === 0 ? (
               <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 space-y-3">
                 <ClipboardList className="w-10 h-10 text-slate-300 mx-auto" />
                 <h4 className="font-black text-slate-800 text-sm">Tidak Ada Data Penugasan Kerja</h4>
                 <p className="text-xs text-slate-500 max-w-md mx-auto">
-                  Belum ada penugasan personel dan alat berat yang cocok dengan kriteria filter saat ini.
+                  Belum ada penugasan Tim Staff dan Tim Pendukung yang cocok dengan kriteria filter saat ini.
                 </p>
                 <button
                   type="button"
@@ -2274,128 +2685,167 @@ export const MasterDataView: React.FC = () => {
                     <thead className="bg-slate-900 text-white uppercase text-[10px] tracking-wider">
                       <tr>
                         <th className="py-3 px-3.5 text-center w-12">No</th>
-                        <th className="py-3 px-3.5">No. Penugasan (Key)</th>
-                        <th className="py-3 px-3.5">Data Staff (Perusahaan)</th>
-                        <th className="py-3 px-3.5">Personel Tim Lapangan</th>
-                        <th className="py-3 px-3.5">Alokasi Unit Alat Berat</th>
-                        <th className="py-3 px-3.5">No. Kontrak / SPK &amp; Klien</th>
-                        <th className="py-3 px-3.5">Lokasi Blok Kerja</th>
-                        <th className="py-3 px-3.5 text-center">Status &amp; Tanggal</th>
+                        <th className="py-3 px-3.5 whitespace-nowrap">No. Penugasan (Key)</th>
+                        <th className="py-3 px-3.5">Klien &amp; No. SPK / Kontrak</th>
+                        <th className="py-3 px-3.5 min-w-[240px]">Tim Staff (Seluruh Blok SPK)</th>
+                        <th className="py-3 px-3.5 min-w-[280px]">Tim Pendukung (Operator, Alat, Mekanik)</th>
+                        <th className="py-3 px-3.5 text-center whitespace-nowrap">Status &amp; Mulai</th>
                         <th className="py-3 px-3.5 text-right w-28">Aksi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
                       {filteredAssignments.map((asg, idx) => {
+                        const hasSupervisors = asg.supervisors && asg.supervisors.length > 0;
+                        const hasSupport = asg.supportTeam && asg.supportTeam.length > 0;
+                        const opCount = hasSupport ? asg.supportTeam!.filter((s) => s.role === 'Operator').length : (asg.workerCategory === 'Operator' ? 1 : 0);
+
                         return (
-                          <tr key={asg.id} className="hover:bg-amber-50/30 transition">
+                          <tr key={asg.id} className="hover:bg-amber-50/20 transition align-top">
                             {/* No */}
-                            <td className="py-3 px-3.5 text-center font-mono font-bold text-slate-400">
+                            <td className="py-3.5 px-3.5 text-center font-mono font-bold text-slate-400">
                               {idx + 1}
                             </td>
 
-                            {/* NO PENUGASAN (OTOMATIS DIBUAT DENGAN STANDAR SEPERTI SPK - DIGUNAKAN SEBAGAI KEY) */}
-                            <td className="py-3 px-3.5 whitespace-nowrap">
+                            {/* NO PENUGASAN (KEY RESMI) */}
+                            <td className="py-3.5 px-3.5 whitespace-nowrap">
                               <div className="flex items-center gap-1.5">
-                                <span className="px-2 py-1 bg-gradient-to-r from-amber-50 to-amber-100 border border-amber-300 rounded-lg font-mono font-black text-amber-950 text-xs shadow-2xs flex items-center gap-1">
-                                  <Lock className="w-2.5 h-2.5 text-amber-700" />
+                                <span className="px-2.5 py-1 bg-gradient-to-r from-amber-50 to-amber-100 border border-amber-300 rounded-lg font-mono font-black text-amber-950 text-xs shadow-2xs flex items-center gap-1">
+                                  <Lock className="w-3 h-3 text-amber-700" />
                                   <span>{asg.assignmentNumber}</span>
                                 </span>
                               </div>
-                              <span className="text-[10px] text-slate-400 block mt-0.5 font-medium">
-                                🔑 Key Penugasan
+                              <span className="text-[10px] text-slate-400 block mt-1 font-medium">
+                                🔑 Key Penugasan Resmi
                               </span>
                             </td>
 
-                            {/* 1. DATA STAFF (MASTER DATA PERUSAHAAN) */}
-                            <td className="py-3 px-3.5">
-                              {asg.staffName ? (
-                                <div className="space-y-0.5">
-                                  <div className="font-black text-indigo-950 text-xs flex items-center gap-1.5">
-                                    <ShieldCheck className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                                    <span>{asg.staffName}</span>
-                                  </div>
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-800 font-bold text-[10px] border border-indigo-200">
-                                      {asg.staffLevel || 'Staff'}
-                                    </span>
-                                  </div>
-                                </div>
-                              ) : (
-                                <span className="text-slate-400 font-medium text-[11px] italic">-</span>
-                              )}
-                            </td>
-
-                            {/* 2. DATA PERSONEL TIM PENDUKUNG LAPANGAN */}
-                            <td className="py-3 px-3.5">
+                            {/* KLIEN & NO SPK */}
+                            <td className="py-3.5 px-3.5">
                               <div className="space-y-1">
-                                <div className="font-black text-slate-900 text-xs sm:text-sm flex items-center gap-1.5">
-                                  <span>{asg.workerName}</span>
+                                <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                                  <Building2 className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                  <span>{asg.clientName}</span>
                                 </div>
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                    asg.workerCategory === 'Operator'
-                                      ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                                      : asg.workerCategory === 'Mekanik'
-                                      ? 'bg-indigo-100 text-indigo-900 border border-indigo-300'
-                                      : asg.workerCategory === 'Logistik'
-                                      ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                                      : 'bg-slate-100 text-slate-800 border border-slate-200'
-                                  }`}>
-                                    {asg.workerCategory}
+                                <div className="font-mono text-slate-700 text-[11px] font-semibold">
+                                  No SPK: <span className="font-bold text-slate-900">{asg.contractNumber}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 pt-0.5">
+                                  <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 font-bold text-[10px] border border-emerald-200">
+                                    Luas: {asg.totalAreaHa || 460} Ha
                                   </span>
                                 </div>
                               </div>
                             </td>
 
-                            {/* Unit Alat Berat */}
-                            <td className="py-3 px-3.5">
-                              {asg.equipmentId ? (
-                                <div className="space-y-0.5">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-black font-mono text-[10px]">
-                                      {asg.equipmentId}
-                                    </span>
-                                    <span className="font-bold text-slate-900 text-xs">
-                                      {asg.equipmentName || asg.equipmentType}
-                                    </span>
+                            {/* TIM STAFF (Site Manager & Pengawas) */}
+                            <td className="py-3.5 px-3.5">
+                              <div className="space-y-2">
+                                {/* Site Manager */}
+                                <div className="bg-indigo-50/70 border border-indigo-200 rounded-lg p-2 text-xs">
+                                  <div className="flex items-center gap-1.5 text-indigo-950 font-black">
+                                    <ShieldCheck className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                    <span>Site Manager:</span>
+                                    <span className="text-slate-900 font-bold">{asg.siteManagerName || asg.staffName || '-'}</span>
                                   </div>
-                                  <div className="text-[11px] text-slate-500 font-medium">
-                                    Tipe: {asg.equipmentType} {asg.equipmentModel ? `• Model: ${asg.equipmentModel}` : ''}
-                                  </div>
+                                  {asg.siteManagerPhone && (
+                                    <div className="text-[10px] text-indigo-700 mt-0.5 pl-5">
+                                      📱 {asg.siteManagerPhone}
+                                    </div>
+                                  )}
                                 </div>
-                              ) : (
-                                <span className="text-slate-400 font-medium text-xs">-</span>
-                              )}
-                            </td>
 
-                            {/* SPK & Klien */}
-                            <td className="py-3 px-3.5">
-                              <div className="space-y-0.5">
-                                <div className="font-mono font-black text-slate-900 text-xs">
-                                  {asg.contractNumber}
-                                </div>
-                                <div className="text-[11px] font-bold text-amber-900 flex items-center gap-1">
-                                  <Building2 className="w-3 h-3 text-amber-600" />
-                                  <span>{asg.clientName}</span>
+                                {/* Pengawas Lapangan */}
+                                <div className="space-y-1">
+                                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block">
+                                    Pengawas Lapangan:
+                                  </span>
+                                  {hasSupervisors ? (
+                                    <div className="space-y-1.5">
+                                      {asg.supervisors!.map((spv, sIdx) => (
+                                        <div key={spv.id || sIdx} className="bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-[11px]">
+                                          <div className="font-bold text-slate-800 flex items-center justify-between">
+                                            <span>• {spv.name}</span>
+                                            {spv.phone && <span className="text-[10px] text-slate-400 font-normal">{spv.phone}</span>}
+                                          </div>
+                                          <div className="text-[10px] mt-0.5">
+                                            {spv.coverageType === 'ALL' ? (
+                                              <span className="inline-block px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 font-bold">
+                                                Mengawasi: Seluruh Blok SPK
+                                              </span>
+                                            ) : (
+                                              <span className="text-slate-600">
+                                                Mengawasi: <strong className="text-amber-900">{spv.assignedBlockCodes && spv.assignedBlockCodes.length > 0 ? spv.assignedBlockCodes.join(', ') : 'Belum memilih blok'}</strong>
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div className="text-[11px] text-slate-600 font-medium">
+                                      {asg.staffName ? `${asg.staffName} (${asg.staffLevel || 'Pengawas'})` : '-'}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             </td>
 
-                            {/* Blok Kerja */}
-                            <td className="py-3 px-3.5">
-                              <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold ${
-                                asg.blockId === 'ALL'
-                                  ? 'bg-amber-100 text-amber-950 border border-amber-300'
-                                  : 'bg-slate-100 text-slate-800 border border-slate-300'
-                              }`}>
-                                <MapPin className="w-3 h-3 text-slate-500" />
-                                <span>{asg.blockCode}</span>
-                              </span>
+                            {/* TIM PENDUKUNG (Operator, Alat Berat, Mekanik, Logistik, Pendukung) */}
+                            <td className="py-3.5 px-3.5">
+                              {hasSupport ? (
+                                <div className="space-y-2">
+                                  {/* Operator & Unit Alat Berat */}
+                                  <div className="space-y-1">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wide">
+                                        Operator &amp; Alat Berat ({opCount}):
+                                      </span>
+                                    </div>
+                                    <div className="space-y-1">
+                                      {asg.supportTeam!.filter((s) => s.role === 'Operator').map((op, opIdx) => (
+                                        <div key={op.id || opIdx} className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-amber-50/60 border border-amber-200 text-[11px]">
+                                          <span className="font-bold text-slate-900">{op.workerName}</span>
+                                          <span className="px-1.5 py-0.5 rounded bg-amber-200 text-amber-950 font-black text-[10px] font-mono whitespace-nowrap">
+                                            {op.equipmentName || op.equipmentId || 'Alat Berat'}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+
+                                  {/* Mekanik, Logistik, Pendukung */}
+                                  {asg.supportTeam!.filter((s) => s.role !== 'Operator').length > 0 && (
+                                    <div className="pt-1 border-t border-slate-100 flex flex-wrap gap-1 text-[10px]">
+                                      {asg.supportTeam!.filter((s) => s.role !== 'Operator').map((mem, mIdx) => (
+                                        <span key={mem.id || mIdx} className="px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-slate-800 font-medium">
+                                          <strong className="text-slate-900">{mem.role}:</strong> {mem.workerName}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  <div className="text-[10px] text-slate-500 font-medium">
+                                    Total Personil: <strong className="text-slate-800">{asg.supportTeam!.length} Orang</strong> (Bekerja diseluruh blok SPK)
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="space-y-1">
+                                  <div className="font-bold text-slate-900 text-xs">{asg.workerName || '-'}</div>
+                                  {asg.equipmentName && (
+                                    <div className="text-[11px] text-amber-900 font-medium">
+                                      Unit: {asg.equipmentName}
+                                    </div>
+                                  )}
+                                  <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-bold">
+                                    {asg.workerCategory || 'Personil'}
+                                  </span>
+                                </div>
+                              )}
                             </td>
 
-                            {/* Tanggal & Status */}
-                            <td className="py-3 px-3.5 text-center">
-                              <div className="space-y-1">
+                            {/* TANGGAL & STATUS */}
+                            <td className="py-3.5 px-3.5 text-center whitespace-nowrap">
+                              <div className="space-y-1.5">
                                 <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
                                   asg.status === 'Aktif'
                                     ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
@@ -2408,14 +2858,22 @@ export const MasterDataView: React.FC = () => {
                                   {asg.status}
                                 </span>
                                 <div className="text-[10px] text-slate-500 font-mono">
-                                  Mulai: {asg.assignedDate}
+                                  Mulai: <strong className="text-slate-700">{asg.assignedDate}</strong>
                                 </div>
                               </div>
                             </td>
 
-                            {/* Aksi */}
-                            <td className="py-3 px-3.5 text-right">
+                            {/* AKSI */}
+                            <td className="py-3.5 px-3.5 text-right whitespace-nowrap">
                               <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setViewingAssignmentDetail(asg)}
+                                  className="p-1.5 bg-slate-100 hover:bg-sky-100 text-slate-700 hover:text-sky-900 rounded-lg transition cursor-pointer"
+                                  title="Lihat Detail Surat Penugasan"
+                                >
+                                  <Eye className="w-3.5 h-3.5 text-sky-700" />
+                                </button>
                                 <button
                                   type="button"
                                   onClick={() => handleOpenEditAssignment(asg)}
@@ -2755,22 +3213,27 @@ export const MasterDataView: React.FC = () => {
                             <td className="py-3 px-3.5 align-top min-w-[210px]">
                               {item.itemTargets && item.itemTargets.length > 0 ? (
                                 <div className="space-y-1.5">
-                                  {item.itemTargets.slice(0, 3).map((ritme, rIdx) => (
-                                    <div key={rIdx} className="text-[10px] bg-slate-50 border border-slate-200 rounded-lg p-1.5 flex flex-col gap-0.5">
-                                      <div className="flex items-center justify-between gap-1">
-                                        <span className="font-black text-slate-900 truncate">{ritme.name}</span>
-                                        <span className="text-slate-500 font-bold font-mono text-[9px] bg-white px-1 py-0.2 rounded border border-slate-200">
-                                          {ritme.totalVolume} {ritme.unit}
-                                        </span>
+                                  {item.itemTargets.slice(0, 3).map((ritme, rIdx) => {
+                                    const ritmeUnit = (ritme.unit === 'HEKTAR' || ritme.unit === 'Hektar') ? 'Ha' : ritme.unit;
+                                    const formattedVol = String(ritme.totalVolume).replace('.', ',');
+                                    const formattedDaily = String(ritme.dailyTargetVolume).replace('.', ',');
+                                    return (
+                                      <div key={rIdx} className="text-[10px] bg-slate-50 border border-slate-200 rounded-lg p-1.5 flex flex-col gap-0.5">
+                                        <div className="flex items-center justify-between gap-1">
+                                          <span className="font-black text-slate-900 truncate">{ritme.name}</span>
+                                          <span className="text-slate-500 font-bold font-mono text-[9px] bg-white px-1 py-0.2 rounded border border-slate-200">
+                                            {formattedVol} {ritmeUnit}
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center justify-between text-amber-950 font-bold text-[10px] pt-0.5 border-t border-slate-100">
+                                          <span>Ritme: {formattedDaily} {ritmeUnit}/hr</span>
+                                          <span className="text-amber-700 bg-amber-100/70 px-1 py-0.2 rounded font-black">
+                                            {ritme.calculatedDays} Hari
+                                          </span>
+                                        </div>
                                       </div>
-                                      <div className="flex items-center justify-between text-amber-950 font-bold text-[10px] pt-0.5 border-t border-slate-100">
-                                        <span>Ritme: {ritme.dailyTargetVolume} {ritme.unit}/hr</span>
-                                        <span className="text-amber-700 bg-amber-100/70 px-1 py-0.2 rounded font-black">
-                                          {ritme.calculatedDays} Hari
-                                        </span>
-                                      </div>
-                                    </div>
-                                  ))}
+                                    );
+                                  })}
                                   {item.itemTargets.length > 3 && (
                                     <button
                                       type="button"
@@ -3137,201 +3600,6 @@ export const MasterDataView: React.FC = () => {
               </table>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* SUB-TAB: WORKERS */}
-      {activeSubTab === 'workers' && (
-        <div className="space-y-4">
-          {/* Header & Controls: Filter Klien & Tim, Tambah Personil */}
-          <div className="bg-white rounded-2xl p-4 shadow-lg border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <h3 className="font-black text-slate-900 text-base flex items-center gap-2">
-                <Users className="w-5 h-5 text-amber-500" />
-                Daftar Personil, Tim Pendukung & Lokasi Penugasan
-              </h3>
-              <p className="text-xs text-slate-500">
-                Superadmin menentukan tim kerja (Operator, Rintis, Mekanik, K3) dan lokasi kerja penugasan (Klien & Blok).
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Filter Klien */}
-              <select
-                value={selectedClientForWorker}
-                onChange={(e) => {
-                  setSelectedClientForWorker(e.target.value);
-                  setSelectedBlockForWorker('ALL');
-                }}
-                className="px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500"
-              >
-                <option value="ALL">Semua Klien Penugasan</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    Klien: {c.name}
-                  </option>
-                ))}
-              </select>
-
-              {/* Filter Lokasi Kerja (Disamping Dropdown Klien) */}
-              <select
-                value={selectedBlockForWorker}
-                onChange={(e) => setSelectedBlockForWorker(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500"
-              >
-                <option value="ALL">Semua Lokasi Kerja (Blok)</option>
-                {blocks
-                  .filter((b) => selectedClientForWorker === 'ALL' || b.clientId === selectedClientForWorker)
-                  .map((b) => (
-                    <option key={b.id} value={b.id}>
-                      Lokasi: {b.code} ({b.targetAreaHa} Ha)
-                    </option>
-                  ))}
-              </select>
-
-              {/* Tambah Personil Baru */}
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingWorkerId(null);
-                  setWorkerForm({
-                    name: '',
-                    category: 'Operator',
-                    role: 'Operator',
-                    assignedEquipmentId: '',
-                    phone: '',
-                    status: 'Hadir',
-                    teamName: 'Tim Operator',
-                    assignedClientId: selectedClientForWorker !== 'ALL' ? selectedClientForWorker : clients[0]?.id || 'client-1',
-                    assignedBlockId: selectedBlockForWorker !== 'ALL' ? selectedBlockForWorker : 'ALL',
-                  });
-                  setIsAddingNewCategory(false);
-                  setNewCategoryInput('');
-                  setIsWorkerModalOpen(true);
-                }}
-                className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs shadow transition cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Tambah Personil & Tim</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Grid Workers */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {workers
-              .filter((w) => {
-                const matchClient = selectedClientForWorker === 'ALL' || w.assignedClientId === selectedClientForWorker || w.assignedClientId === 'ALL';
-                const matchBlock = selectedBlockForWorker === 'ALL' || w.assignedBlockId === selectedBlockForWorker || w.assignedBlockId === 'ALL';
-                const matchTeam = selectedTeamForWorker === 'ALL' || w.teamName === selectedTeamForWorker;
-                return matchClient && matchBlock && matchTeam;
-              })
-              .map((w) => {
-                const clientObj = clients.find((c) => c.id === w.assignedClientId);
-                const blockObj = blocks.find((b) => b.id === w.assignedBlockId);
-
-                // Badge colors for teams
-                const teamStyle = 
-                  w.teamName?.includes('Operator')
-                    ? 'bg-amber-100 text-amber-900 border-amber-300'
-                    : w.teamName?.includes('Rintis')
-                    ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
-                    : w.teamName?.includes('Mekanik')
-                    ? 'bg-cyan-100 text-cyan-900 border-cyan-300'
-                    : 'bg-purple-100 text-purple-900 border-purple-300';
-
-                return (
-                  <div
-                    key={w.id}
-                    className="bg-white rounded-2xl p-4 shadow border border-slate-200 flex flex-col justify-between gap-3 hover:border-amber-400 transition"
-                  >
-                    <div>
-                      {/* Category & Status */}
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <span className={`text-[10px] uppercase font-black px-2 py-0.5 rounded border tracking-wider ${
-                          (w.category || '').toUpperCase().includes('OPERATOR')
-                            ? 'bg-amber-100 text-amber-950 border-amber-300'
-                            : (w.category || '').toUpperCase().includes('MEKANIK')
-                            ? 'bg-cyan-100 text-cyan-950 border-cyan-300'
-                            : (w.category || '').toUpperCase().includes('LOGISTIK')
-                            ? 'bg-blue-100 text-blue-950 border-blue-300'
-                            : (w.category || '').toUpperCase().includes('PENGAWAS')
-                            ? 'bg-purple-100 text-purple-950 border-purple-300'
-                            : (w.category || '').toUpperCase().includes('PENDUKUNG') || (w.category || '').toUpperCase().includes('RINTIS')
-                            ? 'bg-emerald-100 text-emerald-950 border-emerald-300'
-                            : 'bg-slate-100 text-slate-800 border-slate-300'
-                        }`}>
-                          {w.category || (w.role?.toLowerCase().includes('operator') ? 'Operator' : 'Personil')}
-                        </span>
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                          {w.status}
-                        </span>
-                      </div>
-
-                      {/* Name & Phone */}
-                      <h4 className="text-base font-black text-slate-900">{w.name}</h4>
-                      <p className="text-[11px] text-slate-500 font-mono mt-0.5 flex items-center gap-1">
-                        <Phone className="w-3 h-3 text-slate-400" />
-                        {w.phone}
-                      </p>
-
-                      {/* Penugasan Lokasi Kerja (NO KONTRAK/SPK) */}
-                      <div className="mt-3 pt-2.5 border-t border-slate-100 space-y-1.5">
-                        <div className="flex items-center justify-between text-xs gap-2">
-                          <span className="text-slate-500 font-medium shrink-0">Penugasan SPK:</span>
-                          <span className="font-bold text-slate-800 text-[11px] flex items-center gap-1 text-right truncate">
-                            <FileText className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                            <span className="truncate">
-                              {w.assignedClientId === 'ALL'
-                                ? 'Semua Proyek / BKO Lintas Klien'
-                                : `${clientObj?.contractNumber ? `${clientObj.contractNumber} - ` : ''}${clientObj?.name || 'Klien'}`}
-                            </span>
-                          </span>
-                        </div>
-
-                        {w.assignedBlockId && w.assignedBlockId !== 'ALL' && (
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="text-slate-500 font-medium">Lokasi Blok:</span>
-                            <span className="font-bold text-slate-900 text-[11px] flex items-center gap-1">
-                              <MapPin className="w-3 h-3 text-amber-500" />
-                              {blockObj?.code || w.assignedBlockId}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Action buttons */}
-                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                      <button
-                        type="button"
-                        onClick={() => handleEditWorker(w)}
-                        className="p-1.5 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition text-xs font-bold flex items-center gap-1 cursor-pointer"
-                        title="Edit Data Personil & Penugasan"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                        <span>Edit</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteWorker(w.id, w.name)}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition text-xs font-bold flex items-center gap-1 cursor-pointer"
-                        title="Hapus Personil"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>Hapus</span>
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-          </div>
-
-          {workers.length === 0 && (
-            <div className="p-8 text-center bg-white rounded-2xl border border-slate-200 text-slate-500 text-sm">
-              Belum ada personil terdaftar. Klik "+ Tambah Personil & Tim" untuk mendaftarkan.
-            </div>
-          )}
         </div>
       )}
 
@@ -3882,9 +4150,13 @@ export const MasterDataView: React.FC = () => {
                     {DEFAULT_WORK_ITEMS_CATALOG.map((std, idx) => {
                       const activeItem = blockForm.workItems.find((wi) => wi.name.toUpperCase() === std.name.toUpperCase());
                       const isChecked = !!activeItem;
-                      const currentVolume = activeItem?.targetVolume !== undefined 
-                        ? String(activeItem.targetVolume).replace('.', ',') 
-                        : String(std.defaultTargetVolume ?? 0).replace('.', ',');
+                      const draftVal = itemVolumeDrafts[std.name.toUpperCase()];
+                      const currentVolume = draftVal !== undefined 
+                        ? draftVal 
+                        : (activeItem?.targetVolume !== undefined 
+                            ? String(activeItem.targetVolume).replace('.', ',') 
+                            : String(std.defaultTargetVolume ?? 0).replace('.', ','));
+                      const unitDisplay = (std.unit === 'HEKTAR' || std.unit === 'Hektar') ? 'Ha' : std.unit;
 
                       return (
                         <div
@@ -3914,13 +4186,13 @@ export const MasterDataView: React.FC = () => {
                               </span>
                               {isChecked && (
                                 <span className="text-[10px] text-amber-900 font-bold block mt-0.5 font-mono">
-                                  {idx + 1}. {std.name} {currentVolume} {std.unit}
+                                  {idx + 1}. {std.name} {currentVolume} {unitDisplay}
                                 </span>
                               )}
                             </div>
                           </div>
 
-                          {/* Input Target Volume & Satuan */}
+                          {/* Input Target Volume & Satuan (Mendukung Desimal Contoh: 25,7 Ha) */}
                           <div className="flex items-center gap-1.5 self-end sm:self-auto shrink-0 pl-7 sm:pl-0" onClick={(e) => e.stopPropagation()}>
                             <span className="text-[10px] font-bold text-slate-500 whitespace-nowrap">Volume:</span>
                             <div className="relative">
@@ -3935,7 +4207,7 @@ export const MasterDataView: React.FC = () => {
                                   }
                                   handleUpdateItemVolume(std.name, e.target.value);
                                 }}
-                                className={`w-20 px-2.5 py-1 text-center font-mono font-black text-xs rounded-lg border no-spinners transition ${
+                                className={`w-24 px-2.5 py-1 text-center font-mono font-black text-xs rounded-lg border no-spinners transition ${
                                   isChecked
                                     ? 'bg-white border-amber-400 text-slate-950 focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-inner'
                                     : 'bg-slate-100 border-slate-200 text-slate-400'
@@ -3947,7 +4219,7 @@ export const MasterDataView: React.FC = () => {
                                 ? 'bg-amber-200 text-amber-950 border-amber-400 shadow-2xs'
                                 : 'bg-slate-100 text-slate-400 border-slate-200'
                             }`}>
-                              {std.unit}
+                              {unitDisplay}
                             </span>
                           </div>
                         </div>
@@ -3962,43 +4234,51 @@ export const MasterDataView: React.FC = () => {
                         Item Pekerjaan Tambahan ({customItemsInForm.length}):
                       </span>
                       <div className="space-y-1.5">
-                        {customItemsInForm.map((ci) => (
-                          <div
-                            key={ci.id}
-                            className="flex flex-col sm:flex-row sm:items-center justify-between bg-emerald-50 border border-emerald-300 p-2.5 rounded-xl text-xs gap-2"
-                          >
-                            <div className="flex items-center gap-2 min-w-0 flex-1">
-                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                              <div className="min-w-0 flex-1">
-                                <span className="font-black text-emerald-950 text-xs break-words block">{ci.name}</span>
-                                <span className="text-[10px] text-emerald-800 font-mono font-bold block">
-                                  {ci.name} {ci.targetVolume !== undefined ? ci.targetVolume : 10} {ci.unit}
+                        {customItemsInForm.map((ci) => {
+                          const ciDraft = itemVolumeDrafts[ci.name.toUpperCase()];
+                          const ciVolume = ciDraft !== undefined 
+                            ? ciDraft 
+                            : (ci.targetVolume !== undefined ? String(ci.targetVolume).replace('.', ',') : '10');
+                          const ciUnitDisplay = (ci.unit === 'HEKTAR' || ci.unit === 'Hektar') ? 'Ha' : (ci.unit === 'METER LARI' ? 'm' : (ci.unit === 'METER KUBIK' ? 'm³' : ci.unit));
+                          return (
+                            <div
+                              key={ci.id}
+                              className="flex flex-col sm:flex-row sm:items-center justify-between bg-emerald-50 border border-emerald-300 p-2.5 rounded-xl text-xs gap-2"
+                            >
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                <div className="min-w-0 flex-1">
+                                  <span className="font-black text-emerald-950 text-xs break-words block">{ci.name}</span>
+                                  <span className="text-[10px] text-emerald-800 font-mono font-bold block">
+                                    {ci.name} {ciVolume} {ciUnitDisplay}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1.5 self-end sm:self-auto shrink-0">
+                                <span className="text-[10px] font-bold text-slate-500">Volume:</span>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  placeholder="0"
+                                  value={ciVolume}
+                                  onChange={(e) => handleUpdateItemVolume(ci.name, e.target.value)}
+                                  className="w-24 px-2 py-1 text-center font-mono font-black text-xs rounded-lg border border-emerald-400 bg-white text-emerald-950 focus:outline-none focus:ring-1 focus:ring-emerald-500 shadow-inner no-spinners"
+                                />
+                                <span className="px-2 py-1 rounded-lg bg-emerald-200 text-emerald-950 font-mono font-black text-[10px] border border-emerald-400 uppercase">
+                                  {ciUnitDisplay}
                                 </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveWorkItem(ci.id)}
+                                  className="text-slate-400 hover:text-rose-600 p-1 hover:bg-rose-50 rounded cursor-pointer"
+                                  title="Hapus item tambahan"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
                               </div>
                             </div>
-                            <div className="flex items-center gap-1.5 self-end sm:self-auto shrink-0">
-                              <span className="text-[10px] font-bold text-slate-500">Volume:</span>
-                              <input
-                                type="text"
-                                inputMode="decimal"
-                                value={ci.targetVolume !== undefined ? String(ci.targetVolume).replace('.', ',') : '10'}
-                                onChange={(e) => handleUpdateItemVolume(ci.name, e.target.value)}
-                                className="w-20 px-2 py-1 text-center font-mono font-black text-xs rounded-lg border border-emerald-400 bg-white text-emerald-950 focus:outline-none focus:ring-1 focus:ring-emerald-500 shadow-inner no-spinners"
-                              />
-                              <span className="px-2 py-1 rounded-lg bg-emerald-200 text-emerald-950 font-mono font-black text-[10px] border border-emerald-400 uppercase">
-                                {ci.unit}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveWorkItem(ci.id)}
-                                className="text-slate-400 hover:text-rose-600 p-1 hover:bg-rose-50 rounded cursor-pointer"
-                                title="Hapus item tambahan"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -4010,7 +4290,7 @@ export const MasterDataView: React.FC = () => {
                         <Plus className="w-3.5 h-3.5 text-amber-600" />
                         + ITEM PEKERJAAN (BISA DITAMBAHKAN)
                       </span>
-                      <span className="text-[10px] text-slate-500 font-medium">Bisa tentukan volume & satuan sendiri</span>
+                      <span className="text-[10px] text-slate-500 font-medium">Bisa tentukan volume desimal (contoh: 25,7) & satuan sendiri</span>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
@@ -4034,7 +4314,7 @@ export const MasterDataView: React.FC = () => {
                         <input
                           type="text"
                           inputMode="decimal"
-                          placeholder="Volume"
+                          placeholder="Volume (contoh: 25,7)"
                           value={blockForm.customItemVolume}
                           onChange={(e) => setBlockForm({ ...blockForm, customItemVolume: e.target.value })}
                           className="w-full px-2.5 py-2 border border-slate-300 rounded-lg text-xs font-mono font-bold text-center text-slate-900 focus:outline-none focus:border-amber-500 no-spinners"
@@ -4047,13 +4327,10 @@ export const MasterDataView: React.FC = () => {
                           onChange={(e) => setBlockForm({ ...blockForm, customItemUnit: e.target.value })}
                           className="w-full px-2 py-2 border border-slate-300 rounded-lg text-xs font-bold text-slate-800 bg-slate-50 cursor-pointer"
                         >
-                          <option value="HEKTAR">HEKTAR</option>
-                          <option value="POHON">POHON</option>
                           <option value="Ha">Ha</option>
+                          <option value="POHON">POHON</option>
                           <option value="m">m</option>
                           <option value="m³">m³</option>
-                          <option value="METER LARI">METER LARI</option>
-                          <option value="METER KUBIK">METER KUBIK</option>
                           <option value="UNIT">UNIT</option>
                           <option value="TITIK">TITIK</option>
                           <option value="BATANG">BATANG</option>
@@ -4121,151 +4398,7 @@ export const MasterDataView: React.FC = () => {
         );
       })()}
 
-      {/* MODAL: TAMBAH / EDIT PERSONIL & PENUGASAN TIM */}
-      {isWorkerModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl p-6 max-w-lg w-full shadow-2xl space-y-4 my-8">
-            <div className="border-b border-slate-100 pb-3">
-              <h3 className="text-base font-black text-slate-900 uppercase">
-                {editingWorkerId ? 'Edit Data Personil & Penugasan' : '+ Tambah Personil & Tim Kerja Baru'}
-              </h3>
-              <p className="text-xs text-slate-500">
-                Superadmin menentukan tim kerja serta lokasi penempatan proyek (Klien & Blok).
-              </p>
-            </div>
 
-            <form onSubmit={handleSaveWorker} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Nama Lengkap Personil</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Contoh: Agus Santoso"
-                  value={workerForm.name || ''}
-                  onChange={(e) => setWorkerForm({ ...workerForm, name: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg font-bold text-sm"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* KATEGORI PERSONIL: Operator, Mekanik, Logistik, Pendukung, Pengawas, + Tambah kategori */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block font-bold text-slate-700">Kategori Personil <span className="text-rose-600">*</span></label>
-                    {!isAddingNewCategory && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsAddingNewCategory(true);
-                          setNewCategoryInput('');
-                        }}
-                        className="text-[10px] font-bold text-amber-700 hover:text-amber-900 hover:underline cursor-pointer"
-                      >
-                        + Tambah kategori
-                      </button>
-                    )}
-                  </div>
-
-                  <select
-                    value={isAddingNewCategory ? '__NEW__' : (workerForm.category || 'Operator')}
-                    onChange={(e) => {
-                      if (e.target.value === '__NEW__') {
-                        setIsAddingNewCategory(true);
-                        setNewCategoryInput('');
-                      } else {
-                        setIsAddingNewCategory(false);
-                        setWorkerForm({ ...workerForm, category: e.target.value });
-                      }
-                    }}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-bold text-xs bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer"
-                  >
-                    {DEFAULT_WORKER_CATEGORIES.map((cat) => (
-                      <option key={cat} value={cat}>
-                        {cat}
-                      </option>
-                    ))}
-                    {customWorkerCategories
-                      .filter((cat) => !DEFAULT_WORKER_CATEGORIES.includes(cat))
-                      .map((cat) => (
-                        <option key={cat} value={cat}>
-                          {cat} (Kustom)
-                        </option>
-                      ))}
-                    <option value="__NEW__">+ Tambah kategori</option>
-                  </select>
-
-                  {/* Input Tambah Kategori Baru */}
-                  {isAddingNewCategory && (
-                    <div className="mt-2 p-2 bg-amber-50 rounded-lg border border-amber-300 space-y-1.5">
-                      <label className="block text-[10px] font-bold text-amber-900 uppercase">
-                        + Tambah Kategori Baru:
-                      </label>
-                      <div className="flex items-center gap-1.5">
-                        <input
-                          type="text"
-                          placeholder="Ketik kategori baru..."
-                          value={newCategoryInput}
-                          onChange={(e) => setNewCategoryInput(e.target.value)}
-                          className="flex-1 px-2.5 py-1.5 border border-slate-300 rounded-md text-xs font-bold text-slate-900 bg-white uppercase focus:outline-none focus:border-amber-500"
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              handleAddCategory();
-                            }
-                          }}
-                        />
-                        <button
-                          type="button"
-                          onClick={handleAddCategory}
-                          className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-md shadow-2xs transition cursor-pointer"
-                        >
-                          Tambah
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsAddingNewCategory(false);
-                            setNewCategoryInput('');
-                          }}
-                          className="px-2 py-1.5 text-slate-500 hover:text-slate-700 text-xs font-bold"
-                        >
-                          Batal
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">No. HP / WhatsApp</label>
-                  <input
-                    type="text"
-                    placeholder="Contoh: +62 813-1122-3344"
-                    value={workerForm.phone || ''}
-                    onChange={(e) => setWorkerForm({ ...workerForm, phone: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono text-xs text-slate-900 bg-white"
-                  />
-                </div>
-              </div>
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setIsWorkerModalOpen(false)}
-                  className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-bold cursor-pointer"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 text-xs bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-lg shadow cursor-pointer"
-                >
-                  Simpan Personil & Penugasan
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* MODAL: TAMBAH / EDIT ALAT BERAT & BATAS STANDAR BBM */}
       {isEquipmentModalOpen && (
@@ -4714,7 +4847,7 @@ export const MasterDataView: React.FC = () => {
                           </span>
                         </div>
                         <span className="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-800 font-mono font-bold text-[11px] rounded-lg">
-                          Jumlah Satuan: <strong className="text-amber-800 font-black">{ritme.totalVolume} {ritme.unit}</strong>
+                          Jumlah Satuan: <strong className="text-amber-800 font-black">{String(ritme.totalVolume).replace('.', ',')} {(ritme.unit === 'HEKTAR' || ritme.unit === 'Hektar') ? 'Ha' : ritme.unit}</strong>
                         </span>
                       </div>
 
@@ -5006,16 +5139,16 @@ export const MasterDataView: React.FC = () => {
                             <td className="py-2.5 px-3 text-slate-400 font-mono">{idx + 1}</td>
                             <td className="py-2.5 px-3 font-bold text-slate-900">{item.name}</td>
                             <td className="py-2.5 px-3 font-mono font-bold text-slate-700">
-                              {item.totalVolume} {item.unit}
+                              {String(item.totalVolume).replace('.', ',')} {(item.unit === 'HEKTAR' || item.unit === 'Hektar') ? 'Ha' : item.unit}
                             </td>
                             <td className="py-2.5 px-3 font-mono font-bold text-amber-950 bg-amber-50/30">
-                              {item.dailyTargetVolume} {item.unit} / hari
+                              {String(item.dailyTargetVolume).replace('.', ',')} {(item.unit === 'HEKTAR' || item.unit === 'Hektar') ? 'Ha' : item.unit} / hari
                             </td>
                             <td className="py-2.5 px-3 font-mono font-black text-amber-900 bg-amber-100/30">
                               {item.calculatedDays > 0 ? `${item.calculatedDays} Hari` : '-'}
                               {item.dailyTargetVolume > 0 && item.totalVolume > 0 && (
                                 <span className="text-[10px] text-slate-400 font-normal block">
-                                  ({item.totalVolume} ÷ {item.dailyTargetVolume})
+                                  ({String(item.totalVolume).replace('.', ',')} ÷ {String(item.dailyTargetVolume).replace('.', ',')})
                                 </span>
                               )}
                             </td>
@@ -5191,57 +5324,24 @@ export const MasterDataView: React.FC = () => {
 
       {/* MODAL: TAMBAH / EDIT PENUGASAN KERJA (OPERASIONAL LAPANGAN) */}
       {isAssignmentModalOpen && (() => {
-        const isOperator = assignmentForm.workerCategory === 'Operator';
-
-        // Filter workers: Sesuai instruksi: Pengawas dan Site Manager tidak masuk dalam tim pekerja lapangan ini!
-        const eligibleFieldWorkers = workers.filter(
-          (w) => w.category !== 'Pengawas' && w.category !== 'Site Manager' && !w.role?.toLowerCase().includes('pengawas') && !w.role?.toLowerCase().includes('site manager')
-        );
-
-        const filteredWorkersForModal = eligibleFieldWorkers.filter(
-          (w) => assignmentForm.workerCategory === 'ALL' || w.category === assignmentForm.workerCategory
-        );
-
-        const matchedEquipsForModal = equipments.filter(
-          (e) => e.type === assignmentForm.equipmentType
-        );
-
-        // Staff data dari Master Data Perusahaan
-        const availableStaffLevels = ['Direktur', 'Site Manager', 'Pengawas', 'Akuntan & Finance', 'Staff Lapangan'];
-        companyStaffList.forEach((s) => {
-          if (s.staffLevel && !availableStaffLevels.includes(s.staffLevel)) {
-            availableStaffLevels.push(s.staffLevel);
-          }
-        });
-
-        const filteredStaffList = companyStaffList.filter((s) => {
-          if (!assignmentForm.staffLevel) return true;
-          return s.staffLevel === assignmentForm.staffLevel;
-        });
-
-        const selectedStaffInModal = companyStaffList.find((s) => s.id === assignmentForm.staffId) ||
-          companyStaffList.find((s) => s.fullName === assignmentForm.staffName);
-
-        const selectedWorkerInModal = eligibleFieldWorkers.find((w) => w.id === assignmentForm.workerId) || workers.find((w) => w.id === assignmentForm.workerId);
-        const selectedEquipInModal = isOperator ? equipments.find((e) => e.id === assignmentForm.equipmentId) : undefined;
-        const selectedClientInModal = clients.find((c) => c.id === assignmentForm.clientId);
-        const availableBlocksInModal = blocks.filter((b) => b.clientId === assignmentForm.clientId);
+        const selectedClient = clients.find((c) => c.id === assignmentForm.clientId) || clients[0];
+        const availableBlocks = blocks.filter((b) => b.clientId === assignmentForm.clientId);
 
         return (
           <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-            <div className="bg-white rounded-3xl p-5 sm:p-7 max-w-2xl w-full shadow-2xl space-y-4 my-auto max-h-[94vh] overflow-y-auto border border-slate-200">
+            <div className="bg-white rounded-3xl p-5 sm:p-7 max-w-3xl w-full shadow-2xl space-y-5 my-auto max-h-[94vh] overflow-y-auto border border-slate-200">
               {/* Modal Header */}
               <div className="border-b border-slate-100 pb-3 flex items-start justify-between">
                 <div>
                   <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black uppercase tracking-wider mb-1">
                     <ClipboardList className="w-3 h-3 text-amber-700" />
-                    <span>Modul 5 • Penugasan Kerja Operasional</span>
+                    <span>Modul 4 • Penugasan Kerja Operasional</span>
                   </div>
                   <h3 className="text-base sm:text-lg font-black text-slate-900 uppercase flex items-center gap-2">
                     {editingAssignmentId ? 'Edit Data Penugasan Kerja' : '+ Tambah Penugasan Kerja Baru'}
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Alokasikan staff penanggung jawab, personil tim pendukung lapangan, dan alat berat ke SPK klien serta lokasi blok kerja secara resmi.
+                    Alokasikan Tim Staff (Site Manager &amp; Pengawas Blok) serta Tim Pendukung (Operator, Alat Berat, Mekanik, Logistik) per SPK Klien.
                   </p>
                 </div>
                 <button
@@ -5253,422 +5353,92 @@ export const MasterDataView: React.FC = () => {
                 </button>
               </div>
 
-              <form onSubmit={handleSaveAssignment} className="space-y-4 text-xs">
-                {/* HIGHLIGHTED: NO PENUGASAN (OTOMATIS DIBUAT - STANDAR PENOMORAN SEPERTI NO SPK/KONTRAK) */}
-                <div className="bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-transparent border-2 border-amber-400 p-3.5 rounded-2xl flex items-center justify-between gap-3 shadow-xs">
-                  <div className="space-y-0.5">
-                    <span className="text-[10px] font-black uppercase text-amber-950 tracking-wider flex items-center gap-1.5">
-                      <Lock className="w-3.5 h-3.5 text-amber-700" />
-                      NO PENUGASAN
-                    </span>
-                    <div className="font-mono font-black text-slate-950 text-sm">
-                      {assignmentForm.assignmentNumber || '001/ST-LC/PTA/VIII/2026'}
-                    </div>
-                  </div>
-                </div>
-
-                {/* 1. DATA STAFF (LEVEL STAFF, NAMA LENGKAP STAFF) - DIAMBIL DARI MASTER DATA PERUSAHAAN */}
-                <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-200 space-y-3">
-                  <div className="flex items-center justify-between border-b border-indigo-100 pb-2">
-                    <label className="font-black text-indigo-950 text-xs uppercase tracking-wide flex items-center gap-1.5">
-                      <ShieldCheck className="w-4 h-4 text-indigo-600" />
-                      <span>1. Data Staff (Master Data Perusahaan)</span>
+              <form onSubmit={handleSaveAssignment} className="space-y-5 text-xs">
+                {/* 1. DATA KLIEN & NOMOR PENUGASAN */}
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                    <label className="font-black text-slate-900 text-xs uppercase tracking-wide flex items-center gap-1.5">
+                      <Building2 className="w-4 h-4 text-amber-600" />
+                      <span>1. Klien &amp; Nomor Penugasan Kerja (SPK)</span>
                       <span className="text-rose-600">*</span>
                     </label>
-                    <span className="text-[10px] font-bold text-indigo-600 bg-indigo-100/70 px-2 py-0.5 rounded-full border border-indigo-200">
-                      Tersedia: {companyStaffList.length} Staff Resmi
-                    </span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {/* Pilih Level Staff */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    {/* Pilih Klien & SPK */}
                     <div>
                       <label className="block font-bold text-slate-700 mb-1">
-                        Level Staff <span className="text-rose-600">*</span>
-                      </label>
-                      <select
-                        value={assignmentForm.staffLevel}
-                        onChange={(e) => {
-                          const lvl = e.target.value;
-                          const matchingStaff = companyStaffList.filter((s) => !lvl || s.staffLevel === lvl);
-                          const firstStaff = matchingStaff[0];
-                          setAssignmentForm({
-                            ...assignmentForm,
-                            staffLevel: lvl,
-                            staffId: firstStaff?.id || '',
-                            staffName: firstStaff?.fullName || '',
-                          });
-                        }}
-                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-bold text-slate-900 focus:outline-none focus:border-indigo-500 cursor-pointer"
-                      >
-                        <option value="">-- Pilih Level Staff --</option>
-                        {availableStaffLevels.map((lvl) => (
-                          <option key={lvl} value={lvl}>
-                            {lvl}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Pilih Nama Lengkap Staff */}
-                    <div>
-                      <label className="block font-bold text-slate-700 mb-1">
-                        Nama Lengkap Staff <span className="text-rose-600">*</span>
+                        Pilih Klien &amp; No. SPK <span className="text-rose-600">*</span>
                       </label>
                       <select
                         required
-                        value={assignmentForm.staffId}
-                        onChange={(e) => {
-                          const sId = e.target.value;
-                          const found = companyStaffList.find((s) => s.id === sId);
-                          if (found) {
-                            setAssignmentForm({
-                              ...assignmentForm,
-                              staffId: found.id,
-                              staffName: found.fullName,
-                              staffLevel: found.staffLevel || assignmentForm.staffLevel || 'Staff',
-                            });
-                          } else {
-                            setAssignmentForm({
-                              ...assignmentForm,
-                              staffId: '',
-                              staffName: '',
-                            });
-                          }
-                        }}
-                        className="w-full px-3 py-2 bg-white border-2 border-indigo-400 rounded-lg font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-2xs"
+                        value={assignmentForm.clientId}
+                        onChange={(e) => handleAssignmentClientChange(e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer shadow-2xs"
                       >
-                        <option value="">-- Pilih Nama Lengkap Staff ({filteredStaffList.length}) --</option>
-                        {filteredStaffList.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.fullName} ({s.staffLevel || s.jobRole || 'Staff'})
+                        {clients.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name} - No SPK: {c.contractNumber || 'Tanpa SPK'} ({c.totalAreaHa || 460} Ha)
                           </option>
                         ))}
                       </select>
-                    </div>
-                  </div>
-
-                  {/* Preview Detail Staff Terpilih */}
-                  {selectedStaffInModal ? (
-                    <div className="p-2.5 bg-indigo-100/60 border border-indigo-200 rounded-lg text-xs text-indigo-950 flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-black text-xs">
-                          {selectedStaffInModal.fullName.charAt(0)}
-                        </div>
-                        <div>
-                          <span className="font-bold text-slate-900 block">{selectedStaffInModal.fullName}</span>
-                          <span className="text-indigo-700 text-[11px] font-medium">{selectedStaffInModal.jobRole || 'Staff'} • NIK: {selectedStaffInModal.employeeIdNumber || '-'}</span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 text-[11px]">
-                        <span className="px-2 py-0.5 rounded-full bg-indigo-200 text-indigo-900 font-bold border border-indigo-300">
-                          {selectedStaffInModal.staffLevel || 'Staff'}
-                        </span>
-                        <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
-                          {selectedStaffInModal.status}
-                        </span>
-                        {selectedStaffInModal.signatureUrl && (
-                          <span className="text-[10px] text-emerald-700 font-bold flex items-center gap-0.5">
-                            ✓ TTD Digital Terdaftar
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-[11px] text-slate-500 italic bg-white/70 p-2 rounded-lg border border-dashed border-slate-200">
-                      Pilih level staff dan nama lengkap staff penanggung jawab resmi dari Master Data Perusahaan di atas.
-                    </div>
-                  )}
-                </div>
-
-                {/* 2. DATA PERSONEL & KATEGORI PENUGASAN (AMBIL DARI PERSONIL TIM PENDUKUNG LAPANGAN - TANPA PENGAWAS & SITE MANAGER) */}
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-300 space-y-3">
-                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                    <label className="font-black text-slate-900 text-xs uppercase tracking-wide flex items-center gap-1.5">
-                      <Users className="w-4 h-4 text-amber-600" />
-                      <span>2. Data Personel & Kategori Penugasan</span>
-                      <span className="text-rose-600">*</span>
-                    </label>
-                    <span className="text-[10px] font-bold text-amber-900 bg-amber-100/80 px-2 py-0.5 rounded-full border border-amber-300">
-                      Tersedia: {filteredWorkersForModal.length} Personil Pendukung Lapangan
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {/* Pilih Kategori Personil */}
-                    <div>
-                      <label className="block font-bold text-slate-700 mb-1">
-                        Kategori Personel Lapangan <span className="text-rose-600">*</span>
-                      </label>
-                      <select
-                        value={assignmentForm.workerCategory}
-                        onChange={(e) => {
-                          const newCat = e.target.value;
-                          const filtered = eligibleFieldWorkers.filter((w) => w.category === newCat);
-                          const firstW = filtered[0];
-                          const isOp = newCat === 'Operator';
-                          const defaultEquip = equipments.find((eq) => eq.type === 'Excavator') || equipments[0];
-
-                          setAssignmentForm({
-                            ...assignmentForm,
-                            workerCategory: newCat,
-                            workerId: firstW?.id || '',
-                            workerName: firstW?.name || '',
-                            equipmentId: isOp ? (assignmentForm.equipmentId || defaultEquip?.id || '') : '',
-                            equipmentType: isOp ? (assignmentForm.equipmentType || defaultEquip?.type || 'Excavator') : '',
-                          });
-                        }}
-                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-bold text-slate-900 focus:outline-none focus:border-amber-500 cursor-pointer"
-                      >
-                        <option value="Operator">Operator</option>
-                        <option value="Mekanik">Mekanik</option>
-                        <option value="Logistik">Logistik</option>
-                        <option value="Pendukung">Pendukung</option>
-                        {customWorkerCategories
-                          .filter((c) => !['Operator', 'Mekanik', 'Logistik', 'Pendukung', 'Pengawas', 'Site Manager'].includes(c))
-                          .map((c) => (
-                            <option key={c} value={c}>
-                              {c} (Kustom)
-                            </option>
-                          ))}
-                      </select>
                       <p className="text-[10px] text-slate-500 mt-1">
-                        * Khusus Personil Tim pendukung Lapangan (Pengawas &amp; Site Manager tidak masuk dalam tim ini).
+                        * Contoh: KLIEN PT. GUDANG = PT. GUGUS KOMODITAS KONDANG NO SPK B/0001/33/GKK/9/2026
                       </p>
                     </div>
 
-                    {/* Pilih Nama Lengkap Personil */}
+                    {/* Nomor Penugasan (Otomatis dibuat standar SPK) */}
                     <div>
-                      <label className="block font-bold text-slate-700 mb-1">
-                        Nama Lengkap Personel Lapangan <span className="text-rose-600">*</span>
+                      <label className="block font-bold text-slate-700 mb-1 flex items-center justify-between">
+                        <span>Nomor Penugasan (Key Resmi) <span className="text-rose-600">*</span></span>
+                        <span className="text-[10px] text-amber-800 font-bold bg-amber-100 px-1.5 py-0.2 rounded">Otomatis / Standar SPK</span>
                       </label>
-                      <select
-                        required
-                        value={assignmentForm.workerId}
-                        onChange={(e) => {
-                          const wId = e.target.value;
-                          const wObj = eligibleFieldWorkers.find((w) => w.id === wId);
-                          setAssignmentForm({
-                            ...assignmentForm,
-                            workerId: wId,
-                            workerName: wObj?.name || '',
-                          });
-                        }}
-                        className="w-full px-3 py-2 bg-white border-2 border-amber-400 rounded-lg font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer shadow-2xs"
-                      >
-                        <option value="">-- Pilih Nama Personel Lapangan ({filteredWorkersForModal.length}) --</option>
-                        {filteredWorkersForModal.map((w) => (
-                          <option key={w.id} value={w.id}>
-                            {w.name} ({w.role || w.category})
-                          </option>
-                        ))}
-                      </select>
+                      <div className="relative">
+                        <Lock className="w-3.5 h-3.5 text-amber-700 absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          required
+                          value={assignmentForm.assignmentNumber}
+                          onChange={(e) => setAssignmentForm({ ...assignmentForm, assignmentNumber: e.target.value })}
+                          className="w-full pl-8 pr-3 py-2 bg-white border-2 border-amber-400 rounded-xl font-mono font-black text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-2xs"
+                          placeholder="e.g. 001/ST-LC/GKK/IX/2026"
+                        />
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        Digunakan sebagai nomor referensi resmi penugasan kerja lapangan.
+                      </p>
                     </div>
                   </div>
 
-                  {/* Preview Detail Personil Terpilih */}
-                  {selectedWorkerInModal && (
-                    <div className="p-2.5 bg-amber-50/70 border border-amber-200 rounded-lg text-xs text-amber-950 flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-900">{selectedWorkerInModal.name}</span>
-                        <span className="text-slate-500 text-[11px]">({selectedWorkerInModal.role || selectedWorkerInModal.category})</span>
+                  {/* Info Ringkas Klien Terpilih */}
+                  {selectedClient && (
+                    <div className="p-2.5 bg-amber-50/70 border border-amber-200 rounded-xl text-slate-700 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                      <div className="flex items-center gap-1.5 font-bold text-slate-900">
+                        <Building2 className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                        <span>{selectedClient.fullCompanyName || selectedClient.name}</span>
                       </div>
-                      <div className="flex items-center gap-3 text-[11px] text-slate-600">
-                        <span>📱 {selectedWorkerInModal.phone}</span>
-                        <span>👥 {selectedWorkerInModal.teamName || 'Tim Lapangan'}</span>
-                        <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
-                          {selectedWorkerInModal.status}
+                      <div className="flex items-center gap-3">
+                        <span>📍 {selectedClient.location || 'Provinsi Riau'}</span>
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 font-bold border border-emerald-300">
+                          Luas Kontrak: {selectedClient.totalAreaHa || 460} Ha
                         </span>
                       </div>
                     </div>
                   )}
                 </div>
 
-                {/* 3. ALOKASI UNIT ALAT BERAT OPERASIONAL (HANYA OPERATOR YANG MEMILIH, DI LUAR OPERATOR DINONAKTIFKAN TANPA PEMBERITAHUAN) */}
-                <div className={`p-4 rounded-xl border space-y-3 transition ${
-                  isOperator ? 'bg-slate-50 border-slate-300' : 'bg-slate-100/70 border-slate-200'
-                }`}>
-                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                    <label className="font-black text-slate-900 text-xs uppercase tracking-wide flex items-center gap-1.5">
-                      <Truck className={`w-4 h-4 ${isOperator ? 'text-amber-600' : 'text-slate-400'}`} />
-                      <span>3. Alokasi Unit Alat Berat Operasional</span>
-                      {isOperator && <span className="text-rose-600">*</span>}
-                    </label>
-                    <span className="text-[10px] font-bold text-slate-500">
-                      {isOperator ? `Tersedia: ${matchedEquipsForModal.length} Unit` : 'Dinonaktifkan (Khusus Operator)'}
-                    </span>
-                  </div>
-
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {/* Memilih Jenis / Tipe Alat Berat */}
-                      <div>
-                        <label className={`block font-bold mb-1 ${isOperator ? 'text-slate-700' : 'text-slate-400'}`}>
-                          Jenis / Tipe Alat Berat {isOperator && <span className="text-rose-600">*</span>}
-                        </label>
-                        <select
-                          disabled={!isOperator}
-                          value={isOperator ? (assignmentForm.equipmentType || 'Excavator') : ''}
-                          onChange={(e) => {
-                            const newType = e.target.value;
-                            const matched = equipments.filter((eq) => eq.type === newType);
-                            setAssignmentForm({
-                              ...assignmentForm,
-                              equipmentType: newType,
-                              equipmentId: matched[0]?.id || '',
-                            });
-                          }}
-                          className={`w-full px-3 py-2 border rounded-lg font-bold text-xs ${
-                            isOperator
-                              ? 'bg-white border-slate-300 text-slate-900 focus:outline-none focus:border-amber-500 cursor-pointer'
-                              : 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
-                          }`}
-                        >
-                          <option value="">{isOperator ? '-- Pilih Tipe Alat --' : '-- Dinonaktifkan --'}</option>
-                          {isOperator && DEFAULT_EQUIPMENT_TYPES.map((t) => (
-                            <option key={t} value={t}>
-                              {t}
-                            </option>
-                          ))}
-                          {isOperator && customEquipmentTypes
-                            .filter((t) => !DEFAULT_EQUIPMENT_TYPES.includes(t))
-                            .map((t) => (
-                              <option key={t} value={t}>
-                                {t} (Kustom)
-                              </option>
-                            ))}
-                        </select>
-                      </div>
-
-                      {/* Memilih Kode Unit Alat */}
-                      <div>
-                        <label className={`block font-bold mb-1 ${isOperator ? 'text-slate-700' : 'text-slate-400'}`}>
-                          Kode Unit Alat Berat {isOperator && <span className="text-rose-600">*</span>}
-                        </label>
-                        <select
-                          disabled={!isOperator}
-                          required={isOperator}
-                          value={isOperator ? assignmentForm.equipmentId : ''}
-                          onChange={(e) => setAssignmentForm({ ...assignmentForm, equipmentId: e.target.value })}
-                          className={`w-full px-3 py-2 border-2 rounded-lg font-bold text-xs font-mono ${
-                            isOperator
-                              ? 'bg-white border-amber-400 text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer shadow-2xs'
-                              : 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
-                          }`}
-                        >
-                          <option value="">{isOperator ? `-- Pilih Kode Unit Alat (${matchedEquipsForModal.length}) --` : '-- Dinonaktifkan --'}</option>
-                          {isOperator && matchedEquipsForModal.map((eq) => (
-                            <option key={eq.id} value={eq.id}>
-                              {eq.id} - {eq.name} ({eq.status})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* Menampilkan Nama Unit & Model (Hanya untuk Operator yang memilih unit) */}
-                    {isOperator && selectedEquipInModal && (
-                      <div className="p-3 bg-amber-50/70 border border-amber-300 rounded-lg text-xs space-y-1">
-                        <div className="flex items-center justify-between font-bold text-slate-900">
-                          <span className="flex items-center gap-1.5">
-                            <Truck className="w-3.5 h-3.5 text-amber-700" />
-                            <span>Nama Unit & Merk: {selectedEquipInModal.name}</span>
-                          </span>
-                          <span className="font-mono text-amber-950 font-black px-1.5 py-0.5 rounded bg-amber-200 text-[10px]">
-                            {selectedEquipInModal.id}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px] text-slate-600 pt-1 border-t border-amber-200">
-                          <div>Model: <strong className="text-slate-800">{selectedEquipInModal.model || '-'}</strong></div>
-                          <div>HM Saat Ini: <strong className="font-mono text-slate-800">{selectedEquipInModal.currentHm} HM</strong></div>
-                          <div>Status: <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">{selectedEquipInModal.status}</span></div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* 4. PENUGASAN LOKASI KERJA (NO KONTRAK/SPK & BLOK KERJA) */}
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-300 space-y-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                    <label className="block font-black text-slate-900 text-xs uppercase tracking-wide flex items-center gap-1.5">
-                      <FileText className="w-4 h-4 text-amber-600" />
-                      <span>4. Penugasan Lokasi Kerja (NO KONTRAK/SPK &amp; Blok Kerja)</span>
-                      <span className="text-rose-600">*</span>
-                    </label>
-                  </div>
-
-                  {/* Dropdown No Kontrak / SPK & Nama Klien */}
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                      No Kontrak / SPK & Nama Klien:
-                    </label>
-                    <select
-                      value={assignmentForm.clientId}
-                      onChange={(e) => {
-                        const newClient = e.target.value;
-                        setAssignmentForm({
-                          ...assignmentForm,
-                          clientId: newClient,
-                          blockId: 'ALL',
-                        });
-                      }}
-                      className="w-full px-3.5 py-2.5 bg-white border-2 border-amber-400 rounded-lg font-mono font-bold text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer shadow-2xs"
-                    >
-                      {clients.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.contractNumber || 'Tanpa SPK'} - {c.name}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="text-[10px] text-slate-500 mt-1">
-                      Contoh: &quot;045/SPK-LC/PTA/VI/2026 - PT. A&quot;
-                    </p>
-                  </div>
-
-                  {/* Dropdown Lokasi Blok Kerja */}
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                      Lokasi Blok Kerja:
-                    </label>
-                    <select
-                      value={assignmentForm.blockId}
-                      onChange={(e) => setAssignmentForm({ ...assignmentForm, blockId: e.target.value })}
-                      className="w-full px-3 py-2 border border-slate-300 bg-white rounded-lg font-bold text-xs text-slate-900 focus:outline-none focus:border-amber-500 cursor-pointer"
-                    >
-                      <option value="ALL">Seluruh Blok Kerja pada SPK Terpilih</option>
-                      {availableBlocksInModal.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.code} ({b.targetAreaHa ? `${b.targetAreaHa} Ha` : 'Luas belum diatur'})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Info Perusahaan Klien */}
-                  {selectedClientInModal && (
-                    <div className="p-2.5 bg-white rounded-lg border border-slate-200 text-[11px] text-slate-600 flex flex-wrap items-center justify-between gap-1">
-                      <div className="font-bold text-slate-900 flex items-center gap-1">
-                        <Building2 className="w-3.5 h-3.5 text-amber-600" />
-                        <span>{selectedClientInModal.fullCompanyName} ({selectedClientInModal.name})</span>
-                      </div>
-                      <div>
-                        <span>{selectedClientInModal.location} • Luas: {selectedClientInModal.totalAreaHa} Ha</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* 5. STATUS & TANGGAL PENUGASAN */}
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-300 space-y-3">
+                {/* 2. JADWAL & STATUS PENUGASAN */}
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
                   <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                     <label className="font-black text-slate-900 text-xs uppercase tracking-wide flex items-center gap-1.5">
                       <Calendar className="w-4 h-4 text-amber-600" />
-                      <span>5. Status &amp; Tanggal Penugasan</span>
+                      <span>2. Jadwal &amp; Status Penugasan</span>
                       <span className="text-rose-600">*</span>
                     </label>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    {/* Tanggal Mulai Penugasan * */}
                     <div>
                       <label className="block font-bold text-slate-700 mb-1">
                         Tanggal Mulai Penugasan <span className="text-rose-600">*</span>
@@ -5678,10 +5448,11 @@ export const MasterDataView: React.FC = () => {
                         required
                         value={assignmentForm.assignedDate}
                         onChange={(e) => setAssignmentForm({ ...assignmentForm, assignedDate: e.target.value })}
-                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-bold text-xs text-slate-900"
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-bold text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-2xs"
                       />
                     </div>
 
+                    {/* Status Penugasan */}
                     <div>
                       <label className="block font-bold text-slate-700 mb-1">
                         Status Penugasan <span className="text-rose-600">*</span>
@@ -5689,28 +5460,453 @@ export const MasterDataView: React.FC = () => {
                       <select
                         value={assignmentForm.status}
                         onChange={(e) => setAssignmentForm({ ...assignmentForm, status: e.target.value as any })}
-                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-bold text-xs text-slate-900 cursor-pointer"
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-bold text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer shadow-2xs"
                       >
-                        <option value="Aktif">Aktif Bertugas di Lokasi</option>
+                        <option value="Aktif">Aktif (Bertugas di Lokasi)</option>
                         <option value="Standby">Standby (Siaga)</option>
                         <option value="BKO / Bantuan">BKO / Bantuan Sementara</option>
-                        <option value="Selesai">Penugasan Selesai</option>
+                        <option value="Selesai">Selesai</option>
                       </select>
                     </div>
                   </div>
                 </div>
 
-                {/* Catatan / Keterangan Penugasan */}
+                {/* 3. PENUGASAN TIM KERJA (ALUR OPERASIONAL LAPANGAN) */}
+                <div className="space-y-4">
+                  <div className="p-3 bg-amber-500/10 border border-amber-300 rounded-2xl flex items-start gap-2.5">
+                    <Info className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                    <div className="text-[11px] text-amber-950 font-medium">
+                      <strong>Ketentuan Penugasan Tim Kerja Operasional:</strong> Tim Staff dan Tim Pendukung ditugaskan mengawal seluruh blok kerja pada SPK terpilih. Pengawas dapat mengawasi seluruh blok atau dibagi per blok tertentu.
+                    </div>
+                  </div>
+
+                  {/* A. TIM STAFF (Bekerja diseluruh blok kerja SPK terpilih) */}
+                  <div className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-200 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-indigo-100 pb-2">
+                      <div>
+                        <span className="font-black text-indigo-950 text-xs uppercase tracking-wide flex items-center gap-1.5">
+                          <ShieldCheck className="w-4 h-4 text-indigo-600" />
+                          <span>A. Tim Staff (Bekerja di Seluruh Blok SPK Terpilih)</span>
+                        </span>
+                        <p className="text-[11px] text-indigo-700 mt-0.5">
+                          Site Manager penanggung jawab teknis &amp; pengawas lapangan per blok kerja.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleAddSupervisor}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-[11px] transition cursor-pointer self-start sm:self-auto shadow-xs"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Tambah Pengawas</span>
+                      </button>
+                    </div>
+
+                    {/* Site Manager Field */}
+                    <div className="bg-white p-3.5 rounded-xl border border-indigo-200 shadow-2xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="font-black text-indigo-950 text-xs flex items-center gap-1.5">
+                          <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>Site Manager <span className="text-rose-600">*</span></span>
+                        </label>
+                        <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
+                          Penanggung Jawab Seluruh Blok SPK
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                            Nama Lengkap Site Manager <span className="text-rose-600">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="Contoh: Bambang Sugiarto, S.P."
+                            value={assignmentForm.siteManagerName}
+                            onChange={(e) => setAssignmentForm({ ...assignmentForm, siteManagerName: e.target.value })}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg font-bold text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-indigo-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                            No. Telepon / WhatsApp
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="+62 812-3456-7890"
+                            value={assignmentForm.siteManagerPhone}
+                            onChange={(e) => setAssignmentForm({ ...assignmentForm, siteManagerPhone: e.target.value })}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-indigo-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Supervisors Section */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-700 text-xs">
+                          Daftar Pengawas Lapangan ({assignmentForm.supervisors.length} Personil):
+                        </span>
+                        <span className="text-[10px] text-slate-500 italic">
+                          (Bisa 1 pengawas untuk seluruh blok, atau beberapa pengawas per blok kerja)
+                        </span>
+                      </div>
+
+                      {assignmentForm.supervisors.map((spv, spvIdx) => (
+                        <div key={spv.id || spvIdx} className="bg-white p-3.5 rounded-xl border border-indigo-200 shadow-2xs space-y-3">
+                          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                            <span className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                              <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-800 flex items-center justify-center font-black text-[10px]">
+                                {spvIdx + 1}
+                              </span>
+                              <span>Pengawas Lapangan #{spvIdx + 1}</span>
+                            </span>
+                            {assignmentForm.supervisors.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveSupervisor(spvIdx)}
+                                className="text-rose-500 hover:text-rose-700 p-1 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                title="Hapus Pengawas Ini"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                                Nama Pengawas <span className="text-rose-600">*</span>
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                list="supervisor-suggestions-list"
+                                placeholder="Contoh: Ahmad Noor / Dedi Kurniawan"
+                                value={spv.name}
+                                onChange={(e) => handleSupervisorChange(spvIdx, 'name', e.target.value)}
+                                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg font-bold text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-indigo-500"
+                              />
+                              <datalist id="supervisor-suggestions-list">
+                                <option value="Ahmad Noor" />
+                                <option value="Dedi Kurniawan" />
+                                <option value="Budi Santoso" />
+                                <option value="Faisal Akbar" />
+                                <option value="Aris Munandar" />
+                                {workers
+                                  .filter((w) => (w.category || '').toLowerCase().includes('pengawas') || (w.role || '').toLowerCase().includes('pengawas'))
+                                  .map((w) => (
+                                    <option key={w.id} value={w.name} />
+                                  ))}
+                              </datalist>
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                                No. Telepon / WhatsApp
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="+62 813-xxxx-xxxx"
+                                value={spv.phone || ''}
+                                onChange={(e) => handleSupervisorChange(spvIdx, 'phone', e.target.value)}
+                                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-indigo-500"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Cakupan Blok Pengawasan */}
+                          <div className="pt-2 border-t border-slate-100 space-y-2">
+                            <label className="block text-[11px] font-bold text-slate-700">
+                              Cakupan Wilayah Pengawasan Blok Kerja:
+                            </label>
+
+                            <div className="flex flex-wrap items-center gap-4 text-xs">
+                              <label className="flex items-center gap-1.5 font-bold cursor-pointer text-slate-800">
+                                <input
+                                  type="radio"
+                                  name={`spv-coverage-${spvIdx}`}
+                                  checked={spv.coverageType === 'ALL'}
+                                  onChange={() => handleSupervisorChange(spvIdx, 'coverageType', 'ALL')}
+                                  className="text-amber-500 focus:ring-amber-400"
+                                />
+                                <span>Mengawasi Seluruh Blok Kerja SPK Terpilih</span>
+                              </label>
+
+                              <label className="flex items-center gap-1.5 font-bold cursor-pointer text-slate-800">
+                                <input
+                                  type="radio"
+                                  name={`spv-coverage-${spvIdx}`}
+                                  checked={spv.coverageType === 'CUSTOM'}
+                                  onChange={() => handleSupervisorChange(spvIdx, 'coverageType', 'CUSTOM')}
+                                  className="text-amber-500 focus:ring-amber-400"
+                                />
+                                <span>Pilih Blok Tertentu Yang Diawasi</span>
+                              </label>
+                            </div>
+
+                            {/* Block Multi-Checkboxes if CUSTOM */}
+                            {spv.coverageType === 'CUSTOM' && (
+                              <div className="mt-2 p-2.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                                  Pilih Blok Kerja Yang Diawasi (Centang Blok):
+                                </span>
+                                {availableBlocks.length === 0 ? (
+                                  <div className="text-slate-400 text-xs italic">
+                                    Belum ada data blok kerja untuk klien SPK ini.
+                                  </div>
+                                ) : (
+                                  <div className="flex flex-wrap gap-2">
+                                    {availableBlocks.map((blk) => {
+                                      const isSelected = spv.assignedBlockIds?.includes(blk.id);
+                                      return (
+                                        <button
+                                          key={blk.id}
+                                          type="button"
+                                          onClick={() => handleToggleSupervisorBlock(spvIdx, blk.id, blk.code)}
+                                          className={`px-3 py-1.5 rounded-lg font-bold text-xs transition cursor-pointer flex items-center gap-1.5 border ${
+                                            isSelected
+                                              ? 'bg-amber-500 text-slate-950 border-amber-600 shadow-2xs font-black'
+                                              : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                                          }`}
+                                        >
+                                          <span>{isSelected ? '✓' : '+'}</span>
+                                          <span>{blk.code} ({blk.targetAreaHa || 0} Ha)</span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* B. TIM PENDUKUNG (Bekerja diseluruh blok kerja SPK terpilih) */}
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-300 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-slate-200 pb-2">
+                      <div>
+                        <span className="font-black text-slate-900 text-xs uppercase tracking-wide flex items-center gap-1.5">
+                          <Users className="w-4 h-4 text-amber-600" />
+                          <span>B. Tim Pendukung (Bekerja di Seluruh Blok SPK Terpilih)</span>
+                        </span>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Operator alat berat, unit armada alat, teknisi mekanik, logistik, dan tim pendukung lapangan.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleAddSupportMember}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-[11px] transition cursor-pointer self-start sm:self-auto shadow-xs"
+                      >
+                        <UserPlus className="w-3.5 h-3.5" />
+                        <span>+ Tambah Tim Pendukung</span>
+                      </button>
+                    </div>
+
+                    {/* Member rows list */}
+                    <div className="space-y-2.5">
+                      {assignmentForm.supportTeam.map((mem, memIdx) => {
+                        const isMemOperator = mem.role === 'Operator';
+                        const rowKey = mem.id || `sup-${memIdx}`;
+                        const isManual = !!manualWorkerInputMode[rowKey];
+
+                        // Filter workers from Module 3 (workers) matching current role
+                        const matchingRoleWorkers = workers.filter((w) => {
+                          const cat = (w.category || '').toLowerCase();
+                          const role = (w.role || '').toLowerCase();
+                          const targetRole = mem.role.toLowerCase();
+                          return cat === targetRole || role.includes(targetRole);
+                        });
+                        const otherRoleWorkers = workers.filter((w) => !matchingRoleWorkers.some((m) => m.id === w.id));
+
+                        return (
+                          <div key={mem.id || memIdx} className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-slate-800 text-[11px] flex items-center gap-1.5">
+                                <span className="w-4 h-4 rounded-full bg-amber-100 text-amber-900 flex items-center justify-center font-black text-[9px]">
+                                  {memIdx + 1}
+                                </span>
+                                <span>Personil #{memIdx + 1}</span>
+                                {mem.workerName && (
+                                  <span className="text-[10px] font-bold text-amber-900 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                                    {mem.workerName}
+                                  </span>
+                                )}
+                              </span>
+                              {assignmentForm.supportTeam.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveSupportMember(memIdx)}
+                                  className="text-rose-400 hover:text-rose-600 p-1 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                  title="Hapus Personil Ini"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                              {/* Peran */}
+                              <div className="sm:col-span-3">
+                                <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                                  Peran / Kategori
+                                </label>
+                                <select
+                                  value={mem.role}
+                                  onChange={(e) => handleSupportMemberChange(memIdx, 'role', e.target.value)}
+                                  className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg font-bold text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-amber-500 cursor-pointer"
+                                >
+                                  <option value="Operator">Operator</option>
+                                  <option value="Mekanik">Mekanik</option>
+                                  <option value="Logistik">Logistik</option>
+                                  <option value="Pendukung">Pendukung</option>
+                                </select>
+                              </div>
+
+                              {/* Nama Personil: Dropdown dari Modul 3. Personil Tim Pendukung */}
+                              <div className="sm:col-span-4">
+                                <div className="flex items-center justify-between mb-1">
+                                  <label className="block text-[10px] font-bold text-slate-600">
+                                    Nama Personil <span className="text-rose-600">*</span>
+                                  </label>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setManualWorkerInputMode((prev) => ({
+                                        ...prev,
+                                        [rowKey]: !prev[rowKey],
+                                      }));
+                                    }}
+                                    className="text-[9px] text-amber-700 hover:text-amber-900 font-bold hover:underline cursor-pointer"
+                                    title="Klik untuk beralih antara dropdown dari master personil atau ketik manual"
+                                  >
+                                    {isManual ? '← Dari Daftar' : '+ Ketik Manual'}
+                                  </button>
+                                </div>
+
+                                {isManual ? (
+                                  <input
+                                    type="text"
+                                    required
+                                    placeholder="Ketik nama personil..."
+                                    value={mem.workerName}
+                                    onChange={(e) => handleSupportMemberChange(memIdx, 'workerName', e.target.value)}
+                                    className="w-full px-2.5 py-1.5 bg-amber-50/40 border border-amber-300 rounded-lg font-bold text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-amber-500"
+                                  />
+                                ) : (
+                                  <select
+                                    required
+                                    value={mem.workerName || ''}
+                                    onChange={(e) => {
+                                      if (e.target.value === '__MANUAL__') {
+                                        setManualWorkerInputMode((prev) => ({ ...prev, [rowKey]: true }));
+                                      } else {
+                                        handleSupportMemberChange(memIdx, 'workerName', e.target.value);
+                                      }
+                                    }}
+                                    className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg font-bold text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-amber-500 cursor-pointer"
+                                  >
+                                    <option value="">-- Pilih Personil ({mem.role}) --</option>
+
+                                    {/* Jika personil saat ini belum terdaftar di modul 3, tetap tampilkan agar tidak hilang */}
+                                    {mem.workerName && !workers.some((w) => w.name.toLowerCase() === mem.workerName.toLowerCase()) && (
+                                      <option value={mem.workerName}>
+                                        {mem.workerName} (Tercatat Saat Ini)
+                                      </option>
+                                    )}
+
+                                    {/* Personil sesuai kategori/peran */}
+                                    {matchingRoleWorkers.length > 0 && (
+                                      <optgroup label={`Personil Kategori ${mem.role} (${matchingRoleWorkers.length} Orang)`}>
+                                        {matchingRoleWorkers.map((w) => (
+                                          <option key={w.id} value={w.name}>
+                                            {w.name} {w.assignedEquipmentId ? `• Alat: ${w.assignedEquipmentId}` : ''}
+                                          </option>
+                                        ))}
+                                      </optgroup>
+                                    )}
+
+                                    {/* Personil kategori lainnya */}
+                                    {otherRoleWorkers.length > 0 && (
+                                      <optgroup label={`Personil Kategori Lainnya (${otherRoleWorkers.length} Orang)`}>
+                                        {otherRoleWorkers.map((w) => (
+                                          <option key={w.id} value={w.name}>
+                                            {w.name} ({w.category || w.role || 'Staff'})
+                                          </option>
+                                        ))}
+                                      </optgroup>
+                                    )}
+
+                                    <option value="__MANUAL__">+ Ketik Nama Personil Lainnya (Manual)...</option>
+                                  </select>
+                                )}
+                              </div>
+
+                              {/* Alat Berat (Jika Operator) atau Catatan Tugas (Jika selain Operator) */}
+                              <div className="sm:col-span-5">
+                                {isMemOperator ? (
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-amber-900 mb-1 flex items-center justify-between">
+                                      <span>Alat Berat Yang Ditugaskan <span className="text-rose-600">*</span></span>
+                                      {mem.equipmentId && (
+                                        <span className="font-mono text-[9px] bg-amber-200 text-amber-950 px-1 rounded font-black">
+                                          {mem.equipmentId}
+                                        </span>
+                                      )}
+                                    </label>
+                                    <select
+                                      required={isMemOperator}
+                                      value={mem.equipmentId || ''}
+                                      onChange={(e) => handleSupportMemberChange(memIdx, 'equipmentId', e.target.value)}
+                                      className="w-full px-2.5 py-1.5 bg-amber-50/50 border border-amber-300 rounded-lg font-bold text-xs text-slate-900 focus:outline-none focus:bg-white focus:ring-1 focus:ring-amber-500 cursor-pointer"
+                                    >
+                                      <option value="">-- Pilih Alat Berat --</option>
+                                      {equipments.map((eq) => (
+                                        <option key={eq.id} value={eq.id}>
+                                          {eq.id} - {eq.name} ({eq.type})
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                                      Catatan Tugas / Spesialisasi
+                                    </label>
+                                    <input
+                                      type="text"
+                                      placeholder="Contoh: Maintenance Unit / BBM & Sparepart"
+                                      value={mem.notes || ''}
+                                      onChange={(e) => handleSupportMemberChange(memIdx, 'notes', e.target.value)}
+                                      className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-amber-500"
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 4. CATATAN / INSTRUKSI KERJA (OPSIONAL) */}
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">
                     Catatan / Instruksi Kerja (Opsional):
                   </label>
                   <textarea
                     rows={2}
-                    placeholder="Contoh: Fokus perabasan semak belukar dan imas kayu di sisi timur kanal..."
+                    placeholder="Contoh: Seluruh tim wajib mematuhi SOP Zero Burning Method dan standar K3..."
                     value={assignmentForm.notes}
                     onChange={(e) => setAssignmentForm({ ...assignmentForm, notes: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 focus:outline-none focus:bg-white focus:ring-2 focus:ring-amber-500"
                   />
                 </div>
 
@@ -5736,6 +5932,217 @@ export const MasterDataView: React.FC = () => {
           </div>
         );
       })()}
+
+      {/* MODAL: DETAIL PENUGASAN KERJA OPERASIONAL (SURAT PERINTAH PENUGASAN RESMI) */}
+      {viewingAssignmentDetail && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl p-5 sm:p-7 max-w-2xl w-full shadow-2xl space-y-5 my-auto max-h-[94vh] overflow-y-auto border border-slate-200">
+            {/* Modal Header */}
+            <div className="border-b border-slate-100 pb-3 flex items-start justify-between">
+              <div>
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black uppercase tracking-wider mb-1">
+                  <ClipboardList className="w-3 h-3 text-amber-700" />
+                  <span>Surat Tugas Resmi • Penugasan Kerja Operasional</span>
+                </div>
+                <h3 className="text-base sm:text-lg font-black text-slate-900 flex items-center gap-2">
+                  <span>{viewingAssignmentDetail.assignmentNumber}</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                    viewingAssignmentDetail.status === 'Aktif'
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                      : 'bg-amber-100 text-amber-800 border border-amber-300'
+                  }`}>
+                    {viewingAssignmentDetail.status}
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Tanggal Mulai Penugasan: <strong>{viewingAssignmentDetail.assignedDate}</strong>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingAssignmentDetail(null)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 font-bold transition cursor-pointer shrink-0"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Client & SPK Banner */}
+            <div className="p-3.5 bg-gradient-to-r from-amber-50 to-amber-100/60 border border-amber-300 rounded-2xl flex flex-wrap items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <span className="text-[10px] font-black uppercase text-amber-900 tracking-wider flex items-center gap-1">
+                  <Building2 className="w-3.5 h-3.5 text-amber-700" />
+                  KLIEN &amp; NOMOR SPK KONTRAK
+                </span>
+                <div className="font-black text-slate-950 text-sm">
+                  {viewingAssignmentDetail.clientName}
+                </div>
+                <div className="font-mono text-xs text-slate-700 font-bold">
+                  No SPK: {viewingAssignmentDetail.contractNumber}
+                </div>
+              </div>
+              <div className="px-3 py-1.5 rounded-xl bg-white border border-amber-300 text-right shadow-2xs">
+                <span className="text-[10px] text-slate-500 font-bold block">Luas Kontrak</span>
+                <span className="text-base font-black text-emerald-800">{viewingAssignmentDetail.totalAreaHa || 460} Ha</span>
+              </div>
+            </div>
+
+            {/* A. Tim Staff Detail */}
+            <div className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-200 space-y-3 text-xs">
+              <div className="font-black text-indigo-950 uppercase tracking-wide flex items-center gap-1.5 border-b border-indigo-100 pb-2">
+                <ShieldCheck className="w-4 h-4 text-indigo-600" />
+                <span>A. Tim Staff (Bekerja di Seluruh Blok SPK)</span>
+              </div>
+
+              {/* Site Manager */}
+              <div className="bg-white p-3 rounded-xl border border-indigo-200 flex items-center justify-between gap-2">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-500 block uppercase">Site Manager:</span>
+                  <span className="font-black text-slate-900 text-sm">{viewingAssignmentDetail.siteManagerName || viewingAssignmentDetail.staffName || '-'}</span>
+                </div>
+                {viewingAssignmentDetail.siteManagerPhone && (
+                  <span className="text-xs text-indigo-700 font-mono font-bold bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200">
+                    📱 {viewingAssignmentDetail.siteManagerPhone}
+                  </span>
+                )}
+              </div>
+
+              {/* Supervisors */}
+              <div className="space-y-2">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                  Pengawas Lapangan:
+                </span>
+                {viewingAssignmentDetail.supervisors && viewingAssignmentDetail.supervisors.length > 0 ? (
+                  <div className="space-y-2">
+                    {viewingAssignmentDetail.supervisors.map((spv, sIdx) => (
+                      <div key={spv.id || sIdx} className="bg-white p-3 rounded-xl border border-indigo-200 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-black text-slate-900 text-xs">
+                            {sIdx + 1}. {spv.name}
+                          </span>
+                          {spv.phone && (
+                            <span className="text-[10px] text-slate-500 font-mono">{spv.phone}</span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-600">
+                          {spv.coverageType === 'ALL' ? (
+                            <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 font-bold inline-block">
+                              Mengawasi Seluruh Blok SPK Terpilih
+                            </span>
+                          ) : (
+                            <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                              <span className="text-slate-500 font-medium">Mengawasi:</span>
+                              {spv.assignedBlockCodes && spv.assignedBlockCodes.length > 0 ? (
+                                spv.assignedBlockCodes.map((code) => (
+                                  <span key={code} className="px-1.5 py-0.2 rounded bg-amber-100 text-amber-950 font-bold text-[10px] border border-amber-300">
+                                    {code}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-slate-400 italic">Belum ditentukan</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-slate-500 italic">Tidak ada rincian pengawas.</div>
+                )}
+              </div>
+            </div>
+
+            {/* B. Tim Pendukung Detail */}
+            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-300 space-y-3 text-xs">
+              <div className="font-black text-slate-900 uppercase tracking-wide flex items-center justify-between border-b border-slate-200 pb-2">
+                <span className="flex items-center gap-1.5">
+                  <Users className="w-4 h-4 text-amber-600" />
+                  <span>B. Tim Pendukung (Bekerja di Seluruh Blok SPK)</span>
+                </span>
+                <span className="text-[10px] font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-300">
+                  {viewingAssignmentDetail.supportTeam ? viewingAssignmentDetail.supportTeam.length : 0} Personil
+                </span>
+              </div>
+
+              {viewingAssignmentDetail.supportTeam && viewingAssignmentDetail.supportTeam.length > 0 ? (
+                <div className="space-y-2">
+                  {/* Operator */}
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-bold text-amber-900 uppercase tracking-wider block">
+                      Operator &amp; Alat Berat:
+                    </span>
+                    <div className="space-y-1.5">
+                      {viewingAssignmentDetail.supportTeam.filter((s) => s.role === 'Operator').map((op, oIdx) => (
+                        <div key={op.id || oIdx} className="bg-white p-2.5 rounded-xl border border-slate-200 flex items-center justify-between gap-2">
+                          <span className="font-black text-slate-900 text-xs">
+                            {oIdx + 1}. {op.workerName}
+                          </span>
+                          <span className="px-2 py-1 rounded-lg bg-amber-200 text-amber-950 font-black font-mono text-[10px]">
+                            {op.equipmentName || op.equipmentId || 'Unit Alat'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Mekanik, Logistik, Pendukung */}
+                  {viewingAssignmentDetail.supportTeam.filter((s) => s.role !== 'Operator').length > 0 && (
+                    <div className="pt-2 border-t border-slate-200 space-y-1.5">
+                      <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block">
+                        Personil Teknis &amp; Pendukung:
+                      </span>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {viewingAssignmentDetail.supportTeam.filter((s) => s.role !== 'Operator').map((sup, sIdx) => (
+                          <div key={sup.id || sIdx} className="bg-white p-2 rounded-lg border border-slate-200 text-[11px]">
+                            <div className="font-bold text-slate-900">
+                              <span className="text-amber-800 font-black">{sup.role}:</span> {sup.workerName}
+                            </div>
+                            {sup.notes && <div className="text-[10px] text-slate-500 mt-0.5">{sup.notes}</div>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-slate-500 italic">Tidak ada rincian tim pendukung.</div>
+              )}
+            </div>
+
+            {/* Catatan / Instruksi Kerja */}
+            {viewingAssignmentDetail.notes && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs">
+                <span className="font-bold text-amber-900 block mb-0.5">Catatan / Instruksi Kerja:</span>
+                <p className="text-slate-700 italic">{viewingAssignmentDetail.notes}</p>
+              </div>
+            )}
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setViewingAssignmentDetail(null)}
+                className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-xl font-bold cursor-pointer transition"
+              >
+                Tutup
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const target = viewingAssignmentDetail;
+                  setViewingAssignmentDetail(null);
+                  handleOpenEditAssignment(target);
+                }}
+                className="px-5 py-2 text-xs bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl shadow-md cursor-pointer transition flex items-center gap-1.5"
+              >
+                <Edit2 className="w-3.5 h-3.5" />
+                <span>Edit Penugasan</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL: KONFIRMASI HAPUS PENUGASAN KERJA */}
       {assignmentToDelete && (

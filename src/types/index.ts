@@ -92,8 +92,8 @@ export interface Project {
 export interface BlockWorkItem {
   id: string;
   name: string; // e.g. "UNDERBRUSHING (SEMAK BELUKAR)", "BATANG KUBUR", "MAINROAD"
-  unit: string; // e.g. "HEKTAR", "POHON", "METER LARI", "METER KUBIK"
-  targetVolume?: number; // target kuantitas/volume opsional
+  unit: string; // e.g. "Ha", "POHON", "m", "m³", "UNIT", "TITIK", "BATANG"
+  targetVolume?: number; // target kuantitas/volume opsional (mendukung desimal seperti 25,7 Ha)
   completedVolume?: number; // realisasi kuantitas
   notes?: string;
 }
@@ -176,30 +176,66 @@ export interface Worker {
   assignedBlockId?: string; // e.g. "blk-1" or "ALL"
 }
 
+export interface StaffSupervisorAssignment {
+  id?: string;
+  name: string; // e.g. "Ahmad Noor", "Dedi Kurniawan"
+  phone?: string;
+  coverageType: 'ALL' | 'CUSTOM'; // 'ALL' = Seluruh Blok Kerja SPK, 'CUSTOM' = Blok tertentu
+  assignedBlockIds: string[]; // e.g. ['blk-i33', 'blk-j31']
+  assignedBlockCodes: string[]; // e.g. ['BLOK I33', 'BLOK J31']
+}
+
+export interface SupportTeamMemberAssignment {
+  id: string;
+  role: 'Operator' | 'Mekanik' | 'Logistik' | 'Pendukung' | string;
+  workerId?: string;
+  workerName: string; // e.g. "Hendri Gunawan", "Anton", "Bowo", "Jaya"
+  equipmentId?: string; // e.g. "EX-03"
+  equipmentName?: string; // e.g. "Excavator Kobelco SK200-10"
+  phone?: string;
+  notes?: string;
+}
+
 export interface WorkAssignment {
   id: string; // e.g. "ASG-001"
-  assignmentNumber: string; // e.g. "001/ST-LC/PTA/VI/2026" - Standar penomoran seperti SPK
-  // 1. Data Staff dari Master Data Perusahaan
-  staffId?: string;
-  staffLevel?: string; // Direktur, Manager, Pengawas, Akuntan, Staff
-  staffName?: string;
-  // 2. Data Personel Tim pendukung Lapangan
-  workerId: string;
-  workerName: string;
-  workerCategory: string; // Operator, Mekanik, Logistik, Pendukung (Pengawas & Site Manager dikecualikan)
-  equipmentId?: string; // Kode Unit Alat, e.g. "EX-01"
-  equipmentType?: string; // "Excavator"
-  equipmentName?: string; // "Excavator Komatsu PC200-8"
-  equipmentModel?: string; // "PC200-8"
-  clientId: string; // "client-1"
-  clientName: string; // "PT. A"
-  contractNumber: string; // "045/SPK-LC/PTA/VI/2026"
-  blockId: string; // "ALL" or specific block id
-  blockCode: string; // "Seluruh Blok Kerja pada SPK Terpilih" or "BLOK AG (80 Ha)"
-  status: 'Aktif' | 'Standby' | 'Selesai' | 'BKO / Bantuan';
+  assignmentNumber: string; // e.g. "001/ST-LC/GKK/IX/2026" - Standar penomoran seperti SPK
+
+  // Data Klien / SPK
+  clientId: string; // "client-1" or "client-gudang"
+  clientName: string; // "PT. GUGUS KOMODITAS KONDANG"
+  contractNumber: string; // "B/0001/33/GKK/9/2026"
+  totalAreaHa?: number; // 460 Ha
+
+  // Tanggal Mulai Penugasan *
   assignedDate: string; // YYYY-MM-DD
+  // Status Penugasan
+  status: 'Aktif' | 'Standby' | 'Selesai' | 'BKO / Bantuan';
+  // Catatan / Instruksi Kerja (Opsional)
   notes?: string;
   createdAt: string;
+
+  // PENUGASAN TIM KERJA (ALUR OPERASIONAL LAPANGAN)
+  // A. Tim Staff (bekerja di seluruh blok kerja SPK terpilih)
+  siteManagerName?: string; // e.g. "Bambang Sugiarto, S.P."
+  siteManagerPhone?: string;
+  supervisors?: StaffSupervisorAssignment[]; // e.g. Ahmad Noor (I33, J31, J34), Dedi Kurniawan (J35, J36)
+
+  // B. Tim Pendukung (bekerja di seluruh blok kerja SPK terpilih)
+  supportTeam?: SupportTeamMemberAssignment[]; // Operator + Alat Berat, Mekanik, Logistik, Pendukung
+
+  // Backward compatibility fields for legacy single-item mapping
+  staffId?: string;
+  staffLevel?: string;
+  staffName?: string;
+  workerId?: string;
+  workerName?: string;
+  workerCategory?: string;
+  equipmentId?: string;
+  equipmentType?: string;
+  equipmentName?: string;
+  equipmentModel?: string;
+  blockId?: string;
+  blockCode?: string;
 }
 
 export interface InventoryItem {
