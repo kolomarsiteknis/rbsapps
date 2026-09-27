@@ -27,7 +27,7 @@ export interface AuthUser {
   id?: string;
   username: string;
   displayName: string;
-  role: 'supervisor' | 'director' | 'manager';
+  role: UserRole;
   roleTitle: string;
   email?: string;
   loginTime: string;
@@ -183,7 +183,7 @@ export interface WorkAssignment {
   staffId?: string;
   staffLevel?: string; // Direktur, Manager, Pengawas, Akuntan, Staff
   staffName?: string;
-  // 2. Data Personel Tim Pekerja Lapangan
+  // 2. Data Personel Tim pendukung Lapangan
   workerId: string;
   workerName: string;
   workerCategory: string; // Operator, Mekanik, Logistik, Pendukung (Pengawas & Site Manager dikecualikan)

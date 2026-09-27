@@ -354,9 +354,10 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
 
   // Filtered staff list
   const filteredStaff = staffList.filter((s) => {
-    const matchesSearch = s.fullName.toLowerCase().includes(staffSearchQuery.toLowerCase()) ||
-      s.jobRole.toLowerCase().includes(staffSearchQuery.toLowerCase()) ||
-      s.employeeIdNumber.toLowerCase().includes(staffSearchQuery.toLowerCase());
+    const q = (staffSearchQuery || '').toLowerCase();
+    const matchesSearch = ((s.fullName || '').toLowerCase().includes(q)) ||
+      ((s.jobRole || '').toLowerCase().includes(q)) ||
+      ((s.employeeIdNumber || '').toLowerCase().includes(q));
     const matchesRole = staffFilterRole === 'ALL' || s.staffLevel === staffFilterRole;
     return matchesSearch && matchesRole;
   });
@@ -853,8 +854,9 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredStaff.map((staff) => {
               // Check if linked user exists
+              const staffNameLower = (staff.fullName || '').trim().toLowerCase();
               const linkedUser = managedUsers.find(
-                (u) => u.fullName.toLowerCase() === staff.fullName.toLowerCase() || u.id === staff.linkedUserId
+                (u) => (staffNameLower && u.fullName && u.fullName.trim().toLowerCase() === staffNameLower) || (staff.linkedUserId && u.id === staff.linkedUserId)
               );
 
               return (

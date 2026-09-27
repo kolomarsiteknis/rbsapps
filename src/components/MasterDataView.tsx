@@ -128,27 +128,30 @@ export const MasterDataView: React.FC = () => {
     workItems: DEFAULT_WORK_ITEMS_CATALOG.map((item, idx) => ({
       id: `wi-std-${idx + 1}`,
       name: item.name,
-      unit: item.unit,
+      unit: item.unit === 'HEKTAR' ? 'Ha' : item.unit,
       targetVolume: item.defaultTargetVolume,
     })),
     selectedExistingBlockId: '__CUSTOM__',
     customItemName: '',
     customItemVolume: '10',
-    customItemUnit: 'HEKTAR',
+    customItemUnit: 'Ha',
   });
+
+  // State to hold user input string drafts for work item volumes (allows decimals like "25,7" smoothly)
+  const [itemVolumeDrafts, setItemVolumeDrafts] = useState<Record<string, string>>({});
 
   // Filtered blocks based on selected client and search query
   const filteredBlocks = blocks
     .filter((b) => selectedClientForBlock === 'ALL' || b.clientId === selectedClientForBlock)
     .filter((b) => {
       if (!blockSearchQuery.trim()) return true;
-      const q = blockSearchQuery.toLowerCase();
+      const q = (blockSearchQuery || '').toLowerCase();
       const ownerClient = clients.find((c) => c.id === b.clientId);
-      const matchCode = b.code.toLowerCase().includes(q);
+      const matchCode = (b.code && b.code.toLowerCase().includes(q)) || false;
       const matchClientName = ownerClient?.name?.toLowerCase().includes(q) || false;
       const matchClientFull = ownerClient?.fullCompanyName?.toLowerCase().includes(q) || false;
       const matchSpk = ownerClient?.contractNumber?.toLowerCase().includes(q) || false;
-      const matchWorkItem = b.workItems?.some((wi) => wi.name.toLowerCase().includes(q)) || false;
+      const matchWorkItem = b.workItems?.some((wi) => wi.name && wi.name.toLowerCase().includes(q)) || false;
       return matchCode || matchClientName || matchClientFull || matchSpk || matchWorkItem;
     });
 
@@ -209,12 +212,21 @@ export const MasterDataView: React.FC = () => {
     const standardItems: BlockWorkItem[] = DEFAULT_WORK_ITEMS_CATALOG.map((item, idx) => ({
       id: `wi-std-${idx + 1}`,
       name: item.name,
-      unit: item.unit,
+      unit: item.unit === 'HEKTAR' ? 'Ha' : item.unit,
       targetVolume: item.defaultTargetVolume,
     }));
 
     const clientBlocks = blocks.filter((b) => b.clientId === targetClientId);
     const firstBlock = clientBlocks[0];
+    const initialItems = firstBlock?.workItems && firstBlock.workItems.length > 0 
+      ? firstBlock.workItems.map(wi => ({ ...wi, unit: wi.unit === 'HEKTAR' ? 'Ha' : wi.unit }))
+      : standardItems;
+
+    const initialDrafts: Record<string, string> = {};
+    initialItems.forEach(wi => {
+      initialDrafts[wi.name.toUpperCase()] = wi.targetVolume !== undefined ? String(wi.targetVolume).replace('.', ',') : '10';
+    });
+    setItemVolumeDrafts(initialDrafts);
 
     setBlockForm({
       clientId: targetClientId,
@@ -222,11 +234,11 @@ export const MasterDataView: React.FC = () => {
       targetAreaInput: firstBlock && firstBlock.targetAreaHa ? String(firstBlock.targetAreaHa).replace('.', ',') : '35,5',
       dailyTargetAreaHa: 4.0,
       status: 'Dalam Pengerjaan',
-      workItems: firstBlock?.workItems && firstBlock.workItems.length > 0 ? firstBlock.workItems : standardItems,
+      workItems: initialItems,
       selectedExistingBlockId: firstBlock ? firstBlock.id : '__CUSTOM__',
       customItemName: '',
       customItemVolume: '10',
-      customItemUnit: 'HEKTAR',
+      customItemUnit: 'Ha',
     });
     setIsBlockModalOpen(true);
   };
@@ -237,11 +249,20 @@ export const MasterDataView: React.FC = () => {
     const standardItems: BlockWorkItem[] = DEFAULT_WORK_ITEMS_CATALOG.map((item, idx) => ({
       id: `wi-std-${idx + 1}`,
       name: item.name,
-      unit: item.unit,
+      unit: item.unit === 'HEKTAR' ? 'Ha' : item.unit,
       targetVolume: item.defaultTargetVolume,
     }));
 
     if (firstBlock) {
+      const items = (firstBlock.workItems && firstBlock.workItems.length > 0)
+        ? firstBlock.workItems.map(wi => ({ ...wi, unit: wi.unit === 'HEKTAR' ? 'Ha' : wi.unit }))
+        : standardItems;
+      const drafts: Record<string, string> = {};
+      items.forEach(wi => {
+        drafts[wi.name.toUpperCase()] = wi.targetVolume !== undefined ? String(wi.targetVolume).replace('.', ',') : '10';
+      });
+      setItemVolumeDrafts(drafts);
+
       setBlockForm((prev) => ({
         ...prev,
         clientId: newClientId,
@@ -249,9 +270,15 @@ export const MasterDataView: React.FC = () => {
         code: firstBlock.code,
         targetAreaInput: firstBlock.targetAreaHa !== undefined ? String(firstBlock.targetAreaHa).replace('.', ',') : '35,5',
         status: firstBlock.status,
-        workItems: (firstBlock.workItems && firstBlock.workItems.length > 0) ? firstBlock.workItems : standardItems,
+        workItems: items,
       }));
     } else {
+      const drafts: Record<string, string> = {};
+      standardItems.forEach(wi => {
+        drafts[wi.name.toUpperCase()] = wi.targetVolume !== undefined ? String(wi.targetVolume).replace('.', ',') : '10';
+      });
+      setItemVolumeDrafts(drafts);
+
       setBlockForm((prev) => ({
         ...prev,
         clientId: newClientId,
@@ -310,16 +337,29 @@ export const MasterDataView: React.FC = () => {
       'SALURAN TERSIER': 50,
     };
     const items: BlockWorkItem[] = (b.workItems && b.workItems.length > 0)
-      ? b.workItems.map((wi) => ({
-          ...wi,
-          targetVolume: wi.targetVolume !== undefined ? wi.targetVolume : (standardVolumeMap[wi.name.toUpperCase()] ?? 10),
-        }))
+      ? b.workItems.map((wi) => {
+          let unit = wi.unit;
+          if (unit === 'HEKTAR' || unit === 'Hektar') unit = 'Ha';
+          if (unit === 'METER LARI') unit = 'm';
+          if (unit === 'METER KUBIK') unit = 'm³';
+          return {
+            ...wi,
+            unit,
+            targetVolume: wi.targetVolume !== undefined ? wi.targetVolume : (standardVolumeMap[wi.name.toUpperCase()] ?? 10),
+          };
+        })
       : DEFAULT_WORK_ITEMS_CATALOG.map((item, idx) => ({
           id: `wi-std-${idx + 1}`,
           name: item.name,
-          unit: item.unit,
+          unit: item.unit === 'HEKTAR' ? 'Ha' : item.unit,
           targetVolume: item.defaultTargetVolume,
         }));
+
+    const drafts: Record<string, string> = {};
+    items.forEach((wi) => {
+      drafts[wi.name.toUpperCase()] = wi.targetVolume !== undefined ? String(wi.targetVolume).replace('.', ',') : '10';
+    });
+    setItemVolumeDrafts(drafts);
 
     setBlockForm({
       clientId: b.clientId,
@@ -331,13 +371,14 @@ export const MasterDataView: React.FC = () => {
       selectedExistingBlockId: b.id,
       customItemName: '',
       customItemVolume: '10',
-      customItemUnit: 'HEKTAR',
+      customItemUnit: 'Ha',
     });
     setIsBlockModalOpen(true);
   };
 
   // Toggle standard work item for blockForm
   const handleToggleWorkItem = (stdItem: { name: string; unit: string; defaultTargetVolume?: number }) => {
+    const unitName = stdItem.unit === 'HEKTAR' ? 'Ha' : stdItem.unit;
     const exists = blockForm.workItems.some((wi) => wi.name.toUpperCase() === stdItem.name.toUpperCase());
     if (exists) {
       setBlockForm({
@@ -345,6 +386,15 @@ export const MasterDataView: React.FC = () => {
         workItems: blockForm.workItems.filter((wi) => wi.name.toUpperCase() !== stdItem.name.toUpperCase()),
       });
     } else {
+      const draftVal = itemVolumeDrafts[stdItem.name.toUpperCase()];
+      const parsedDraft = draftVal ? parseFloat(draftVal.replace(',', '.')) : NaN;
+      const targetVol = !isNaN(parsedDraft) ? parsedDraft : (stdItem.defaultTargetVolume ?? 10);
+      
+      setItemVolumeDrafts((prev) => ({
+        ...prev,
+        [stdItem.name.toUpperCase()]: draftVal || String(targetVol).replace('.', ','),
+      }));
+
       setBlockForm({
         ...blockForm,
         workItems: [
@@ -352,21 +402,23 @@ export const MasterDataView: React.FC = () => {
           {
             id: `wi-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
             name: stdItem.name,
-            unit: stdItem.unit,
-            targetVolume: stdItem.defaultTargetVolume ?? 10,
+            unit: unitName,
+            targetVolume: targetVol,
           },
         ],
       });
     }
   };
 
-  // Update target volume for a specific work item
+  // Update target volume for a specific work item (supports decimal values like 25,7 or 25.7)
   const handleUpdateItemVolume = (itemName: string, rawVal: string) => {
+    const key = itemName.toUpperCase();
+    setItemVolumeDrafts((prev) => ({ ...prev, [key]: rawVal }));
     const parsed = parseFloat(rawVal.replace(',', '.'));
     setBlockForm((prev) => ({
       ...prev,
       workItems: prev.workItems.map((wi) =>
-        wi.name.toUpperCase() === itemName.toUpperCase()
+        wi.name.toUpperCase() === key
           ? { ...wi, targetVolume: isNaN(parsed) ? 0 : parsed }
           : wi
       ),
@@ -380,12 +432,18 @@ export const MasterDataView: React.FC = () => {
       return;
     }
     const rawVol = blockForm.customItemVolume ? parseFloat(blockForm.customItemVolume.replace(',', '.')) : 10;
+    const unitName = blockForm.customItemUnit.trim() === 'HEKTAR' ? 'Ha' : blockForm.customItemUnit.trim();
+    const newItemName = blockForm.customItemName.trim().toUpperCase();
     const newItem: BlockWorkItem = {
       id: `wi-custom-${Date.now()}`,
-      name: blockForm.customItemName.trim().toUpperCase(),
-      unit: blockForm.customItemUnit.trim(),
+      name: newItemName,
+      unit: unitName,
       targetVolume: isNaN(rawVol) ? 10 : rawVol,
     };
+    setItemVolumeDrafts((prev) => ({
+      ...prev,
+      [newItemName]: blockForm.customItemVolume || (isNaN(rawVol) ? '10' : String(rawVol).replace('.', ',')),
+    }));
     setBlockForm({
       ...blockForm,
       workItems: [...blockForm.workItems, newItem],
@@ -406,16 +464,24 @@ export const MasterDataView: React.FC = () => {
   const handleSelectAllStandardItems = () => {
     const standardItems: BlockWorkItem[] = DEFAULT_WORK_ITEMS_CATALOG.map((item, idx) => {
       const existing = blockForm.workItems.find((wi) => wi.name.toUpperCase() === item.name.toUpperCase());
+      const unitName = item.unit === 'HEKTAR' ? 'Ha' : item.unit;
       return {
         id: existing?.id || `wi-std-${idx + 1}`,
         name: item.name,
-        unit: item.unit,
+        unit: unitName,
         targetVolume: existing?.targetVolume !== undefined ? existing.targetVolume : item.defaultTargetVolume,
       };
     });
     const customItems = blockForm.workItems.filter(
       (wi) => !DEFAULT_WORK_ITEMS_CATALOG.some((std) => std.name.toUpperCase() === wi.name.toUpperCase())
     );
+    const drafts: Record<string, string> = { ...itemVolumeDrafts };
+    [...standardItems, ...customItems].forEach((wi) => {
+      if (!drafts[wi.name.toUpperCase()]) {
+        drafts[wi.name.toUpperCase()] = wi.targetVolume !== undefined ? String(wi.targetVolume).replace('.', ',') : '10';
+      }
+    });
+    setItemVolumeDrafts(drafts);
     setBlockForm({
       ...blockForm,
       workItems: [...standardItems, ...customItems],
@@ -1062,7 +1128,7 @@ export const MasterDataView: React.FC = () => {
       staffId: assignmentForm.staffId || selectedStaff?.id || undefined,
       staffLevel: assignmentForm.staffLevel || selectedStaff?.staffLevel || undefined,
       staffName: assignmentForm.staffName || selectedStaff?.fullName || undefined,
-      // 2. Data Personel Tim Pekerja Lapangan
+      // 2. Data Personel Tim pendukung Lapangan
       workerId: assignmentForm.workerId,
       workerName: selectedWorker?.name || assignmentForm.workerName || 'Personel',
       workerCategory: assignmentForm.workerCategory,
@@ -1315,6 +1381,24 @@ export const MasterDataView: React.FC = () => {
     const targetClientId = blockForm.clientId;
     const blockCode = blockForm.code.trim();
 
+    const cleanedWorkItems: BlockWorkItem[] = blockForm.workItems.map((wi) => {
+      let unit = wi.unit;
+      if (unit === 'HEKTAR' || unit === 'Hektar') unit = 'Ha';
+      if (unit === 'METER LARI') unit = 'm';
+      if (unit === 'METER KUBIK') unit = 'm³';
+      let targetVol = wi.targetVolume;
+      const draft = itemVolumeDrafts[wi.name.toUpperCase()];
+      if (draft !== undefined) {
+        const parsed = parseFloat(draft.replace(',', '.'));
+        if (!isNaN(parsed)) targetVol = parsed;
+      }
+      return {
+        ...wi,
+        unit,
+        targetVolume: targetVol !== undefined ? targetVol : 0,
+      };
+    });
+
     if (editingBlockId) {
       const existing = blocks.find((b) => b.id === editingBlockId);
       const updatedBlock: Block = {
@@ -1326,7 +1410,7 @@ export const MasterDataView: React.FC = () => {
         dailyTargetAreaHa: existing?.dailyTargetAreaHa ?? blockForm.dailyTargetAreaHa ?? 4.0,
         clearedAreaHa: existing?.clearedAreaHa || 0,
         status: blockForm.status,
-        workItems: blockForm.workItems,
+        workItems: cleanedWorkItems,
       };
       storageService.saveBlock(updatedBlock);
     } else {
@@ -1343,7 +1427,7 @@ export const MasterDataView: React.FC = () => {
           code: blockCode,
           targetAreaHa: parsedArea || existingSameBlock.targetAreaHa,
           status: blockForm.status,
-          workItems: blockForm.workItems,
+          workItems: cleanedWorkItems,
         };
         storageService.saveBlock(updatedBlock);
       } else {
@@ -1356,7 +1440,7 @@ export const MasterDataView: React.FC = () => {
           dailyTargetAreaHa: blockForm.dailyTargetAreaHa || 4.0,
           clearedAreaHa: 0,
           status: blockForm.status,
-          workItems: blockForm.workItems,
+          workItems: cleanedWorkItems,
         };
         storageService.saveBlock(newBlock);
       }
@@ -1897,7 +1981,12 @@ export const MasterDataView: React.FC = () => {
                         <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
                           {activeWorkItems.map((wi, idx) => {
                             const vol = (wi as any).targetVolume !== undefined ? (wi as any).targetVolume : (wi as any).defaultTargetVolume;
-                            const volLabel = vol !== undefined ? `${vol} ${wi.unit}` : wi.unit;
+                            let unitLabel = wi.unit;
+                            if (unitLabel === 'HEKTAR' || unitLabel === 'Hektar') unitLabel = 'Ha';
+                            if (unitLabel === 'METER LARI') unitLabel = 'm';
+                            if (unitLabel === 'METER KUBIK') unitLabel = 'm³';
+                            const volFormatted = vol !== undefined ? String(vol).replace('.', ',') : '';
+                            const volLabel = volFormatted ? `${volFormatted} ${unitLabel}` : unitLabel;
                             return (
                               <div
                                 key={(wi as any).id || wi.name || idx}
@@ -1993,17 +2082,18 @@ export const MasterDataView: React.FC = () => {
           const matchClient = assignmentClientFilter === 'ALL' || asg.clientId === assignmentClientFilter;
           const matchCategory = assignmentCategoryFilter === 'ALL' || asg.workerCategory === assignmentCategoryFilter;
           const matchStatus = assignmentStatusFilter === 'ALL' || asg.status === assignmentStatusFilter;
+          const q = (assignmentSearch || '').toLowerCase();
           const matchSearch =
             !assignmentSearch ||
-            asg.workerName.toLowerCase().includes(assignmentSearch.toLowerCase()) ||
-            asg.workerCategory.toLowerCase().includes(assignmentSearch.toLowerCase()) ||
-            (asg.staffName && asg.staffName.toLowerCase().includes(assignmentSearch.toLowerCase())) ||
-            (asg.staffLevel && asg.staffLevel.toLowerCase().includes(assignmentSearch.toLowerCase())) ||
-            (asg.equipmentId && asg.equipmentId.toLowerCase().includes(assignmentSearch.toLowerCase())) ||
-            (asg.equipmentName && asg.equipmentName.toLowerCase().includes(assignmentSearch.toLowerCase())) ||
-            asg.contractNumber.toLowerCase().includes(assignmentSearch.toLowerCase()) ||
-            asg.clientName.toLowerCase().includes(assignmentSearch.toLowerCase()) ||
-            asg.blockCode.toLowerCase().includes(assignmentSearch.toLowerCase());
+            (asg.workerName && asg.workerName.toLowerCase().includes(q)) ||
+            (asg.workerCategory && asg.workerCategory.toLowerCase().includes(q)) ||
+            (asg.staffName && asg.staffName.toLowerCase().includes(q)) ||
+            (asg.staffLevel && asg.staffLevel.toLowerCase().includes(q)) ||
+            (asg.equipmentId && asg.equipmentId.toLowerCase().includes(q)) ||
+            (asg.equipmentName && asg.equipmentName.toLowerCase().includes(q)) ||
+            (asg.contractNumber && asg.contractNumber.toLowerCase().includes(q)) ||
+            (asg.clientName && asg.clientName.toLowerCase().includes(q)) ||
+            (asg.blockCode && asg.blockCode.toLowerCase().includes(q));
 
           return matchClient && matchCategory && matchStatus && matchSearch;
         });
@@ -2027,7 +2117,7 @@ export const MasterDataView: React.FC = () => {
                     </h3>
                   </div>
                   <p className="text-xs text-slate-500 mt-1 max-w-2xl">
-                    Matriks alokasi resmi penugasan staff penanggung jawab (Master Data Perusahaan), personil tim pekerja lapangan, dan armada alat berat per No Kontrak/SPK klien &amp; lokasi blok kerja.
+                    Matriks alokasi resmi penugasan staff penanggung jawab (Master Data Perusahaan), personil tim pendukung lapangan, dan armada alat berat per No Kontrak/SPK klien &amp; lokasi blok kerja.
                   </p>
                 </div>
 
@@ -2113,7 +2203,7 @@ export const MasterDataView: React.FC = () => {
                     onChange={(e) => setAssignmentCategoryFilter(e.target.value)}
                     className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer"
                   >
-                    <option value="ALL">Semua Kategori Pekerja</option>
+                    <option value="ALL">Semua Kategori Personil Pendukung</option>
                     <option value="Operator">Operator</option>
                     <option value="Mekanik">Mekanik</option>
                     <option value="Logistik">Logistik</option>
@@ -2235,7 +2325,7 @@ export const MasterDataView: React.FC = () => {
                               )}
                             </td>
 
-                            {/* 2. DATA PERSONEL TIM PEKERJA LAPANGAN */}
+                            {/* 2. DATA PERSONEL TIM PENDUKUNG LAPANGAN */}
                             <td className="py-3 px-3.5">
                               <div className="space-y-1">
                                 <div className="font-black text-slate-900 text-xs sm:text-sm flex items-center gap-1.5">
@@ -2364,11 +2454,12 @@ export const MasterDataView: React.FC = () => {
           const matchClient = selectedClientForTarget === 'ALL' || item.clientId === selectedClientForTarget;
           const matchBlock = selectedBlockForTarget === 'ALL' || item.blockId === selectedBlockForTarget;
           const matchDate = !selectedDateForTarget || item.date === selectedDateForTarget;
+          const q = (targetSearchQuery || '').toLowerCase();
           const matchSearch =
             !targetSearchQuery ||
-            item.blockCode.toLowerCase().includes(targetSearchQuery.toLowerCase()) ||
-            (item.clientName && item.clientName.toLowerCase().includes(targetSearchQuery.toLowerCase())) ||
-            (item.notes && item.notes.toLowerCase().includes(targetSearchQuery.toLowerCase())) ||
+            (item.blockCode && item.blockCode.toLowerCase().includes(q)) ||
+            (item.clientName && item.clientName.toLowerCase().includes(q)) ||
+            (item.notes && item.notes.toLowerCase().includes(q)) ||
             item.date.includes(targetSearchQuery);
           return matchClient && matchBlock && matchDate && matchSearch;
         });
@@ -2919,12 +3010,13 @@ export const MasterDataView: React.FC = () => {
               Menampilkan {equipments.filter((eq) => {
                 const matchType = equipmentTypeFilter === 'ALL' || eq.type === equipmentTypeFilter;
                 const matchStatus = equipmentStatusFilter === 'ALL' || eq.status === equipmentStatusFilter;
+                const q = (equipmentSearch || '').toLowerCase();
                 const matchSearch =
                   !equipmentSearch ||
-                  eq.id.toLowerCase().includes(equipmentSearch.toLowerCase()) ||
-                  eq.name.toLowerCase().includes(equipmentSearch.toLowerCase()) ||
-                  eq.operatorName?.toLowerCase().includes(equipmentSearch.toLowerCase()) ||
-                  eq.serialNumber?.toLowerCase().includes(equipmentSearch.toLowerCase());
+                  (eq.id && eq.id.toLowerCase().includes(q)) ||
+                  (eq.name && eq.name.toLowerCase().includes(q)) ||
+                  eq.operatorName?.toLowerCase().includes(q) ||
+                  eq.serialNumber?.toLowerCase().includes(q);
                 return matchType && matchStatus && matchSearch;
               }).length} dari {equipments.length} unit
             </div>
@@ -2951,12 +3043,13 @@ export const MasterDataView: React.FC = () => {
                     .filter((eq) => {
                       const matchType = equipmentTypeFilter === 'ALL' || eq.type === equipmentTypeFilter;
                       const matchStatus = equipmentStatusFilter === 'ALL' || eq.status === equipmentStatusFilter;
+                      const q = (equipmentSearch || '').toLowerCase();
                       const matchSearch =
                         !equipmentSearch ||
-                        eq.id.toLowerCase().includes(equipmentSearch.toLowerCase()) ||
-                        eq.name.toLowerCase().includes(equipmentSearch.toLowerCase()) ||
-                        eq.operatorName?.toLowerCase().includes(equipmentSearch.toLowerCase()) ||
-                        eq.serialNumber?.toLowerCase().includes(equipmentSearch.toLowerCase());
+                        (eq.id && eq.id.toLowerCase().includes(q)) ||
+                        (eq.name && eq.name.toLowerCase().includes(q)) ||
+                        eq.operatorName?.toLowerCase().includes(q) ||
+                        eq.serialNumber?.toLowerCase().includes(q);
                       return matchType && matchStatus && matchSearch;
                     })
                     .map((eq) => (
@@ -3055,7 +3148,7 @@ export const MasterDataView: React.FC = () => {
             <div>
               <h3 className="font-black text-slate-900 text-base flex items-center gap-2">
                 <Users className="w-5 h-5 text-amber-500" />
-                Daftar Personil, Tim Pekerja & Lokasi Penugasan
+                Daftar Personil, Tim Pendukung & Lokasi Penugasan
               </h3>
               <p className="text-xs text-slate-500">
                 Superadmin menentukan tim kerja (Operator, Rintis, Mekanik, K3) dan lokasi kerja penugasan (Klien & Blok).
@@ -4685,7 +4778,7 @@ export const MasterDataView: React.FC = () => {
                 {targetForm.assignedPersonnel && targetForm.assignedPersonnel.length > 0 ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-44 overflow-y-auto pr-1">
                     {targetForm.assignedPersonnel.map((p, idx) => {
-                      const isOperator = p.workerCategory.toLowerCase().includes('operator');
+                      const isOperator = (p.workerCategory || '').toLowerCase().includes('operator');
                       return (
                         <div
                           key={idx}
@@ -4960,7 +5053,7 @@ export const MasterDataView: React.FC = () => {
                 {viewingTargetDetail.assignedPersonnel && viewingTargetDetail.assignedPersonnel.length > 0 ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {viewingTargetDetail.assignedPersonnel.map((p, idx) => {
-                      const isOperator = p.workerCategory.toLowerCase().includes('operator');
+                      const isOperator = (p.workerCategory || '').toLowerCase().includes('operator');
                       return (
                         <div
                           key={idx}
@@ -5148,7 +5241,7 @@ export const MasterDataView: React.FC = () => {
                     {editingAssignmentId ? 'Edit Data Penugasan Kerja' : '+ Tambah Penugasan Kerja Baru'}
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Alokasikan staff penanggung jawab, personil tim pekerja lapangan, dan alat berat ke SPK klien serta lokasi blok kerja secara resmi.
+                    Alokasikan staff penanggung jawab, personil tim pendukung lapangan, dan alat berat ke SPK klien serta lokasi blok kerja secara resmi.
                   </p>
                 </div>
                 <button
@@ -5288,7 +5381,7 @@ export const MasterDataView: React.FC = () => {
                   )}
                 </div>
 
-                {/* 2. DATA PERSONEL & KATEGORI PENUGASAN (AMBIL DARI PERSONIL TIM PEKERJA LAPANGAN - TANPA PENGAWAS & SITE MANAGER) */}
+                {/* 2. DATA PERSONEL & KATEGORI PENUGASAN (AMBIL DARI PERSONIL TIM PENDUKUNG LAPANGAN - TANPA PENGAWAS & SITE MANAGER) */}
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-300 space-y-3">
                   <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                     <label className="font-black text-slate-900 text-xs uppercase tracking-wide flex items-center gap-1.5">
@@ -5297,7 +5390,7 @@ export const MasterDataView: React.FC = () => {
                       <span className="text-rose-600">*</span>
                     </label>
                     <span className="text-[10px] font-bold text-amber-900 bg-amber-100/80 px-2 py-0.5 rounded-full border border-amber-300">
-                      Tersedia: {filteredWorkersForModal.length} Pekerja Lapangan
+                      Tersedia: {filteredWorkersForModal.length} Personil Pendukung Lapangan
                     </span>
                   </div>
 
@@ -5340,7 +5433,7 @@ export const MasterDataView: React.FC = () => {
                           ))}
                       </select>
                       <p className="text-[10px] text-slate-500 mt-1">
-                        * Khusus Personil Tim Pekerja Lapangan (Pengawas &amp; Site Manager tidak masuk dalam tim ini).
+                        * Khusus Personil Tim pendukung Lapangan (Pengawas &amp; Site Manager tidak masuk dalam tim ini).
                       </p>
                     </div>
 

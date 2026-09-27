@@ -94,11 +94,11 @@ export const ManagerApprovalView: React.FC<ManagerApprovalViewProps> = ({
 
   // Filtered reports
   const filteredReports = reports.filter((r) => {
-    const q = searchQuery.toLowerCase();
+    const q = (searchQuery || '').toLowerCase();
     const matchesSearch = !searchQuery || 
-      r.reportNumber.toLowerCase().includes(q) ||
-      r.blockCode.toLowerCase().includes(q) ||
-      r.supervisorName.toLowerCase().includes(q) ||
+      (r.reportNumber && r.reportNumber.toLowerCase().includes(q)) ||
+      (r.blockCode && r.blockCode.toLowerCase().includes(q)) ||
+      (r.supervisorName && r.supervisorName.toLowerCase().includes(q)) ||
       (r.clientName && r.clientName.toLowerCase().includes(q));
 
     let matchesStatus = true;
@@ -115,12 +115,12 @@ export const ManagerApprovalView: React.FC<ManagerApprovalViewProps> = ({
 
   // Filtered logistics
   const filteredLogistics = logisticsTxs.filter((t) => {
-    const q = searchQuery.toLowerCase();
+    const q = (searchQuery || '').toLowerCase();
     const matchesSearch = !searchQuery ||
-      t.itemName.toLowerCase().includes(q) ||
+      (t.itemName && t.itemName.toLowerCase().includes(q)) ||
       (t.equipmentId && t.equipmentId.toLowerCase().includes(q)) ||
       (t.deliveryNoteNumber && t.deliveryNoteNumber.toLowerCase().includes(q)) ||
-      t.submittedByName.toLowerCase().includes(q);
+      (t.submittedByName && t.submittedByName.toLowerCase().includes(q));
 
     let matchesStatus = true;
     if (statusFilter === 'pending') {

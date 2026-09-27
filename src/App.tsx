@@ -767,7 +767,7 @@ export default function App() {
           )
         )}
 
-        {/* Tab 2: Master Data Perusahaan (1. Identitas & Logo, 2. Staff & TTD + User Mgmt, 3. Personil Tim Pekerja) */}
+        {/* Tab 2: Master Data Perusahaan (1. Identitas & Logo, 2. Staff, TTD Digital & Kredensial User, 3. Personil Tim pendukung) */}
         {(activeTab === 'company-master' || activeTab === 'company-profile') && (
           authUser.role === 'director' ? (
             <CompanyMasterDataView
@@ -787,7 +787,7 @@ export default function App() {
               <ShieldAlert className="w-12 h-12 text-rose-500 mx-auto" />
               <h3 className="font-black text-slate-900 text-base">Akses Khusus Direktur</h3>
               <p className="text-xs text-slate-600">
-                Halaman Master Data Perusahaan (Identitas Resmi, Staff TTD & Manajemen User, serta Personil Tim Pekerja) hanya dapat diakses oleh akun Direktur Utama (Superadmin).
+                Halaman Master Data Perusahaan (Identitas Resmi, Staff TTD & Manajemen Kredensial User, serta Personil Tim pendukung) hanya dapat diakses oleh akun Direktur Utama (Superadmin).
               </p>
               <button
                 onClick={() => setActiveTab('wizard')}

@@ -69,7 +69,11 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
 
   const allBlocks = storageService.getBlocks(undefined, authUser);
   const availableBlocks = isSupervisor && authUser?.assignedBlockCodes && authUser.assignedBlockCodes.length > 0 && !authUser.assignedBlockCodes[0].includes('Semua Blok')
-    ? allBlocks.filter((b) => authUser.assignedBlockCodes?.some((code) => b.code.toLowerCase().includes(code.toLowerCase()) || code.toLowerCase().includes(b.code.toLowerCase())))
+    ? allBlocks.filter((b) => authUser.assignedBlockCodes?.some((code) => {
+        const cleanCode = (code || '').trim().toLowerCase();
+        const bCode = (b.code || '').trim().toLowerCase();
+        return cleanCode && bCode && (bCode.includes(cleanCode) || cleanCode.includes(bCode));
+      }))
     : (selectedClientId === 'ALL' ? allBlocks : allBlocks.filter((b) => b.clientId === selectedClientId));
 
   // Filter logic: Pengawas HANYA mengawasi 1 Klien PT dan blok kerja yang ditugaskan
@@ -84,8 +88,9 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
         !authUser.assignedBlockCodes[0].includes('Semua Blok')
       ) {
         const matchesAssignedBlock = authUser.assignedBlockCodes.some((b) => {
-          const cleanB = b.trim().toLowerCase();
-          return r.blockCode.toLowerCase().includes(cleanB) || cleanB.includes(r.blockCode.toLowerCase());
+          const cleanB = (b || '').trim().toLowerCase();
+          const rBlock = (r.blockCode || '').trim().toLowerCase();
+          return cleanB && rBlock && (rBlock.includes(cleanB) || cleanB.includes(rBlock));
         });
         if (!matchesAssignedBlock) return false;
       }
@@ -95,11 +100,12 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
       }
     }
 
+    const q = (searchTerm || '').toLowerCase();
     const matchesSearch =
-      r.reportNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      r.blockCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (r.clientName && r.clientName.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      r.supervisorName.toLowerCase().includes(searchTerm.toLowerCase());
+      (r.reportNumber && r.reportNumber.toLowerCase().includes(q)) ||
+      (r.blockCode && r.blockCode.toLowerCase().includes(q)) ||
+      (r.clientName && r.clientName.toLowerCase().includes(q)) ||
+      (r.supervisorName && r.supervisorName.toLowerCase().includes(q));
 
     const matchesBlock = filterBlock === 'ALL' || r.blockCode.includes(filterBlock) || r.blockId === filterBlock;
     const matchesStatus = filterStatus === 'ALL' || r.status === filterStatus;

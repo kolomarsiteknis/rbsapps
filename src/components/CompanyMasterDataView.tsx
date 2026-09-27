@@ -6,7 +6,6 @@ import {
   CheckCircle2, 
   AlertCircle, 
   ShieldAlert, 
-  ShieldCheck,
   Edit3, 
   Trash2, 
   Plus, 
@@ -69,11 +68,8 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
   // Strict Security Check: ONLY Direktur / Superadmin can access Master Data Perusahaan
   const isDirector = authUser?.role === 'director' || authUser?.userLevel === 'Superadmin';
 
-  // Active Sub-Tab (1. Identitas & Logo, 2. Staff & TTD Digital + User Management, 3. Personil Tim Pekerja)
+  // Active Sub-Tab (1. Identitas & Logo, 2. Staff, TTD Digital & Kredensial User, 3. Personil Tim pendukung)
   const [activeSubTab, setActiveSubTab] = useState<'identity' | 'staff' | 'workers'>(initialSubTab);
-
-  // In Sub-Tab 2 (Staff & TTD Digital), switcher between Staff TTD and User Credentials
-  const [staffSubMode, setStaffSubMode] = useState<'staff-signatures' | 'user-accounts'>('staff-signatures');
 
   // =========================================================================
   // 1. IDENTITAS PERUSAHAAN & LOGO APPS STATE
@@ -323,9 +319,9 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
       username: '',
       password: `user@${Date.now().toString().slice(-4)}`,
       userLevel: 'Pengawas',
-      assignedClientId: clients[0]?.id || 'all',
-      assignedClientName: clients[0]?.name || 'Semua Proyek',
-      assignedBlockCodes: [],
+      assignedClientId: 'all',
+      assignedClientName: 'Semua Proyek',
+      assignedBlockCodes: ['Akses Semua Blok'],
     });
     setIsStaffModalOpen(true);
   };
@@ -336,22 +332,25 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
     setHasDrawnOnCanvas(false);
     setSigMode('preset');
 
+    const staffUserLower = (staff.username || '').trim().toLowerCase();
+    const staffNameLower = (staff.fullName || '').trim().toLowerCase();
     const matchedUser = managedUsers.find(
       (u) => (staff.linkedUserId && u.id === staff.linkedUserId) ||
-             (staff.username && u.username.toLowerCase() === staff.username.toLowerCase()) ||
-             (u.fullName.toLowerCase() === staff.fullName.toLowerCase())
+             (staffUserLower && u.username && u.username.trim().toLowerCase() === staffUserLower) ||
+             (staffNameLower && u.fullName && u.fullName.trim().toLowerCase() === staffNameLower)
     );
 
     let resolvedLevel: ManagedUserLevel = 'Pengawas';
+    const staffJobLower = (staff.jobRole || '').toLowerCase();
     if (staff.userLevel === 'Superadmin' || staff.userLevel === 'Site Manager' || staff.userLevel === 'Pengawas' || staff.userLevel === 'Klien') {
       resolvedLevel = staff.userLevel;
     } else if (matchedUser?.userLevel) {
       resolvedLevel = (matchedUser.userLevel === 'Manager' ? 'Site Manager' : matchedUser.userLevel) as ManagedUserLevel;
-    } else if (staff.staffLevel === 'Direktur' || staff.jobRole.toLowerCase().includes('direktur')) {
+    } else if (staff.staffLevel === 'Direktur' || staffJobLower.includes('direktur')) {
       resolvedLevel = 'Superadmin';
-    } else if (staff.staffLevel === 'Site Manager' || staff.staffLevel === 'Manager' || staff.jobRole.toLowerCase().includes('site manager') || staff.jobRole.toLowerCase().includes('manager')) {
+    } else if (staff.staffLevel === 'Site Manager' || staff.staffLevel === 'Manager' || staffJobLower.includes('site manager') || staffJobLower.includes('manager')) {
       resolvedLevel = 'Site Manager';
-    } else if (staff.staffLevel === 'Klien' || staff.jobRole.toLowerCase().includes('klien')) {
+    } else if (staff.staffLevel === 'Klien' || staffJobLower.includes('klien')) {
       resolvedLevel = 'Klien';
     }
 
@@ -395,20 +394,21 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
       return;
     }
 
-    const cleanUsername = staffFormData.username.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+    const cleanUsername = (staffFormData.username || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
     if (!cleanUsername) {
       showToast('Username harus berupa huruf atau angka valid.', 'error');
       return;
     }
 
     const staffId = editingStaffId || `staff-${Date.now()}`;
+    const formFullNameLower = (staffFormData.fullName || '').trim().toLowerCase();
     const linkedUserId = editingStaffId
-      ? (staffList.find((s) => s.id === editingStaffId)?.linkedUserId || managedUsers.find((u) => u.fullName.toLowerCase() === staffFormData.fullName.trim().toLowerCase())?.id || `user-usr-${staffId.replace(/^staff-/, '')}`)
+      ? (staffList.find((s) => s.id === editingStaffId)?.linkedUserId || managedUsers.find((u) => u.fullName && formFullNameLower && u.fullName.trim().toLowerCase() === formFullNameLower)?.id || `user-usr-${staffId.replace(/^staff-/, '')}`)
       : `user-usr-${staffId.replace(/^staff-/, '')}`;
 
     // Duplicate username check
     const duplicateUser = managedUsers.find(
-      (u) => u.username.toLowerCase() === cleanUsername && u.id !== linkedUserId
+      (u) => u.username && u.username.trim().toLowerCase() === cleanUsername && u.id !== linkedUserId
     );
     if (duplicateUser) {
       showToast(`Username "${cleanUsername}" sudah digunakan oleh ${duplicateUser.fullName}. Silakan buat username lain.`, 'error');
@@ -467,7 +467,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
   };
 
   const handleDeleteStaff = (staff: CompanyStaff) => {
-    if (staff.username?.toLowerCase() === 'direktur' || staff.username === authUser?.username) {
+    if ((staff.username && staff.username.toLowerCase() === 'direktur') || staff.username === authUser?.username) {
       showToast('Akun Direktur Utama aktif tidak dapat dihapus demi keamanan sistem.', 'warning');
       return;
     }
@@ -496,24 +496,15 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
     setTimeout(() => setCopiedStaffId(null), 3000);
   };
 
-  // Dynamic blocks for the selected client in the staff modal
-  const clientBlocksForStaffModal = useMemo(() => {
-    const allBlocks: Block[] = storageService.getBlocks();
-    if (!staffFormData.assignedClientId || staffFormData.assignedClientId === 'all') {
-      return [];
-    }
-    return allBlocks.filter((b) => b.clientId === staffFormData.assignedClientId);
-  }, [staffFormData.assignedClientId]);
-
   // =========================================================================
-  // 3. PERSONIL TIM PEKERJA STATE (Operator, Mekanik, Logistik, Pendukung, Pengawas)
+  // 3. PERSONIL TIM PENDUKUNG STATE (Operator, Mekanik, Logistik, Pendukung)
   // =========================================================================
   const [workers, setWorkers] = useState<Worker[]>(() => storageService.getWorkers());
   const [workerSearchQuery, setWorkerSearchQuery] = useState('');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('ALL');
   const [selectedClientFilter, setSelectedClientFilter] = useState('ALL');
 
-  const DEFAULT_WORKER_CATEGORIES = ['Operator', 'Mekanik', 'Logistik', 'Pendukung', 'Pengawas'];
+  const DEFAULT_WORKER_CATEGORIES = ['Operator', 'Mekanik', 'Logistik', 'Pendukung'];
   const [customWorkerCategories, setCustomWorkerCategories] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('SL_CUSTOM_WORKER_CATEGORIES');
@@ -533,7 +524,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
     category: 'Operator',
     phone: '',
     status: 'Hadir',
-    assignedClientId: clients[0]?.id || 'client-1',
+    assignedClientId: 'ALL',
     assignedBlockId: 'ALL',
   });
 
@@ -562,7 +553,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
       category: 'Operator',
       phone: '',
       status: 'Hadir',
-      assignedClientId: clients[0]?.id || 'client-1',
+      assignedClientId: 'ALL',
       assignedBlockId: 'ALL',
     });
     setIsAddingNewCategory(false);
@@ -576,7 +567,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
       category: w.category || 'Operator',
       phone: w.phone || '',
       status: w.status || 'Hadir',
-      assignedClientId: w.assignedClientId || (clients[0]?.id || 'client-1'),
+      assignedClientId: w.assignedClientId || 'ALL',
       assignedBlockId: w.assignedBlockId || 'ALL',
     });
     setIsAddingNewCategory(false);
@@ -631,21 +622,13 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
     }
   };
 
-  // Dynamic blocks for the selected client in the worker modal
-  const clientBlocksForWorkerModal = useMemo(() => {
-    const allBlocks: Block[] = storageService.getBlocks();
-    if (!workerForm.assignedClientId || workerForm.assignedClientId === 'ALL') {
-      return [];
-    }
-    return allBlocks.filter((b) => b.clientId === workerForm.assignedClientId);
-  }, [workerForm.assignedClientId]);
-
   // Filtered workers list
   const filteredWorkers = useMemo(() => {
+    const q = (workerSearchQuery || '').toLowerCase();
     return workers.filter((w) => {
-      const matchSearch = w.name.toLowerCase().includes(workerSearchQuery.toLowerCase()) ||
+      const matchSearch = (w.name && w.name.toLowerCase().includes(q)) ||
         (w.phone && w.phone.includes(workerSearchQuery)) ||
-        (w.category && w.category.toLowerCase().includes(workerSearchQuery.toLowerCase()));
+        (w.category && w.category.toLowerCase().includes(q));
       const matchCat = selectedCategoryFilter === 'ALL' || w.category === selectedCategoryFilter;
       const matchClient = selectedClientFilter === 'ALL' || w.assignedClientId === selectedClientFilter;
       return matchSearch && matchCat && matchClient;
@@ -700,7 +683,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                 Master Data Perusahaan & Personil
               </h1>
               <p className="text-xs text-slate-400 mt-1 max-w-2xl leading-relaxed">
-                Kelola identitas resmi & logo apps, database staff pengesahan tanda tangan digital (TTD) terpadu manajemen user pusat, serta personil tim pekerja lapangan.
+                Kelola identitas resmi & logo apps, database staff pengesahan tanda tangan digital (TTD) terpadu manajemen kredensial user, serta personil tim pendukung lapangan.
               </p>
             </div>
           </div>
@@ -717,7 +700,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
             </div>
             <div className="h-6 w-px bg-slate-700"></div>
             <div className="text-center px-2">
-              <span className="block text-slate-400 text-[10px] uppercase font-bold">Personil Lapangan</span>
+              <span className="block text-slate-400 text-[10px] uppercase font-bold">Tim Pendukung</span>
               <span className="font-black text-emerald-400 text-sm">{workers.length} Orang</span>
             </div>
           </div>
@@ -750,10 +733,10 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
             }`}
           >
             <Users className="w-4 h-4" />
-            <span>2. Staff, Kredensial Akun & TTD Digital ({staffList.length})</span>
+            <span>2. Staff, TTD Digital & Kredensial User ({staffList.length})</span>
           </button>
 
-          {/* Sub-tab 3: Personil Tim Pekerja */}
+          {/* Sub-tab 3: Personil Tim pendukung */}
           <button
             type="button"
             onClick={() => setActiveSubTab('workers')}
@@ -764,7 +747,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
             }`}
           >
             <HardHat className="w-4 h-4" />
-            <span>3. Personil Tim Pekerja ({workers.length})</span>
+            <span>3. Personil Tim pendukung ({workers.length})</span>
           </button>
         </div>
       </div>
@@ -1028,15 +1011,15 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
       {/* ========================================================================= */}
       {activeSubTab === 'staff' && (() => {
         // Filter logic
+        const q = (staffSearchQuery || '').toLowerCase();
         const filteredStaff = staffList.filter((staff) => {
-          const q = staffSearchQuery.toLowerCase();
           const matchSearch =
-            staff.fullName.toLowerCase().includes(q) ||
+            (staff.fullName && staff.fullName.toLowerCase().includes(q)) ||
             (staff.employeeIdNumber && staff.employeeIdNumber.toLowerCase().includes(q)) ||
             (staff.username && staff.username.toLowerCase().includes(q)) ||
             (staff.phone && staff.phone.includes(q)) ||
             (staff.email && staff.email.toLowerCase().includes(q)) ||
-            staff.jobRole.toLowerCase().includes(q) ||
+            (staff.jobRole && staff.jobRole.toLowerCase().includes(q)) ||
             (staff.userLevel && staff.userLevel.toLowerCase().includes(q)) ||
             (staff.assignedClientName && staff.assignedClientName.toLowerCase().includes(q));
 
@@ -1047,10 +1030,10 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
           return matchSearch && matchLevel && matchStatus;
         });
 
-        const countSuperadmin = staffList.filter(s => s.userLevel === 'Superadmin' || s.jobRole.toLowerCase().includes('direktur')).length;
-        const countSiteManager = staffList.filter(s => s.userLevel === 'Site Manager' || s.userLevel === 'Manager' || s.jobRole.toLowerCase().includes('site manager')).length;
-        const countPengawas = staffList.filter(s => s.userLevel === 'Pengawas' || (!s.userLevel && s.jobRole.toLowerCase().includes('pengawas'))).length;
-        const countKlien = staffList.filter(s => s.userLevel === 'Klien' || s.jobRole.toLowerCase().includes('klien')).length;
+        const countSuperadmin = staffList.filter(s => s.userLevel === 'Superadmin' || (s.jobRole && s.jobRole.toLowerCase().includes('direktur'))).length;
+        const countSiteManager = staffList.filter(s => s.userLevel === 'Site Manager' || s.userLevel === 'Manager' || (s.jobRole && (s.jobRole.toLowerCase().includes('site manager') || s.jobRole.toLowerCase().includes('manager')))).length;
+        const countPengawas = staffList.filter(s => s.userLevel === 'Pengawas' || (!s.userLevel && s.jobRole && s.jobRole.toLowerCase().includes('pengawas'))).length;
+        const countKlien = staffList.filter(s => s.userLevel === 'Klien' || (s.jobRole && s.jobRole.toLowerCase().includes('klien'))).length;
 
         return (
           <div className="space-y-6">
@@ -1477,7 +1460,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
       })()}
 
       {/* ========================================================================= */}
-      {/* SUB-TAB 3: PERSONIL TIM PEKERJA (Operator, Mekanik, Logistik, Pendukung, Pengawas) */}
+      {/* SUB-TAB 3: PERSONIL TIM PENDUKUNG (Operator, Mekanik, Logistik, Pendukung, Pengawas) */}
       {/* ========================================================================= */}
       {activeSubTab === 'workers' && (
         <div className="space-y-6">
@@ -1486,10 +1469,10 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
             <div>
               <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
                 <HardHat className="w-5 h-5 text-amber-500" />
-                <span>Personil Tim Pekerja Lapangan</span>
+                <span>Personil Tim pendukung Lapangan</span>
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Operator, Mekanik, Logistik, Pendukung, dan Pengawas dengan penugasan lokasi kerja (No Kontrak / SPK Klien).
+                Operator, Mekanik, Logistik, dan Personil Tim Pendukung Lapangan.
               </p>
             </div>
 
@@ -1868,82 +1851,6 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                       className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
                     />
                   </div>
-
-                  {/* Penempatan Proyek (Khusus Pengawas / Klien) */}
-                  {(staffFormData.userLevel === 'Pengawas' || staffFormData.userLevel === 'Klien') ? (
-                    <>
-                      <div>
-                        <label className="block font-bold text-slate-800 mb-1">
-                          Penempatan Klien Proyek (SPK) *
-                        </label>
-                        <select
-                          value={staffFormData.assignedClientId}
-                          onChange={(e) => {
-                            const cId = e.target.value;
-                            const cObj = clients.find((c) => c.id === cId);
-                            setStaffFormData({
-                              ...staffFormData,
-                              assignedClientId: cId,
-                              assignedClientName: cObj ? cObj.name : 'Semua Proyek',
-                              assignedBlockCodes: [],
-                            });
-                          }}
-                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
-                        >
-                          <option value="all">Seluruh Proyek / Fleksibel</option>
-                          {clients.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.contractNumber || 'Tanpa SPK'} - {c.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block font-bold text-slate-800 mb-1">
-                          Penempatan Blok Kerja
-                        </label>
-                        {clientBlocksForStaffModal.length > 0 ? (
-                          <div className="flex flex-wrap gap-1.5 p-2 bg-white rounded-xl border border-slate-200 max-h-24 overflow-y-auto">
-                            {clientBlocksForStaffModal.map((b) => {
-                              const isSelected = staffFormData.assignedBlockCodes?.includes(b.code);
-                              return (
-                                <button
-                                  key={b.id}
-                                  type="button"
-                                  onClick={() => {
-                                    const current = staffFormData.assignedBlockCodes || [];
-                                    const next = isSelected
-                                      ? current.filter((code) => code !== b.code)
-                                      : [...current, b.code];
-                                    setStaffFormData({ ...staffFormData, assignedBlockCodes: next });
-                                  }}
-                                  className={`px-2 py-0.5 rounded text-[10px] font-bold border transition cursor-pointer ${
-                                    isSelected
-                                      ? 'bg-sky-600 text-white border-sky-700'
-                                      : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
-                                  }`}
-                                >
-                                  {b.code}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <div className="p-2 bg-white rounded-xl border border-slate-200 text-[11px] text-slate-400 italic">
-                            Semua blok pada klien terpilih
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="sm:col-span-2 p-2.5 rounded-xl bg-sky-100/70 border border-sky-300 text-sky-950 flex items-center gap-2">
-                      <ShieldCheck className="w-4 h-4 text-sky-700 shrink-0" />
-                      <span className="text-[11px] font-semibold">
-                        Level <strong>{staffFormData.userLevel}</strong> memiliki hak otorisasi & supervisi penuh ke seluruh lokasi SPK proyek dan blok kerja.
-                      </span>
-                    </div>
-                  )}
                 </div>
               </div>
 
@@ -2106,7 +2013,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL 3: TAMBAH / EDIT PERSONIL TIM PEKERJA */}
+      {/* MODAL 3: TAMBAH / EDIT PERSONIL TIM PENDUKUNG */}
       {/* ========================================================================= */}
       {isWorkerModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
@@ -2117,7 +2024,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                   <HardHat className="w-4 h-4" />
                 </span>
                 <h3 className="font-black text-slate-900 text-base">
-                  {editingWorkerId ? 'Edit Data Personil Pekerja' : 'Tambah Personil Tim Pekerja'}
+                  {editingWorkerId ? 'Edit Data Personil Tim Pendukung' : 'Tambah Personil Tim Pendukung'}
                 </h3>
               </div>
               <button
@@ -2142,7 +2049,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                 />
               </div>
 
-              {/* KATEGORI PERSONIL: Operator, Mekanik, Logistik, Pendukung, Pengawas + Tambah Kategori */}
+              {/* KATEGORI PERSONIL: Operator, Mekanik, Logistik, Pendukung, + Tambah Kategori */}
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="block font-bold text-slate-700">Kategori Personil *</label>
@@ -2173,10 +2080,11 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                     <option value="Mekanik">Mekanik</option>
                     <option value="Logistik">Logistik</option>
                     <option value="Pendukung">Pendukung</option>
-                    <option value="Pengawas">Pengawas</option>
-                    {customWorkerCategories.map((c) => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
+                    {customWorkerCategories
+                      .filter((c) => !['Operator', 'Mekanik', 'Logistik', 'Pendukung'].includes(c))
+                      .map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
                     <option value="__ADD_NEW__">+ Tambah kategori...</option>
                   </select>
                 ) : (
@@ -2209,72 +2117,15 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                 )}
               </div>
 
-              {/* PENUGASAN LOKASI KERJA (NO KONTRAK/SPK): "NOMOR SPK - Nama Singkat Klien" */}
               <div>
-                <label className="block font-bold text-slate-700 mb-1">
-                  Penugasan Lokasi Kerja (NO KONTRAK/SPK) *
-                </label>
-                <select
-                  value={workerForm.assignedClientId || 'ALL'}
-                  onChange={(e) => setWorkerForm({ ...workerForm, assignedClientId: e.target.value, assignedBlockId: 'ALL' })}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                >
-                  <option value="ALL">Seluruh Lokasi Kerja / BKO Lahan</option>
-                  {clients.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.contractNumber || 'Tanpa SPK'} - {c.name}
-                    </option>
-                  ))}
-                </select>
-                <span className="text-[10px] text-slate-400 mt-1 block">
-                  Data ditarik otomatis dari Daftar Klien Perkebunan.
-                </span>
-              </div>
-
-              {/* Blok Penugasan */}
-              {workerForm.assignedClientId && workerForm.assignedClientId !== 'ALL' && (
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Penugasan Blok Spesifik</label>
-                  <select
-                    value={workerForm.assignedBlockId || 'ALL'}
-                    onChange={(e) => setWorkerForm({ ...workerForm, assignedBlockId: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:outline-none"
-                  >
-                    <option value="ALL">Semua Blok pada SPK Terpilih</option>
-                    {clientBlocksForWorkerModal.map((b) => (
-                      <option key={b.id} value={b.code}>
-                        {b.code} ({b.targetAreaHa} Ha)
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Nomor Telepon / WA</label>
-                  <input
-                    type="text"
-                    placeholder="0812-xxxx-xxxx"
-                    value={workerForm.phone || ''}
-                    onChange={(e) => setWorkerForm({ ...workerForm, phone: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Status Kehadiran</label>
-                  <select
-                    value={workerForm.status || 'Hadir'}
-                    onChange={(e) => setWorkerForm({ ...workerForm, status: e.target.value as any })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-bold focus:bg-white focus:outline-none"
-                  >
-                    <option value="Hadir">Hadir</option>
-                    <option value="Sakit">Sakit</option>
-                    <option value="Izin">Izin</option>
-                    <option value="Alpa">Alpa</option>
-                  </select>
-                </div>
+                <label className="block font-bold text-slate-700 mb-1">Nomor Telepon / WA (Opsional)</label>
+                <input
+                  type="text"
+                  placeholder="0812-xxxx-xxxx"
+                  value={workerForm.phone || ''}
+                  onChange={(e) => setWorkerForm({ ...workerForm, phone: e.target.value })}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:outline-none text-slate-900 font-medium"
+                />
               </div>
 
               <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">

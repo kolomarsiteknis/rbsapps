@@ -125,10 +125,10 @@ export const storageService = {
       authUser.assignedBlockCodes.length > 0 && 
       !authUser.assignedBlockCodes[0].includes('Semua Blok')
     ) {
-      const target = blockCodeOrId.trim().toLowerCase();
+      const target = (blockCodeOrId || '').trim().toLowerCase();
       const isBlockAllowed = authUser.assignedBlockCodes.some((assignedBlock) => {
-        const b = assignedBlock.trim().toLowerCase();
-        return target.includes(b) || b.includes(target);
+        const b = (assignedBlock || '').trim().toLowerCase();
+        return target && b ? (target.includes(b) || b.includes(target)) : false;
       });
       if (!isBlockAllowed) {
         return false;
@@ -160,8 +160,8 @@ export const storageService = {
           !authUser.assignedBlockCodes[0].includes('Semua Blok')
         ) {
           const isAllowedBlock = authUser.assignedBlockCodes.some((b) => {
-            const bClean = b.trim().toLowerCase();
-            return r.blockCode.toLowerCase().includes(bClean) || (r.blockId && r.blockId.toLowerCase() === bClean);
+            const bClean = (b || '').trim().toLowerCase();
+            return (r.blockCode && r.blockCode.toLowerCase().includes(bClean)) || (r.blockId && r.blockId.toLowerCase() === bClean);
           });
           if (!isAllowedBlock) return false;
         }
@@ -463,7 +463,7 @@ export const storageService = {
   getBlocks(clientId?: string, authUser?: AuthUser | null): Block[] {
     const raw = loadFromStorage<Block[]>(STORAGE_KEYS.BLOCKS, initialBlocks);
     const standardVolumeMap: Record<string, { targetVolume: number; unit: string }> = {
-      'UNDERBRUSHING (SEMAK BELUKAR)': { targetVolume: 30, unit: 'HEKTAR' },
+      'UNDERBRUSHING (SEMAK BELUKAR)': { targetVolume: 30, unit: 'Ha' },
       'BATANG KUBUR': { targetVolume: 25, unit: 'POHON' },
       'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS': { targetVolume: 10, unit: 'Ha' },
       'MAINROAD': { targetVolume: 250, unit: 'm' },
@@ -476,14 +476,18 @@ export const storageService = {
     // Ensure every block has workItems populated with target volumes
     const all = raw.map((b) => {
       if (b.workItems && Array.isArray(b.workItems) && b.workItems.length > 0) {
-        // Fill targetVolume if missing from older storage
+        // Fill targetVolume if missing from older storage and normalize units
         const enrichedItems = b.workItems.map((wi) => {
-          if (wi.targetVolume !== undefined) return wi;
+          let unit = wi.unit;
+          if (unit === 'HEKTAR' || unit === 'Hektar') unit = 'Ha';
+          if (unit === 'METER LARI') unit = 'm';
+          if (unit === 'METER KUBIK') unit = 'm³';
+          if (wi.targetVolume !== undefined) return { ...wi, unit };
           const matched = standardVolumeMap[wi.name.toUpperCase()];
           return {
             ...wi,
             targetVolume: matched?.targetVolume ?? 10,
-            unit: matched?.unit ?? wi.unit,
+            unit: matched?.unit ?? unit,
           };
         });
         return { ...b, workItems: enrichedItems };
@@ -491,7 +495,7 @@ export const storageService = {
       return {
         ...b,
         workItems: [
-          { id: `${b.id}-wi-1`, name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'HEKTAR', targetVolume: 30 },
+          { id: `${b.id}-wi-1`, name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', targetVolume: 30 },
           { id: `${b.id}-wi-2`, name: 'BATANG KUBUR', unit: 'POHON', targetVolume: 25 },
           { id: `${b.id}-wi-3`, name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'Ha', targetVolume: 10 },
           { id: `${b.id}-wi-4`, name: 'MAINROAD', unit: 'm', targetVolume: 250 },
@@ -519,8 +523,8 @@ export const storageService = {
           !authUser.assignedBlockCodes[0].includes('Semua Blok')
         ) {
           return authUser.assignedBlockCodes.some((code) => {
-            const clean = code.trim().toLowerCase();
-            return b.code.toLowerCase().includes(clean) || clean.includes(b.code.toLowerCase());
+            const clean = (code || '').trim().toLowerCase();
+            return (b.code && b.code.toLowerCase().includes(clean)) || (b.code && clean.includes(b.code.toLowerCase()));
           });
         }
         return true;
@@ -1156,7 +1160,8 @@ export const storageService = {
     // If it is an outflow (pemakaian langsung diinput oleh pengawas), update inventory stock
     if (tx.type === 'out') {
       const invList = this.getInventory();
-      const match = invList.find((i) => i.name.toLowerCase() === tx.itemName.toLowerCase() || i.category === tx.category);
+      const txNameLower = (tx.itemName || '').trim().toLowerCase();
+      const match = invList.find((i) => (i.name && txNameLower && i.name.trim().toLowerCase() === txNameLower) || i.category === tx.category);
       if (match) {
         match.stockQuantity = Math.max(0, match.stockQuantity - tx.quantity);
         this.saveInventory(match);
@@ -1185,7 +1190,8 @@ export const storageService = {
 
     // Add to actual inventory stock once verified & approved
     const invList = this.getInventory();
-    const match = invList.find((i) => i.name.toLowerCase() === tx.itemName.toLowerCase() || i.category === tx.category);
+    const txNameLower = (tx.itemName || '').trim().toLowerCase();
+    const match = invList.find((i) => (i.name && txNameLower && i.name.trim().toLowerCase() === txNameLower) || i.category === tx.category);
     if (match) {
       match.stockQuantity = match.stockQuantity + tx.quantity;
       this.saveInventory(match);
@@ -1234,7 +1240,8 @@ export const storageService = {
     // If it was previously pending or rejected and inventory wasn't deducted yet:
     if (wasPending) {
       const invList = this.getInventory();
-      const match = invList.find((i) => i.name.toLowerCase() === tx.itemName.toLowerCase() || i.category === tx.category);
+      const txNameLower = (tx.itemName || '').trim().toLowerCase();
+      const match = invList.find((i) => (i.name && txNameLower && i.name.trim().toLowerCase() === txNameLower) || i.category === tx.category);
       if (match) {
         match.stockQuantity = Math.max(0, match.stockQuantity - tx.quantity);
         this.saveInventory(match);
@@ -1265,7 +1272,8 @@ export const storageService = {
     // If it was already approved and deducted from inventory, restore the stock!
     if (wasApproved) {
       const invList = this.getInventory();
-      const match = invList.find((i) => i.name.toLowerCase() === tx.itemName.toLowerCase() || i.category === tx.category);
+      const txNameLower = (tx.itemName || '').trim().toLowerCase();
+      const match = invList.find((i) => (i.name && txNameLower && i.name.trim().toLowerCase() === txNameLower) || i.category === tx.category);
       if (match) {
         match.stockQuantity = match.stockQuantity + tx.quantity;
         this.saveInventory(match);
@@ -1646,8 +1654,8 @@ export const storageService = {
           !authUser.assignedBlockCodes[0].includes('Semua Blok')
         ) {
           const isAllowedBlock = authUser.assignedBlockCodes.some((b) => {
-            const bClean = b.trim().toLowerCase();
-            return p.blockCode.toLowerCase().includes(bClean);
+            const bClean = (b || '').trim().toLowerCase();
+            return p.blockCode && p.blockCode.toLowerCase().includes(bClean);
           });
           if (!isAllowedBlock) return false;
         }
@@ -2049,7 +2057,8 @@ export const storageService = {
     const raw = loadFromStorage<ManagedUser[]>(STORAGE_KEYS.MANAGED_USERS, initialManagedUsers);
     // Normalisasi: Direktur / Superadmin adalah Owner tanpa batasan penempatan proyek
     return raw.map((u) => {
-      if (u.userLevel === 'Superadmin' || u.jobTitle.toLowerCase().includes('direktur')) {
+      const jobLower = (u.jobTitle || '').toLowerCase();
+      if (u.userLevel === 'Superadmin' || jobLower.includes('direktur')) {
         return {
           ...u,
           assignedClientId: 'all',
@@ -2059,7 +2068,7 @@ export const storageService = {
             : ['Akses Semua Blok (Tanpa Batas)'],
         };
       }
-      if (u.userLevel === 'Manager' || u.jobTitle.toLowerCase().includes('manager')) {
+      if (u.userLevel === 'Manager' || jobLower.includes('manager')) {
         return {
           ...u,
           assignedClientId: u.assignedClientId || 'all',
@@ -2078,8 +2087,8 @@ export const storageService = {
   },
 
   getManagedUserByUsername(username: string): ManagedUser | undefined {
-    const trimmed = username.trim().toLowerCase();
-    return this.getManagedUsers().find((u) => u.username.trim().toLowerCase() === trimmed);
+    const trimmed = (username || '').trim().toLowerCase();
+    return this.getManagedUsers().find((u) => (u.username || '').trim().toLowerCase() === trimmed);
   },
 
   saveManagedUser(user: ManagedUser): ManagedUser {
@@ -2087,8 +2096,9 @@ export const storageService = {
     const idx = list.findIndex((u) => u.id === user.id);
 
     // If Superadmin / Direktur: Owner tanpa batasan penempatan proyek
-    const isSuper = user.userLevel === 'Superadmin' || user.jobTitle.toLowerCase().includes('direktur');
-    const isManager = user.userLevel === 'Manager' || user.jobTitle.toLowerCase().includes('manager');
+    const jobLower = (user.jobTitle || '').toLowerCase();
+    const isSuper = user.userLevel === 'Superadmin' || jobLower.includes('direktur');
+    const isManager = user.userLevel === 'Manager' || jobLower.includes('manager');
     const normalizedUser: ManagedUser = isSuper
       ? {
           ...user,
@@ -2159,7 +2169,7 @@ export const storageService = {
     const trimmed = newTitle.trim();
     if (!trimmed) return this.getJobTitles();
     const current = this.getJobTitles();
-    if (!current.some((t) => t.toLowerCase() === trimmed.toLowerCase())) {
+    if (!current.some((t) => t && t.toLowerCase() === trimmed.toLowerCase())) {
       const updated = [...current, trimmed];
       saveToStorage(STORAGE_KEYS.JOB_TITLES, updated);
       syncDocWrite(FIRESTORE_COLLECTIONS.JOB_TITLES, { 
@@ -2178,7 +2188,7 @@ export const storageService = {
 
     const allBlocks = this.getBlocks();
     const existing = allBlocks.find(
-      (b) => b.clientId === clientId && b.code.toLowerCase() === trimmedCode.toLowerCase()
+      (b) => b.clientId === clientId && b.code && b.code.toLowerCase() === trimmedCode.toLowerCase()
     );
     if (existing) return existing;
 
@@ -2238,10 +2248,12 @@ export const storageService = {
 
     // Enrich staff with corresponding managed user credentials if not already set
     return rawStaff.map((staff) => {
+      const staffUserLower = (staff.username || '').trim().toLowerCase();
+      const staffNameLower = (staff.fullName || '').trim().toLowerCase();
       const matchedUser = users.find(
         (u) => (staff.linkedUserId && u.id === staff.linkedUserId) ||
-               (staff.username && u.username.toLowerCase() === staff.username.toLowerCase()) ||
-               (u.fullName.toLowerCase() === staff.fullName.toLowerCase())
+               (staffUserLower && u.username && u.username.trim().toLowerCase() === staffUserLower) ||
+               (staffNameLower && u.fullName && u.fullName.trim().toLowerCase() === staffNameLower)
       );
 
       if (matchedUser) {
@@ -2280,10 +2292,12 @@ export const storageService = {
     // Auto-synchronize to ManagedUser if credentials (username & password) exist
     if (payload.username && payload.password) {
       const users = this.getManagedUsers();
+      const payloadUserLower = payload.username.trim().toLowerCase();
+      const payloadNameLower = (payload.fullName || '').trim().toLowerCase();
       const existingUser = users.find(
         (u) => (payload.linkedUserId && u.id === payload.linkedUserId) ||
-               (u.username.toLowerCase() === payload.username!.trim().toLowerCase()) ||
-               (u.fullName.toLowerCase() === payload.fullName.toLowerCase())
+               (payloadUserLower && u.username && u.username.trim().toLowerCase() === payloadUserLower) ||
+               (payloadNameLower && u.fullName && u.fullName.trim().toLowerCase() === payloadNameLower)
       );
       const userId = payload.linkedUserId || existingUser?.id || `user-usr-${payload.id.replace(/^staff-/, '')}`;
       payload.linkedUserId = userId;

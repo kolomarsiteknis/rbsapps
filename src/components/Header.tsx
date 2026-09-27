@@ -135,7 +135,7 @@ export const Header: React.FC<HeaderProps> = ({
         {
           key: 'company-master' as TabKey,
           label: 'Master Data Perusahaan',
-          subtitle: 'Identitas, Staff TTD & Personil',
+          subtitle: 'Identitas, Staff TTD & Tim Pendukung',
           icon: Building2,
           visible: true,
         },

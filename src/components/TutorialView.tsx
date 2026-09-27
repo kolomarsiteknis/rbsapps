@@ -152,7 +152,7 @@ export const TutorialView: React.FC<TutorialViewProps> = ({ onNavigateTab }) => 
       title: '2. Master Data Perusahaan',
       badge: 'Menu 2',
       icon: Building2,
-      description: 'Pengaturan internal perusahaan: 1. Identitas & Logo Apps, 2. Staff & TTD Digital + Manajemen User Pusat, 3. Personil Tim Pekerja.',
+      description: 'Pengaturan internal perusahaan: 1. Identitas & Logo Apps, 2. Staff, TTD Digital & Kredensial User, 3. Personil Tim pendukung.',
       targetRole: 'Khusus Superadmin / Direktur',
       steps: [
         {
@@ -160,13 +160,13 @@ export const TutorialView: React.FC<TutorialViewProps> = ({ onNavigateTab }) => 
           desc: 'Ubah Nama Singkat (otomatis jadi Nama Apps), Nama Resmi PT/CV, Slogan, Alamat Kantor, NPWP, Rekening, dan Upload Logo Apps baru yang otomatis tampil di Header, Login, dan Dokumen PDF.',
         },
         {
-          title: 'Sub-Tab 2: Staff & TTD Digital (Manajemen User digabung kesini)',
-          desc: 'Kelola data staff resmi (Direktur, Site Manager, Pengawas, Akuntan & Finance) lengkap dengan TTD Digital (Upload, Canvas, atau Preset). Terintegrasi dengan Manajemen User Pusat CRUD data pengguna resmi sistem (Username, Password, Nomor WhatsApp, Email & Hak Akses).',
-          tips: 'Gunakan tombol "Buat Akun Login" pada kartu staff untuk langsung membuatkan kredensial login dengan data terisi otomatis.'
+          title: 'Sub-Tab 2: Staff, TTD Digital & Kredensial User (1 Modul CRUD Terpadu)',
+          desc: 'Kelola data staff resmi lengkap dengan kredensial login (Username, Password, Level Hak Akses: Superadmin, Site Manager, Pengawas, Klien) dan TTD Digital (Upload, Canvas, atau Preset) dalam satu modul inputan.',
+          tips: 'Gunakan tombol Salin Kredensial pada kartu staff untuk langsung menyalin data username dan password akun ke WhatsApp.'
         },
         {
-          title: 'Sub-Tab 3: Personil Tim Pekerja',
-          desc: 'Kelola personil lapangan: Operator, Mekanik, Logistik, Pendukung, Pengawas. Dilengkapi dropdown kategori dinamis (+ Tambah kategori) dan Penugasan Lokasi Kerja (NO KONTRAK/SPK) format "<NOMOR SPK> - <Nama Singkat Klien>".',
+          title: 'Sub-Tab 3: Personil Tim pendukung',
+          desc: 'Kelola personil tim pendukung lapangan: Operator, Mekanik, Logistik, Pendukung, Pengawas. Dilengkapi dropdown kategori dinamis (+ Tambah kategori) dan Penugasan Lokasi Kerja (NO KONTRAK/SPK) format "<NOMOR SPK> - <Nama Singkat Klien>".',
         }
       ],
       keyRules: [
@@ -197,7 +197,7 @@ export const TutorialView: React.FC<TutorialViewProps> = ({ onNavigateTab }) => 
         },
         {
           title: 'Sub-Tab 4: Penugasan Kerja (Operasional Lapangan)',
-          desc: 'Alokasikan penugasan terstruktur: 1. Data Staff penanggung jawab (Level Staff & Nama Lengkap Staff dari Master Data Perusahaan), 2. Data Personel Tim Pekerja Lapangan (Operator, Mekanik, Logistik, Pendukung — Pengawas & Site Manager berada pada level Staff di atas), 3. Unit Alat Berat (khusus Operator), 4. No Kontrak / SPK Klien & Blok Kerja, serta 5. Status & Tanggal Penugasan.',
+          desc: 'Alokasikan penugasan terstruktur: 1. Data Staff penanggung jawab (Level Staff & Nama Lengkap Staff dari Master Data Perusahaan), 2. Data Personel Tim pendukung Lapangan (Operator, Mekanik, Logistik, Pendukung — Pengawas & Site Manager berada pada level Staff di atas), 3. Unit Alat Berat (khusus Operator), 4. No Kontrak / SPK Klien & Blok Kerja, serta 5. Status & Tanggal Penugasan.',
         },
         {
           title: 'Sub-Tab 5: Target Harian',

@@ -321,13 +321,14 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
     const matchCategory = categoryFilter === 'ALL' || t.category === categoryFilter;
     const matchType = typeFilter === 'ALL' || t.type === typeFilter;
     const matchStatus = statusFilter === 'ALL' || t.approvalStatus === statusFilter;
+    const q = (searchQuery || '').toLowerCase();
     const matchSearch = 
       !searchQuery ||
-      t.itemName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (t.equipmentId && t.equipmentId.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (t.equipmentName && t.equipmentName.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (t.deliveryNoteNumber && t.deliveryNoteNumber.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (t.submittedByName && t.submittedByName.toLowerCase().includes(searchQuery.toLowerCase()));
+      (t.itemName && t.itemName.toLowerCase().includes(q)) ||
+      (t.equipmentId && t.equipmentId.toLowerCase().includes(q)) ||
+      (t.equipmentName && t.equipmentName.toLowerCase().includes(q)) ||
+      (t.deliveryNoteNumber && t.deliveryNoteNumber.toLowerCase().includes(q)) ||
+      (t.submittedByName && t.submittedByName.toLowerCase().includes(q));
 
     return matchCategory && matchType && matchStatus && matchSearch;
   });

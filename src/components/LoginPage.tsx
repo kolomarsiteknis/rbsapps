@@ -65,9 +65,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
         // Validate password
         if (user.password === trimmedPass) {
-          const isSuper = user.userLevel === 'Superadmin' || user.jobTitle.toLowerCase().includes('direktur');
-          const isSiteManager = user.userLevel === 'Site Manager' || user.userLevel === 'Manager' || user.jobTitle.toLowerCase().includes('manager');
-          const isClient = user.userLevel === 'Klien' || user.jobTitle.toLowerCase().includes('klien');
+          const jobLower = (user.jobTitle || '').toLowerCase();
+          const isSuper = user.userLevel === 'Superadmin' || jobLower.includes('direktur');
+          const isSiteManager = user.userLevel === 'Site Manager' || user.userLevel === 'Manager' || jobLower.includes('manager');
+          const isClient = user.userLevel === 'Klien' || jobLower.includes('klien');
           const role: 'director' | 'manager' | 'supervisor' | 'client' = isSuper ? 'director' : isSiteManager ? 'manager' : isClient ? 'client' : 'supervisor';
 
           const authUserObj: AuthUser = {

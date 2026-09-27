@@ -319,7 +319,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
     if (laborSearchQuery.trim()) {
       const q = laborSearchQuery.toLowerCase();
       return (
-        item.workerName.toLowerCase().includes(q) ||
+        (item.workerName && item.workerName.toLowerCase().includes(q)) ||
         (item.role ? item.role.toLowerCase().includes(q) : false) ||
         (item.teamName && item.teamName.toLowerCase().includes(q))
       );
@@ -612,8 +612,9 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
       }
       if (assignedBlockCodes && assignedBlockCodes.length > 0) {
         const isMatched = activeBlock && assignedBlockCodes.some(b => {
-          const clean = b.trim().toLowerCase();
-          return activeBlock.code.toLowerCase().includes(clean) || clean.includes(activeBlock.code.toLowerCase());
+          const clean = (b || '').trim().toLowerCase();
+          const activeCode = (activeBlock.code || '').trim().toLowerCase();
+          return clean && activeCode && (activeCode.includes(clean) || clean.includes(activeCode));
         });
         if (!isMatched) {
           alert(`Akses Ditolak: Anda hanya ditugaskan pada lokasi kerja (${assignedBlockCodes.join(', ')}). Tidak berwenang membuat laporan untuk ${activeBlock?.code || 'blok ini'}!`);

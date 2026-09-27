@@ -105,13 +105,14 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
   // Helper: auto-fill user credentials from Company Staff
   const handleSelectStaffToFill = (staff: CompanyStaff) => {
     let suggestedLevel: ManagedUserLevel = 'Pengawas';
-    if (staff.staffLevel === 'Direktur' || staff.jobRole.toLowerCase().includes('direktur')) {
+    const roleLower = (staff.jobRole || '').toLowerCase();
+    if (staff.staffLevel === 'Direktur' || roleLower.includes('direktur')) {
       suggestedLevel = 'Superadmin';
-    } else if (staff.staffLevel === 'Manager' || staff.jobRole.toLowerCase().includes('manager')) {
+    } else if (staff.staffLevel === 'Manager' || roleLower.includes('manager')) {
       suggestedLevel = 'Manager';
     }
 
-    const cleanUsername = staff.fullName
+    const cleanUsername = (staff.fullName || '')
       .replace(/^(Ir\.|Dr\.|Drs\.|H\.|Hj\.)\s*/i, '')
       .split(' ')[0]
       .toLowerCase()
@@ -166,11 +167,11 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       // Search
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
-        const matchName = user.fullName.toLowerCase().includes(q);
-        const matchUser = user.username.toLowerCase().includes(q);
-        const matchEmail = user.email.toLowerCase().includes(q);
-        const matchWa = user.whatsappNumber.toLowerCase().includes(q);
-        const matchJob = user.jobTitle.toLowerCase().includes(q);
+        const matchName = (user.fullName || '').toLowerCase().includes(q);
+        const matchUser = (user.username || '').toLowerCase().includes(q);
+        const matchEmail = (user.email || '').toLowerCase().includes(q);
+        const matchWa = (user.whatsappNumber || '').toLowerCase().includes(q);
+        const matchJob = (user.jobTitle || '').toLowerCase().includes(q);
         if (!matchName && !matchUser && !matchEmail && !matchWa && !matchJob) {
           return false;
         }
@@ -324,7 +325,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
     } else {
       // Check uniqueness
       const existingUser = users.find(
-        (u) => u.username.toLowerCase() === cleanUsername.toLowerCase() && u.id !== editingUserId
+        (u) => u.username && u.username.toLowerCase() === cleanUsername.toLowerCase() && u.id !== editingUserId
       );
       if (existingUser) {
         errors.username = `Username "${cleanUsername}" sudah digunakan oleh ${existingUser.fullName}.`;

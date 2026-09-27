@@ -140,13 +140,14 @@ export const DirectorFieldMonitorView: React.FC<DirectorFieldMonitorViewProps> =
 
   // Filtered lists based on search & filters
   const filteredP2h = useMemo(() => {
+    const q = (searchTerm || '').toLowerCase();
     return p2hList.filter((item) => {
       const matchSearch = searchTerm === '' ||
-        item.equipmentId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.operatorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.supervisorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.blockCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.clientName.toLowerCase().includes(searchTerm.toLowerCase());
+        (item.equipmentId && item.equipmentId.toLowerCase().includes(q)) ||
+        (item.operatorName && item.operatorName.toLowerCase().includes(q)) ||
+        (item.supervisorName && item.supervisorName.toLowerCase().includes(q)) ||
+        (item.blockCode && item.blockCode.toLowerCase().includes(q)) ||
+        (item.clientName && item.clientName.toLowerCase().includes(q));
       
       const matchStatus = statusFilter === 'ALL' || item.overallStatus === statusFilter;
       const matchDate = dateFilter === '' || item.date === dateFilter;
@@ -156,25 +157,27 @@ export const DirectorFieldMonitorView: React.FC<DirectorFieldMonitorViewProps> =
   }, [p2hList, searchTerm, statusFilter, dateFilter]);
 
   const filteredPhotos = useMemo(() => {
+    const q = (searchTerm || '').toLowerCase();
     return geotagPhotos.filter((p) => {
       const matchSearch = searchTerm === '' ||
-        p.fileName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.blockCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (p.equipmentId && p.equipmentId.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        p.clientName.toLowerCase().includes(searchTerm.toLowerCase());
+        (p.fileName && p.fileName.toLowerCase().includes(q)) ||
+        (p.category && p.category.toLowerCase().includes(q)) ||
+        (p.blockCode && p.blockCode.toLowerCase().includes(q)) ||
+        (p.equipmentId && p.equipmentId.toLowerCase().includes(q)) ||
+        (p.clientName && p.clientName.toLowerCase().includes(q));
       
       return matchSearch;
     });
   }, [geotagPhotos, searchTerm]);
 
   const filteredHmAudits = useMemo(() => {
+    const q = (searchTerm || '').toLowerCase();
     return hmAudits.filter((h) => {
       const matchSearch = searchTerm === '' ||
-        h.equipmentId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        h.equipmentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        h.blockCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        h.clientName.toLowerCase().includes(searchTerm.toLowerCase());
+        (h.equipmentId && h.equipmentId.toLowerCase().includes(q)) ||
+        (h.equipmentName && h.equipmentName.toLowerCase().includes(q)) ||
+        (h.blockCode && h.blockCode.toLowerCase().includes(q)) ||
+        (h.clientName && h.clientName.toLowerCase().includes(q));
 
       const matchStatus = statusFilter === 'ALL' || 
         (statusFilter === 'DISCREPANCY' && h.isDiscrepancy) ||
@@ -188,13 +191,14 @@ export const DirectorFieldMonitorView: React.FC<DirectorFieldMonitorViewProps> =
   }, [hmAudits, searchTerm, statusFilter, dateFilter]);
 
   const filteredBowser = useMemo(() => {
+    const q = (searchTerm || '').toLowerCase();
     return bowserReceipts.filter((b) => {
       const matchSearch = searchTerm === '' ||
-        b.equipmentId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        b.sealNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        b.deliveryDocNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        b.bowserDriverName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        b.clientName.toLowerCase().includes(searchTerm.toLowerCase());
+        (b.equipmentId && b.equipmentId.toLowerCase().includes(q)) ||
+        (b.sealNumber && b.sealNumber.toLowerCase().includes(q)) ||
+        (b.deliveryDocNumber && b.deliveryDocNumber.toLowerCase().includes(q)) ||
+        (b.bowserDriverName && b.bowserDriverName.toLowerCase().includes(q)) ||
+        (b.clientName && b.clientName.toLowerCase().includes(q));
 
       const matchDate = dateFilter === '' || b.date === dateFilter;
 
@@ -203,13 +207,14 @@ export const DirectorFieldMonitorView: React.FC<DirectorFieldMonitorViewProps> =
   }, [bowserReceipts, searchTerm, dateFilter]);
 
   const filteredIncidents = useMemo(() => {
+    const q = (searchTerm || '').toLowerCase();
     return soilIncidents.filter((inc) => {
       const matchSearch = searchTerm === '' ||
-        inc.incidentType.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (inc.affectedEquipmentId && inc.affectedEquipmentId.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        inc.soilCondition.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        inc.blockCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        inc.clientName.toLowerCase().includes(searchTerm.toLowerCase());
+        (inc.incidentType && inc.incidentType.toLowerCase().includes(q)) ||
+        (inc.affectedEquipmentId && inc.affectedEquipmentId.toLowerCase().includes(q)) ||
+        (inc.soilCondition && inc.soilCondition.toLowerCase().includes(q)) ||
+        (inc.blockCode && inc.blockCode.toLowerCase().includes(q)) ||
+        (inc.clientName && inc.clientName.toLowerCase().includes(q));
 
       const matchDate = dateFilter === '' || inc.date === dateFilter;
 

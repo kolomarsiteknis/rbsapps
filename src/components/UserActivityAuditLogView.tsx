@@ -85,14 +85,15 @@ export const UserActivityAuditLogView: React.FC<UserActivityAuditLogViewProps> =
 
   // Filtered logs
   const filteredLogs = useMemo(() => {
+    const q = (searchTerm || '').toLowerCase();
     return logs.filter((item) => {
       const matchSearch = searchTerm === '' ||
-        item.userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.actionTitle.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.actionDescription.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (item.targetEntity && item.targetEntity.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (item.gpsTag && item.gpsTag.locationName.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (item.userEmail && item.userEmail.toLowerCase().includes(searchTerm.toLowerCase()));
+        (item.userName && item.userName.toLowerCase().includes(q)) ||
+        (item.actionTitle && item.actionTitle.toLowerCase().includes(q)) ||
+        (item.actionDescription && item.actionDescription.toLowerCase().includes(q)) ||
+        (item.targetEntity && item.targetEntity.toLowerCase().includes(q)) ||
+        (item.gpsTag && item.gpsTag.locationName && item.gpsTag.locationName.toLowerCase().includes(q)) ||
+        (item.userEmail && item.userEmail.toLowerCase().includes(q));
 
       const matchUser = selectedUserFilter === 'ALL' || item.userName === selectedUserFilter;
       const matchRole = selectedRoleFilter === 'ALL' || item.userRole === selectedRoleFilter;

@@ -121,7 +121,7 @@ export const initialProjects: Project[] = [
 ];
 
 export const DEFAULT_WORK_ITEMS_CATALOG = [
-  { name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'HEKTAR', defaultTargetVolume: 30 },
+  { name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', defaultTargetVolume: 30 },
   { name: 'BATANG KUBUR', unit: 'POHON', defaultTargetVolume: 25 },
   { name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'Ha', defaultTargetVolume: 10 },
   { name: 'MAINROAD', unit: 'm', defaultTargetVolume: 250 },
@@ -143,7 +143,7 @@ export const initialBlocks: Block[] = [
     clearedAreaHa: 14.2,
     status: 'Dalam Pengerjaan',
     workItems: [
-      { id: 'wi-az-1', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'HEKTAR', targetVolume: 30 },
+      { id: 'wi-az-1', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', targetVolume: 30 },
       { id: 'wi-az-2', name: 'BATANG KUBUR', unit: 'POHON', targetVolume: 25 },
       { id: 'wi-az-3', name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'Ha', targetVolume: 10 },
       { id: 'wi-az-4', name: 'MAINROAD', unit: 'm', targetVolume: 250 },
@@ -163,10 +163,10 @@ export const initialBlocks: Block[] = [
     clearedAreaHa: 80.0,
     status: 'Selesai',
     workItems: [
-      { id: 'wi-aa-1', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'HEKTAR' },
-      { id: 'wi-aa-2', name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'HEKTAR' },
-      { id: 'wi-aa-3', name: 'MAINROAD', unit: 'METER LARI' },
-      { id: 'wi-aa-4', name: 'SALURAN PRIMER', unit: 'METER KUBIK' },
+      { id: 'wi-aa-1', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha' },
+      { id: 'wi-aa-2', name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'Ha' },
+      { id: 'wi-aa-3', name: 'MAINROAD', unit: 'm' },
+      { id: 'wi-aa-4', name: 'SALURAN PRIMER', unit: 'm³' },
     ],
   },
   {
@@ -179,14 +179,14 @@ export const initialBlocks: Block[] = [
     clearedAreaHa: 48.8,
     status: 'Dalam Pengerjaan',
     workItems: [
-      { id: 'wi-ab-1', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'HEKTAR', targetVolume: 35 },
+      { id: 'wi-ab-1', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', targetVolume: 35 },
       { id: 'wi-ab-2', name: 'BATANG KUBUR', unit: 'POHON', targetVolume: 25 },
-      { id: 'wi-ab-3', name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'HEKTAR', targetVolume: 20 },
-      { id: 'wi-ab-4', name: 'MAINROAD', unit: 'METER LARI', targetVolume: 250 },
-      { id: 'wi-ab-5', name: 'COLLECTION ROAD', unit: 'METER LARI', targetVolume: 150 },
-      { id: 'wi-ab-6', name: 'SALURAN PRIMER', unit: 'METER KUBIK', targetVolume: 80 },
-      { id: 'wi-ab-7', name: 'SALURAN SEKUNDER', unit: 'METER KUBIK', targetVolume: 60 },
-      { id: 'wi-ab-8', name: 'SALURAN TERSIER', unit: 'METER KUBIK', targetVolume: 50 },
+      { id: 'wi-ab-3', name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'Ha', targetVolume: 20 },
+      { id: 'wi-ab-4', name: 'MAINROAD', unit: 'm', targetVolume: 250 },
+      { id: 'wi-ab-5', name: 'COLLECTION ROAD', unit: 'm', targetVolume: 150 },
+      { id: 'wi-ab-6', name: 'SALURAN PRIMER', unit: 'm³', targetVolume: 80 },
+      { id: 'wi-ab-7', name: 'SALURAN SEKUNDER', unit: 'm³', targetVolume: 60 },
+      { id: 'wi-ab-8', name: 'SALURAN TERSIER', unit: 'm³', targetVolume: 50 },
     ],
   },
   {
@@ -199,9 +199,9 @@ export const initialBlocks: Block[] = [
     clearedAreaHa: 0,
     status: 'Belum Dimulai',
     workItems: [
-      { id: 'wi-ac-1', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'HEKTAR' },
-      { id: 'wi-ac-2', name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'HEKTAR' },
-      { id: 'wi-ac-3', name: 'COLLECTION ROAD', unit: 'METER LARI' },
+      { id: 'wi-ac-1', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha' },
+      { id: 'wi-ac-2', name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'Ha' },
+      { id: 'wi-ac-3', name: 'COLLECTION ROAD', unit: 'm' },
     ],
   },
   {
@@ -214,10 +214,10 @@ export const initialBlocks: Block[] = [
     clearedAreaHa: 0,
     status: 'Belum Dimulai',
     workItems: [
-      { id: 'wi-ad-1', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'HEKTAR' },
+      { id: 'wi-ad-1', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha' },
       { id: 'wi-ad-2', name: 'BATANG KUBUR', unit: 'POHON' },
-      { id: 'wi-ad-3', name: 'MAINROAD', unit: 'METER LARI' },
-      { id: 'wi-ad-4', name: 'SALURAN PRIMER', unit: 'METER KUBIK' },
+      { id: 'wi-ad-3', name: 'MAINROAD', unit: 'm' },
+      { id: 'wi-ad-4', name: 'SALURAN PRIMER', unit: 'm³' },
     ],
   },
   // PT. B Blocks
@@ -1093,7 +1093,7 @@ export const initialDailyTargets: DailyLocationTarget[] = [
       '004/ST-LC/PTA/VIII/2026'
     ],
     itemTargets: [
-      { id: 'it-1', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'HEKTAR', totalVolume: 30, dailyTargetVolume: 6, calculatedDays: 5 },
+      { id: 'it-1', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', totalVolume: 30, dailyTargetVolume: 6, calculatedDays: 5 },
       { id: 'it-2', name: 'BATANG KUBUR', unit: 'POHON', totalVolume: 25, dailyTargetVolume: 10, calculatedDays: 3 },
       { id: 'it-3', name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'Ha', totalVolume: 10, dailyTargetVolume: 4, calculatedDays: 3 },
       { id: 'it-4', name: 'MAINROAD', unit: 'm', totalVolume: 250, dailyTargetVolume: 50, calculatedDays: 5 },
@@ -1128,7 +1128,7 @@ export const initialDailyTargets: DailyLocationTarget[] = [
       '004/ST-LC/PTA/VIII/2026'
     ],
     itemTargets: [
-      { id: 'it-1', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'HEKTAR', totalVolume: 30, dailyTargetVolume: 6, calculatedDays: 5 },
+      { id: 'it-1', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', totalVolume: 30, dailyTargetVolume: 6, calculatedDays: 5 },
       { id: 'it-2', name: 'BATANG KUBUR', unit: 'POHON', totalVolume: 25, dailyTargetVolume: 10, calculatedDays: 3 },
       { id: 'it-3', name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'Ha', totalVolume: 10, dailyTargetVolume: 4, calculatedDays: 3 },
       { id: 'it-4', name: 'MAINROAD', unit: 'm', totalVolume: 250, dailyTargetVolume: 50, calculatedDays: 5 },
@@ -1161,7 +1161,7 @@ export const initialDailyTargets: DailyLocationTarget[] = [
       '001/ST-LC/SSS/VIII/2026'
     ],
     itemTargets: [
-      { id: 'it-5', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'HEKTAR', totalVolume: 35, dailyTargetVolume: 7, calculatedDays: 5 },
+      { id: 'it-5', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', totalVolume: 35, dailyTargetVolume: 7, calculatedDays: 5 },
       { id: 'it-6', name: 'BATANG KUBUR', unit: 'POHON', totalVolume: 20, dailyTargetVolume: 8, calculatedDays: 3 },
     ],
     assignedPersonnel: [
@@ -1186,7 +1186,7 @@ export const initialDailyTargets: DailyLocationTarget[] = [
     dailyTargetAreaHa: 3.8,
     assignmentNumbers: [],
     itemTargets: [
-      { id: 'it-7', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'HEKTAR', totalVolume: 25, dailyTargetVolume: 5, calculatedDays: 5 },
+      { id: 'it-7', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', totalVolume: 25, dailyTargetVolume: 5, calculatedDays: 5 },
       { id: 'it-8', name: 'BATANG KUBUR', unit: 'POHON', totalVolume: 15, dailyTargetVolume: 5, calculatedDays: 3 },
     ],
     assignedEquipmentCount: 2,
@@ -1213,7 +1213,7 @@ export const initialDailyTargets: DailyLocationTarget[] = [
       '004/ST-LC/PTA/VIII/2026'
     ],
     itemTargets: [
-      { id: 'it-9', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'HEKTAR', totalVolume: 30, dailyTargetVolume: 6, calculatedDays: 5 },
+      { id: 'it-9', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', totalVolume: 30, dailyTargetVolume: 6, calculatedDays: 5 },
       { id: 'it-10', name: 'BATANG KUBUR', unit: 'POHON', totalVolume: 25, dailyTargetVolume: 10, calculatedDays: 3 },
       { id: 'it-11', name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'Ha', totalVolume: 10, dailyTargetVolume: 4, calculatedDays: 3 },
       { id: 'it-12', name: 'MAINROAD', unit: 'm', totalVolume: 250, dailyTargetVolume: 50, calculatedDays: 5 },
