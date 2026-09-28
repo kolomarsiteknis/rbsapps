@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { CompanyProfile, CompanyStaff, AuthUser } from '../types';
 import { storageService } from '../services/storageService';
-import { createDefaultCompanyLogoSvg, createSimulatedSignatureSvg } from '../data/mockData';
+import { createDefaultCompanyLogoSvg, createSimulatedSignatureSvg, compressSignatureDataUrl } from '../data/mockData';
 import { recordUserActivity } from '../utils/activityLogger';
 
 interface CompanyProfileViewProps {
@@ -222,11 +222,12 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       const result = evt.target?.result as string;
       if (!result) return;
-      setStaffFormData((prev) => ({ ...prev, signatureUrl: result }));
-      showToast('Tanda tangan digital berhasil diupload.', 'info');
+      const compressed = await compressSignatureDataUrl(result);
+      setStaffFormData((prev) => ({ ...prev, signatureUrl: compressed }));
+      showToast('Tanda tangan digital berhasil diupload & dioptimalkan.', 'info');
     };
     reader.readAsDataURL(file);
   };
@@ -346,67 +347,14 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
 
   // Delete Staff Handlers
   const handleDeleteStaff = (staff: CompanyStaff) => {
-    // Validasi proteksi akun aktif sendiri
-    const isSelf = 
-      Boolean(staff.username && authUser?.username && staff.username.trim().toLowerCase() === authUser.username.trim().toLowerCase()) ||
-      Boolean(staff.fullName && authUser?.displayName && staff.fullName.trim().toLowerCase() === authUser.displayName.trim().toLowerCase()) ||
-      Boolean(authUser?.id && (staff.id === authUser.id || staff.linkedUserId === authUser.id));
-
-    if (isSelf) {
-      showToast('Akses Ditolak: Anda tidak dapat menghapus akun Anda sendiri yang sedang aktif login.', 'error');
-      return;
-    }
-
-    if (staff.username && staff.username.toLowerCase() === 'direktur') {
-      showToast('Akun Direktur Utama aktif tidak dapat dihapus demi keamanan sistem.', 'warning');
-      return;
-    }
-
-    // Konfirmasi window.confirm sebelum eksekusi penghapusan di UI
-    const confirmed = window.confirm(
-      `Apakah Anda yakin ingin menghapus data staff "${staff.fullName}" (${staff.jobRole})?\n\nData identitas, kredensial login, dan spesimen TTD digital akan dihapus permanen.`
-    );
-    if (!confirmed) {
-      return;
-    }
-
-    const success = storageService.deleteStaff(staff.id, authUser);
-    if (!success) {
-      showToast('Gagal menghapus staff: Anda tidak dapat menghapus akun Anda sendiri yang sedang login.', 'error');
-      return;
-    }
-
-    reloadStaff();
-    setStaffToDelete(null);
-
-    recordUserActivity({
-      userId: authUser?.id,
-      userName: authUser?.displayName || 'Direktur',
-      userRole: 'director',
-      actionCategory: 'MASTER_DATA',
-      actionTitle: `Hapus Staff: ${staff.fullName}`,
-      actionDescription: `Menghapus data staff ${staff.fullName} (${staff.jobRole}) dari sistem.`,
-      targetEntity: staff.fullName,
-    });
-
-    showToast(`Data staff ${staff.fullName} telah dihapus.`, 'info');
+    setStaffToDelete(staff);
   };
 
   const executeDeleteStaff = () => {
     if (!staffToDelete) return;
     const target = staffToDelete;
 
-    // Konfirmasi window.confirm sebelum eksekusi penghapusan di UI
-    if (!window.confirm(`Konfirmasi akhir: Hapus data staff "${target.fullName}" (${target.jobRole}) secara permanen?`)) {
-      return;
-    }
-
-    const success = storageService.deleteStaff(target.id, authUser);
-    if (!success) {
-      showToast('Gagal menghapus: Anda tidak dapat menghapus akun Anda sendiri yang sedang login.', 'error');
-      setStaffToDelete(null);
-      return;
-    }
+    storageService.deleteStaff(target.id, authUser);
 
     reloadStaff();
     setStaffToDelete(null);

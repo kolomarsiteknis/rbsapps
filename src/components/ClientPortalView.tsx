@@ -835,20 +835,20 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
                       </div>
 
                       {/* Realisasi Item Pekerjaan */}
-                      {report.workItemExecutions && report.workItemExecutions.length > 0 && (
+                      {report.physicalProgress.itemProgress && report.physicalProgress.itemProgress.length > 0 && (
                         <div className="bg-white p-3.5 rounded-xl border border-slate-200 space-y-2">
                           <span className="text-[10px] font-black uppercase text-slate-700 block">
-                            Rincian Realisasi Item Pekerjaan ({report.workItemExecutions.length} Item):
+                            Rincian Realisasi Item Pekerjaan ({report.physicalProgress.itemProgress.length} Item):
                           </span>
                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                            {report.workItemExecutions.map((wi, idx) => (
+                            {report.physicalProgress.itemProgress.map((wi, idx) => (
                               <div
                                 key={idx}
                                 className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between gap-2"
                               >
-                                <span className="font-bold text-slate-800">{wi.name}</span>
+                                <span className="font-bold text-slate-800">{wi.itemName}</span>
                                 <span className="px-2 py-0.5 bg-teal-100 text-teal-900 rounded font-mono font-black text-[11px]">
-                                  {wi.dailyRealizedVolume} / {wi.dailyTargetVolume} {wi.unit}
+                                  {wi.realizedDailyVolume} / {wi.targetDailyVolume} {wi.unit}
                                 </span>
                               </div>
                             ))}

@@ -25,7 +25,8 @@ import {
   initialFuelBowserReceipts,
   initialSoilIncidents,
   initialJobTitles,
-  initialManagedUsers
+  initialManagedUsers,
+  initialCompanyStaff
 } from '../data/mockData';
 
 export const FIRESTORE_COLLECTIONS = {
@@ -167,6 +168,23 @@ async function seedCollectionIfEmpty(
   }
 }
 
+function getDeletedIdsFromStorage(key: string): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function isObsoleteHendraRecord(item: any): boolean {
+  if (!item) return false;
+  const nameLower = String(item.fullName || item.name || '').trim().toLowerCase();
+  const emailLower = String(item.email || '').trim().toLowerCase();
+  return nameLower.includes('hendra wijaya') || emailLower.includes('hendra.wijaya');
+}
+
 // Initialize Firestore listeners & initial seeding
 export function initFirestoreSync() {
   if (isInitialized || !isFirebaseReady || !db) return;
@@ -208,11 +226,77 @@ export function initFirestoreSync() {
         localStorage.setItem(FIRESTORE_PURGE_FLAG, 'done');
       }
 
+      // Actively purge obsolete "Ir. Hendra Wijaya, M.Si" records from Firestore companyStaff & managedUsers
+      for (const colName of [FIRESTORE_COLLECTIONS.COMPANY_STAFF, FIRESTORE_COLLECTIONS.USERS]) {
+        try {
+          const colRef = collection(db, colName);
+          const snap = await getDocs(colRef);
+          if (!snap.empty) {
+            for (const docSnap of snap.docs) {
+              const data = docSnap.data();
+              if (isObsoleteHendraRecord(data)) {
+                await deleteDoc(docSnap.ref);
+              }
+            }
+          }
+        } catch (err) {
+          console.warn(`[Firestore Cleanup] Notice cleaning ${colName}:`, err);
+        }
+      }
+
+      const deletedUserIds = getDeletedIdsFromStorage('suryaland_deleted_user_ids_v1');
+      const deletedStaffIds = getDeletedIdsFromStorage('suryaland_deleted_staff_ids_v1');
+
       await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.INVENTORY, initialInventory);
       await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.P2H, initialP2HChecklists);
       await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.BOWSER, initialFuelBowserReceipts);
       await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.SOIL, initialSoilIncidents);
-      await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.USERS, initialManagedUsers);
+      await seedCollectionIfEmpty(
+        FIRESTORE_COLLECTIONS.USERS,
+        initialManagedUsers.filter((u) => !deletedUserIds.includes(u.id) && !isObsoleteHendraRecord(u))
+      );
+      await seedCollectionIfEmpty(
+        FIRESTORE_COLLECTIONS.COMPANY_STAFF,
+        initialCompanyStaff.filter((s) => !deletedStaffIds.includes(s.id) && !isObsoleteHendraRecord(s))
+      );
+
+      // Push any locally saved active staff & users to Firestore so cloud is always up to date
+      if (typeof window !== 'undefined') {
+        try {
+          const localStaffRaw = localStorage.getItem(LOCAL_STORAGE_KEYS.COMPANY_STAFF);
+          if (localStaffRaw) {
+            const localStaffList = JSON.parse(localStaffRaw);
+            if (Array.isArray(localStaffList)) {
+              for (const st of localStaffList) {
+                if (st && st.id && !isObsoleteHendraRecord(st) && !deletedStaffIds.includes(st.id)) {
+                  const safeItem =
+                    st.signatureUrl && st.signatureUrl.length > 700000
+                      ? { ...st, signatureUrl: undefined }
+                      : st;
+                  await syncDocWrite(FIRESTORE_COLLECTIONS.COMPANY_STAFF, safeItem);
+                }
+              }
+            }
+          }
+          const localUsersRaw = localStorage.getItem(LOCAL_STORAGE_KEYS.USERS);
+          if (localUsersRaw) {
+            const localUsersList = JSON.parse(localUsersRaw);
+            if (Array.isArray(localUsersList)) {
+              for (const usr of localUsersList) {
+                if (usr && usr.id && !isObsoleteHendraRecord(usr) && !deletedUserIds.includes(usr.id)) {
+                  const safeUsr =
+                    usr.signatureUrl && usr.signatureUrl.length > 150000
+                      ? { ...usr, signatureUrl: undefined }
+                      : usr;
+                  await syncDocWrite(FIRESTORE_COLLECTIONS.USERS, safeUsr);
+                }
+              }
+            }
+          }
+        } catch (syncErr) {
+          console.warn('[Firestore] Local staff/users push notice:', syncErr);
+        }
+      }
       
       // Seed job titles
       const jobTitlesItems = initialJobTitles.map((t, idx) => ({ id: `job-${idx + 1}`, title: t }));
@@ -232,12 +316,14 @@ export function initFirestoreSync() {
     try {
       const colRef = collection(db, colName);
       onSnapshot(colRef, (snapshot) => {
-        const items: T[] = [];
-        if (!snapshot.empty) {
-          snapshot.forEach((d) => {
-            items.push(d.data() as T);
-          });
+        // Do not overwrite localStorage with an empty array when Firestore collection is empty/unseeded
+        if (snapshot.empty) {
+          return;
         }
+        const items: T[] = [];
+        snapshot.forEach((d) => {
+          items.push(d.data() as T);
+        });
         const finalList = transformList ? transformList(items) : items;
         try {
           localStorage.setItem(storageKey, JSON.stringify(finalList));
@@ -273,9 +359,82 @@ export function initFirestoreSync() {
   attachSync(FIRESTORE_COLLECTIONS.BOWSER, LOCAL_STORAGE_KEYS.BOWSER);
   attachSync(FIRESTORE_COLLECTIONS.SOIL, LOCAL_STORAGE_KEYS.SOIL);
   attachSync(FIRESTORE_COLLECTIONS.GEOTAG, LOCAL_STORAGE_KEYS.GEOTAG);
-  attachSync(FIRESTORE_COLLECTIONS.USERS, LOCAL_STORAGE_KEYS.USERS);
+  attachSync<any>(FIRESTORE_COLLECTIONS.USERS, LOCAL_STORAGE_KEYS.USERS, (docs) => {
+    const deletedUserIds = getDeletedIdsFromStorage('suryaland_deleted_user_ids_v1');
+    const validCloudDocs = docs.filter((d) => {
+      if (isObsoleteHendraRecord(d)) {
+        syncDocDelete(FIRESTORE_COLLECTIONS.USERS, d.id);
+        return false;
+      }
+      return !deletedUserIds.includes(d.id);
+    });
+
+    // Merge with local users so locally saved accounts are never lost if cloud write was delayed
+    try {
+      const localRaw = localStorage.getItem(LOCAL_STORAGE_KEYS.USERS);
+      const localList: any[] = localRaw ? JSON.parse(localRaw) : [];
+      if (Array.isArray(localList) && localList.length > 0) {
+        const mergedMap = new Map<string, any>();
+        validCloudDocs.forEach((d) => mergedMap.set(d.id, d));
+        localList.forEach((loc) => {
+          if (!loc || !loc.id || isObsoleteHendraRecord(loc) || deletedUserIds.includes(loc.id)) return;
+          const cloudItem = mergedMap.get(loc.id);
+          if (!cloudItem) {
+            mergedMap.set(loc.id, loc);
+            syncDocWrite(FIRESTORE_COLLECTIONS.USERS, loc);
+          } else {
+            const locTime = loc.updatedAt ? new Date(loc.updatedAt).getTime() : 0;
+            const cloudTime = cloudItem.updatedAt ? new Date(cloudItem.updatedAt).getTime() : 0;
+            if (locTime > cloudTime) {
+              mergedMap.set(loc.id, { ...cloudItem, ...loc });
+            }
+          }
+        });
+        return Array.from(mergedMap.values());
+      }
+    } catch {}
+    return validCloudDocs;
+  });
   attachSync(FIRESTORE_COLLECTIONS.ACTIVITIES, LOCAL_STORAGE_KEYS.ACTIVITIES);
-  attachSync(FIRESTORE_COLLECTIONS.COMPANY_STAFF, LOCAL_STORAGE_KEYS.COMPANY_STAFF);
+  attachSync<any>(FIRESTORE_COLLECTIONS.COMPANY_STAFF, LOCAL_STORAGE_KEYS.COMPANY_STAFF, (docs) => {
+    const deletedStaffIds = getDeletedIdsFromStorage('suryaland_deleted_staff_ids_v1');
+    const validCloudDocs = docs.filter((d) => {
+      if (isObsoleteHendraRecord(d)) {
+        syncDocDelete(FIRESTORE_COLLECTIONS.COMPANY_STAFF, d.id);
+        return false;
+      }
+      return !deletedStaffIds.includes(d.id);
+    });
+
+    // Merge with local staff so locally saved staff & signatures are never overwritten by older cloud state
+    try {
+      const localRaw = localStorage.getItem(LOCAL_STORAGE_KEYS.COMPANY_STAFF);
+      const localList: any[] = localRaw ? JSON.parse(localRaw) : [];
+      if (Array.isArray(localList) && localList.length > 0) {
+        const mergedMap = new Map<string, any>();
+        validCloudDocs.forEach((d) => mergedMap.set(d.id, d));
+        localList.forEach((loc) => {
+          if (!loc || !loc.id || isObsoleteHendraRecord(loc) || deletedStaffIds.includes(loc.id)) return;
+          const cloudItem = mergedMap.get(loc.id);
+          if (!cloudItem) {
+            mergedMap.set(loc.id, loc);
+          } else {
+            const locTime = loc.updatedAt ? new Date(loc.updatedAt).getTime() : 0;
+            const cloudTime = cloudItem.updatedAt ? new Date(cloudItem.updatedAt).getTime() : 0;
+            if (locTime >= cloudTime) {
+              mergedMap.set(loc.id, {
+                ...cloudItem,
+                ...loc,
+                signatureUrl: loc.signatureUrl || cloudItem.signatureUrl,
+              });
+            }
+          }
+        });
+        return Array.from(mergedMap.values());
+      }
+    } catch {}
+    return validCloudDocs;
+  });
   attachSync(FIRESTORE_COLLECTIONS.WORK_ASSIGNMENTS, LOCAL_STORAGE_KEYS.WORK_ASSIGNMENTS);
   attachSync(FIRESTORE_COLLECTIONS.DAILY_TARGETS, LOCAL_STORAGE_KEYS.DAILY_TARGETS);
 

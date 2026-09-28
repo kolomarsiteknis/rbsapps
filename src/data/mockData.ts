@@ -213,7 +213,7 @@ export const initialDailyReports: DailyReport[] = [
     signatures: {
       supervisor: { name: 'Budi Santoso', signedAt: '2026-09-24 17:30 WIB', status: 'Signed' },
       siteManager: { name: 'Agus Wardhana', signedAt: '2026-09-24 18:05 WIB', status: 'Signed' },
-      director: { name: 'Ir. Hendra Wijaya, M.Si', signedAt: undefined, status: 'Pending' },
+      director: { name: 'Direktur Utama', signedAt: undefined, status: 'Pending' },
     },
     syncStatus: 'synced',
     createdAt: '2026-09-24T17:30:00Z',
@@ -295,7 +295,7 @@ export const initialDailyReports: DailyReport[] = [
     signatures: {
       supervisor: { name: 'Faisal Akbar', signedAt: '2026-09-24 17:00 WIB', status: 'Signed' },
       siteManager: { name: 'H. Rahmat Hidayat', signedAt: '2026-09-24 18:00 WIB', status: 'Signed' },
-      director: { name: 'Ir. Hendra Wijaya, M.Si', signedAt: '2026-09-24 20:00 WIB', status: 'Signed' },
+      director: { name: 'Direktur Utama', signedAt: '2026-09-24 20:00 WIB', status: 'Signed' },
     },
     syncStatus: 'synced',
     createdAt: '2026-09-24T17:00:00Z',
@@ -376,7 +376,7 @@ export const initialDailyReports: DailyReport[] = [
     signatures: {
       supervisor: { name: 'Budi Santoso', signedAt: '2026-09-23 17:30 WIB', status: 'Signed' },
       siteManager: { name: 'Bambang Suryono', signedAt: '2026-09-23 18:30 WIB', status: 'Signed' },
-      director: { name: 'Ir. Hendra Wijaya, M.Si', signedAt: '2026-09-23 21:00 WIB', status: 'Signed' },
+      director: { name: 'Direktur Utama', signedAt: '2026-09-23 21:00 WIB', status: 'Signed' },
     },
     syncStatus: 'synced',
     createdAt: '2026-09-23T17:30:00Z',
@@ -405,7 +405,7 @@ export const initialLogisticsTransactions: LogisticsTransaction[] = [
     submittedByRole: 'supervisor',
     submittedByName: 'Budi Santoso',
     approvalStatus: 'approved',
-    approvedByDirectorName: 'Ir. Hendra Wijaya, M.Si',
+    approvedByDirectorName: 'Direktur Utama',
     approvedAt: '22/09/2026 11:30 WIB',
     notes: 'Pengiriman tangki supply PT. Pertamina Patra Niaga, tera meteran & segel tangki utuh.',
   },
@@ -429,7 +429,7 @@ export const initialLogisticsTransactions: LogisticsTransaction[] = [
     submittedByRole: 'supervisor',
     submittedByName: 'Budi Santoso',
     approvalStatus: 'approved',
-    approvedByDirectorName: 'Ir. Hendra Wijaya, M.Si',
+    approvedByDirectorName: 'Direktur Utama',
     approvedAt: '23/09/2026 13:00 WIB',
     notes: '1 Drum 200 Liter drum segel pabrik untuk jadwal servis 250 HM.',
   },
@@ -828,104 +828,94 @@ export const initialJobTitles: string[] = [
 export const initialManagedUsers: ManagedUser[] = [
   {
     id: 'user-usr-01',
-    fullName: 'Ir. Hendra Wijaya, M.Si',
-    address: 'Jl. Jenderal Sudirman No. 18, Pekanbaru, Riau',
-    whatsappNumber: '081175218899',
-    email: 'hendra.wijaya@suryaland.co.id',
+    fullName: 'Ir. Baso Suriyadi',
+    address: 'Makassar',
+    whatsappNumber: '0811420312',
+    email: 'basosuriyadi@gmail.com',
     jobTitle: 'Direktur Utama',
     userLevel: 'Superadmin',
-    username: 'DIREKTUR',
+    username: 'bosdirektur',
     password: 'bos12345',
-    employeeIdNumber: 'DIR-001',
-    signatureUrl: createSimulatedSignatureSvg('Hendra Wijaya', 'Direktur Utama'),
+    employeeIdNumber: 'RBS-DIR-001',
+    signatureUrl: createSimulatedSignatureSvg('Ir. Baso Suriyadi', 'Direktur Utama'),
     assignedClientId: 'all',
     assignedClientName: 'Semua Proyek (Owner)',
     assignedBlockCodes: ['Akses Semua Blok (Tanpa Batas)'],
     status: 'Aktif',
-    createdAt: '2026-07-01T08:00:00.000Z',
-    notes: 'Owner & Superadmin Utama Direksi PT. RBS GROUP (Akses Pemilik Tanpa Batasan)',
-  },
-  {
-    id: 'user-usr-02',
-    fullName: 'Ahmad Rizky Pratama, S.T.',
-    address: 'Mess Karyawan Camp 1, Perkebunan PT. A, Kampar, Riau',
-    whatsappNumber: '081276543210',
-    email: 'ahmad.rizky@suryaland.co.id',
-    jobTitle: 'Pengawas Lapangan',
-    userLevel: 'Pengawas',
-    username: 'PENGAWAS',
-    password: 'satu2345',
-    employeeIdNumber: 'SUP-003',
-    signatureUrl: createSimulatedSignatureSvg('Ahmad Rizky', 'Pengawas Lapangan'),
-    assignedClientId: 'client-1',
-    assignedClientName: 'PT. A',
-    assignedBlockCodes: ['BLOK AB', 'BLOK AA'],
-    status: 'Aktif',
-    createdAt: '2026-07-15T08:00:00.000Z',
-    notes: 'Pengawas Lapangan Senior Land Clearing Estate Kampar PT. A',
+    createdAt: '2026-01-01T08:00:00.000Z',
+    notes: 'Akun Resmi Direktur Utama / Owner (Superadmin)',
   },
   {
     id: 'user-usr-03',
-    fullName: 'Bambang Sugiarto, S.P.',
-    address: 'Kompleks Perumahan Sawit Mandiri Blok C-12, Siak, Riau',
-    whatsappNumber: '081388776655',
-    email: 'bambang.sugiarto@suryaland.co.id',
+    fullName: 'Andi Mujibal',
+    address: 'Makassar',
+    whatsappNumber: '08222112233',
+    email: 'andimujibal@gmail.com',
     jobTitle: 'Site Manager Operasional',
     userLevel: 'Site Manager',
-    username: 'MANAGER',
-    password: 'manager123',
-    employeeIdNumber: 'MGR-002',
-    signatureUrl: createSimulatedSignatureSvg('Bambang Sugiarto', 'Site Manager Operasional'),
+    username: 'andimujibal',
+    password: 'andi12345',
+    employeeIdNumber: 'RBS-MGR-003',
+    signatureUrl: createSimulatedSignatureSvg('Andi Mujibal', 'Site Manager Operasional'),
     assignedClientId: 'all',
     assignedClientName: 'Semua Proyek (Site Manager Operasional)',
     assignedBlockCodes: ['Akses Supervisi Semua Blok'],
     status: 'Aktif',
     createdAt: '2026-08-01T08:00:00.000Z',
-    notes: 'Site Manager Operasional Wilayah Riau & Sumatera (Otorisasi & Approval Pekerjaan Lapangan)',
-  },
-  {
-    id: 'user-usr-04',
-    fullName: 'Dedi Kurniawan',
-    address: 'Jl. Lintas Timur KM 42, Pangkalan Kerinci, Pelalawan, Riau',
-    whatsappNumber: '085265438901',
-    email: 'dedi.kurniawan@suryaland.co.id',
-    jobTitle: 'Pengawas Lapangan',
-    userLevel: 'Pengawas',
-    username: 'dedi_pengawas',
-    password: 'lapangan2026',
-    employeeIdNumber: 'SUP-004',
-    signatureUrl: createSimulatedSignatureSvg('Dedi Kurniawan', 'Pengawas Lapangan'),
-    assignedClientId: 'all',
-    assignedClientName: 'Semua Proyek',
-    assignedBlockCodes: ['Akses Semua Blok (Tanpa Batas)'],
-    status: 'Aktif',
-    createdAt: '2026-08-20T08:00:00.000Z',
-    notes: 'Pengawas Lapangan Proyek Land Clearing',
-  },
-  {
-    id: 'user-usr-05',
-    fullName: 'Ir. H. Budi Prasetyo',
-    address: 'Gedung Agro Tower Lt. 8, Jakarta / Estate Kampar, Riau',
-    whatsappNumber: '081299887711',
-    email: 'budi.prasetyo@client-a.co.id',
-    jobTitle: 'Klien / Pemilik Proyek (Monitoring Progress & Laporan)',
-    userLevel: 'Klien',
-    username: 'KLIEN',
-    password: 'klien123',
-    employeeIdNumber: 'KLN-005',
-    signatureUrl: createSimulatedSignatureSvg('Budi Prasetyo', 'Perwakilan Klien'),
-    assignedClientId: 'client-1',
-    assignedClientIds: ['client-1'],
-    assignedContractNumbers: ['045/SPK-LC/PTA/VI/2026'],
-    assignedClientName: 'PT. A - PT. AGRO PERDANA MANDIRI',
-    assignedBlockCodes: ['Blok AB (Luas: 100 Ha)', 'Blok CD (Luas: 100 Ha)'],
-    status: 'Aktif',
-    createdAt: '2026-08-25T08:00:00.000Z',
-    notes: 'Akun resmi pemantauan progres pembukaan lahan klien (Terkunci sesuai SPK)',
+    notes: 'Site Manager Operasional (Otorisasi & Approval Pekerjaan Lapangan)',
   },
 ];
 
 export const initialWorkAssignments: WorkAssignment[] = [];
+
+// Helper to compress uploaded signature images (Data URL) via Canvas so they stay under 50KB for localStorage & Firestore
+export function compressSignatureDataUrl(dataUrl: string, maxWidth = 480, maxHeight = 220): Promise<string> {
+  return new Promise((resolve) => {
+    if (!dataUrl || !dataUrl.startsWith('data:image/') || dataUrl.startsWith('data:image/svg')) {
+      resolve(dataUrl);
+      return;
+    }
+    if (typeof document === 'undefined' || typeof Image === 'undefined') {
+      resolve(dataUrl);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        let width = img.width || maxWidth;
+        let height = img.height || maxHeight;
+
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+        if (height > maxHeight) {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
+        }
+
+        canvas.width = Math.max(1, width);
+        canvas.height = Math.max(1, height);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(dataUrl);
+          return;
+        }
+        // Fill white background for JPEG/photo signatures or keep clean contrast
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const compressed = canvas.toDataURL('image/jpeg', 0.82);
+        resolve(compressed.length < dataUrl.length ? compressed : dataUrl);
+      } catch {
+        resolve(dataUrl);
+      }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
 
 // Helper to generate a crisp, scalable Company Logo SVG (Data URL)
 export function createDefaultCompanyLogoSvg(shortName: string = 'RBS', officialName: string = 'PT. RBS GROUP'): string {
@@ -1022,98 +1012,45 @@ export const initialCompanyProfile: CompanyProfile = {
 export const initialCompanyStaff: CompanyStaff[] = [
   {
     id: 'staff-1',
-    fullName: 'Ir. Hendra Wijaya, M.Si',
+    fullName: 'Ir. Baso Suriyadi',
     jobRole: 'Direktur Utama',
     staffLevel: 'Direktur',
-    employeeIdNumber: 'DIR-001',
-    email: 'hendra.wijaya@suryaland.co.id',
-    phone: '0811-7654-001',
-    address: 'Jl. Jenderal Sudirman No. 18, Pekanbaru, Riau',
-    signatureUrl: createSimulatedSignatureSvg('Hendra Wijaya', 'Direktur Utama'),
+    employeeIdNumber: 'RBS-DIR-001',
+    email: 'basosuriyadi@gmail.com',
+    phone: '0811420312',
+    address: 'Makassar',
+    signatureUrl: createSimulatedSignatureSvg('Ir. Baso Suriyadi', 'Direktur Utama'),
     status: 'Aktif',
     linkedUserId: 'user-usr-01',
-    username: 'DIREKTUR',
+    username: 'bosdirektur',
     password: 'bos12345',
     userLevel: 'Superadmin',
-    notes: 'Penanggung Jawab Tertinggi Operasional & Finansial Perusahaan',
-    createdAt: '2026-01-10T08:00:00Z',
-  },
-  {
-    id: 'staff-2',
-    fullName: 'Bambang Sugiarto, S.P.',
-    jobRole: 'Site Manager Operasional',
-    staffLevel: 'Site Manager',
-    employeeIdNumber: 'MGR-002',
-    email: 'bambang.sugiarto@suryaland.co.id',
-    phone: '0812-7654-002',
-    address: 'Kompleks Perumahan Sawit Mandiri Blok C-12, Siak, Riau',
-    signatureUrl: createSimulatedSignatureSvg('Bambang Sugiarto', 'Site Manager Operasional'),
-    status: 'Aktif',
-    linkedUserId: 'user-usr-03',
-    username: 'MANAGER',
-    password: 'manager123',
-    userLevel: 'Site Manager',
-    notes: 'Koordinator Lapangan & Verifikasi Persetujuan Harian Mandor',
-    createdAt: '2026-01-15T08:00:00Z',
+    assignedClientId: 'all',
+    assignedClientName: 'Semua Proyek (Owner)',
+    assignedBlockCodes: ['Akses Semua Blok (Tanpa Batas)'],
+    notes: 'Direktur Utama / Owner (Superadmin)',
+    createdAt: '2026-01-01T08:00:00Z',
   },
   {
     id: 'staff-3',
-    fullName: 'Ahmad Rizky Pratama, S.T.',
-    jobRole: 'Pengawas Lapangan',
-    staffLevel: 'Pengawas',
-    employeeIdNumber: 'SUP-003',
-    email: 'pengawas@suryaland.co.id',
-    phone: '0812-7654-3210',
-    address: 'Mess Karyawan Camp 1, Perkebunan PT. A, Kampar, Riau',
-    signatureUrl: createSimulatedSignatureSvg('Ahmad Rizky', 'Pengawas Lapangan'),
+    fullName: 'Andi Mujibal',
+    jobRole: 'Site Manager Operasional',
+    staffLevel: 'Site Manager',
+    employeeIdNumber: 'RBS-MGR-003',
+    email: 'andimujibal@gmail.com',
+    phone: '08222112233',
+    address: 'Makassar',
+    signatureUrl: createSimulatedSignatureSvg('Andi Mujibal', 'Site Manager Operasional'),
     status: 'Aktif',
-    linkedUserId: 'user-usr-02',
-    username: 'PENGAWAS',
-    password: 'satu2345',
-    userLevel: 'Pengawas',
-    assignedClientId: 'all',
-    assignedClientName: 'Semua Proyek',
-    assignedBlockCodes: ['Akses Semua Blok (Tanpa Batas)'],
-    notes: 'Pengawas Fisik Lahan, Alat Berat & Safety K3',
-    createdAt: '2026-02-01T08:00:00Z',
-  },
-  {
-    id: 'staff-4',
-    fullName: 'Siti Rahmawati, S.E., Ak.',
-    jobRole: 'Akuntan & Finance',
-    staffLevel: 'Akuntan & Finance',
-    employeeIdNumber: 'ACC-004',
-    email: 'finance@rbsgroup.co.id',
-    phone: '0813-9876-004',
-    address: 'Pekanbaru Kota, Riau',
-    signatureUrl: createSimulatedSignatureSvg('Siti Rahmawati', 'Finance & Accounting'),
-    status: 'Aktif',
-    username: 'siti_finance',
-    password: 'finance2026',
+    linkedUserId: 'user-usr-03',
+    username: 'andimujibal',
+    password: 'andi12345',
     userLevel: 'Site Manager',
-    notes: 'Verifikasi Biaya Operasional BBM & Rekonsiliasi Kas Lapangan',
-    createdAt: '2026-02-15T08:00:00Z',
-  },
-  {
-    id: 'staff-5',
-    fullName: 'Ir. H. Budi Prasetyo',
-    jobRole: 'PIC Perwakilan Klien',
-    staffLevel: 'Klien',
-    employeeIdNumber: 'KLN-005',
-    email: 'budi.prasetyo@client.co.id',
-    phone: '0812-9988-7711',
-    address: 'Jakarta / Estate Riau',
-    signatureUrl: createSimulatedSignatureSvg('Budi Prasetyo', 'Perwakilan Klien'),
-    status: 'Aktif',
-    linkedUserId: 'user-usr-05',
-    username: 'KLIEN',
-    password: 'klien123',
-    userLevel: 'Klien',
     assignedClientId: 'all',
-    assignedClientName: 'Semua Proyek',
-    assignedBlockCodes: ['Akses Semua Blok (Tanpa Batas)'],
-    notes: 'Akun resmi pemantauan progres pembukaan lahan klien',
-    createdAt: '2026-08-25T08:00:00.000Z',
+    assignedClientName: 'Semua Proyek (Site Manager Operasional)',
+    assignedBlockCodes: ['Akses Supervisi Semua Blok'],
+    notes: 'Site Manager Operasional (Otorisasi & Approval Pekerjaan Lapangan)',
+    createdAt: '2026-01-15T08:00:00Z',
   },
 ];
 

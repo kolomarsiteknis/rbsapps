@@ -187,8 +187,11 @@ export interface Worker {
 
 export interface StaffSupervisorAssignment {
   id?: string;
-  name: string; // e.g. "Ahmad Noor", "Dedi Kurniawan"
+  staffId?: string; // ID dari Daftar Staff (Menu Identitas Perusahaan)
+  name: string; // e.g. "Ahmad Rizky Pratama, S.T.", "Dedi Kurniawan"
   phone?: string;
+  jobRole?: string;
+  employeeIdNumber?: string;
   coverageType: 'ALL' | 'CUSTOM'; // 'ALL' = Seluruh Blok Kerja SPK, 'CUSTOM' = Blok tertentu
   assignedBlockIds: string[]; // e.g. ['blk-i33', 'blk-j31']
   assignedBlockCodes: string[]; // e.g. ['BLOK I33', 'BLOK J31']
@@ -225,9 +228,10 @@ export interface WorkAssignment {
 
   // PENUGASAN TIM KERJA (ALUR OPERASIONAL LAPANGAN)
   // A. Tim Staff (bekerja di seluruh blok kerja SPK terpilih)
+  siteManagerStaffId?: string; // ID dari Daftar Staff (Menu Identitas Perusahaan)
   siteManagerName?: string; // e.g. "Bambang Sugiarto, S.P."
   siteManagerPhone?: string;
-  supervisors?: StaffSupervisorAssignment[]; // e.g. Ahmad Noor (I33, J31, J34), Dedi Kurniawan (J35, J36)
+  supervisors?: StaffSupervisorAssignment[]; // e.g. Ahmad Rizky Pratama, S.T., Dedi Kurniawan
 
   // B. Tim Pendukung (bekerja di seluruh blok kerja SPK terpilih)
   supportTeam?: SupportTeamMemberAssignment[]; // Operator + Alat Berat, Mekanik, Logistik, Pendukung

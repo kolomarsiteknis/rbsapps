@@ -715,8 +715,11 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
           signedAt: `${date} 17:30 WIB`,
           status: 'Signed',
         },
-        siteManager: { name: 'Agus Wardhana', status: 'Pending' },
-        director: { name: 'Ir. Hendra Wijaya, M.Si', status: 'Pending' },
+        siteManager: { name: 'Bambang Sugiarto, S.P.', status: 'Pending' },
+        director: {
+          name: storageService.getCompanyStaff().find((s) => s.userLevel === 'Superadmin' || s.staffLevel === 'Direktur' || (s.jobRole || '').toLowerCase().includes('direktur'))?.fullName || 'Direktur Utama',
+          status: 'Pending',
+        },
       },
       syncStatus: isOnline ? 'synced' : 'offline_draft',
       createdAt: new Date().toISOString(),

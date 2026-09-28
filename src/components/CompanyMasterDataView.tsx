@@ -45,7 +45,7 @@ import {
   ManagedUserLevel 
 } from '../types';
 import { storageService } from '../services/storageService';
-import { createSimulatedSignatureSvg, createDefaultCompanyLogoSvg } from '../data/mockData';
+import { createSimulatedSignatureSvg, createDefaultCompanyLogoSvg, compressSignatureDataUrl } from '../data/mockData';
 import { recordUserActivity } from '../utils/activityLogger';
 
 interface CompanyMasterDataViewProps {
@@ -89,10 +89,21 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
   }, [companyProfile]);
 
   const handleProfileChange = (field: keyof CompanyProfile, value: string) => {
-    setProfileForm((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+    setProfileForm((prev) => {
+      const next: CompanyProfile = {
+        ...prev,
+        [field]: value,
+      };
+      if (field === 'address' || field === 'headOfficeAddress') {
+        next.address = value;
+        next.headOfficeAddress = value;
+      }
+      if (field === 'bankAccount' || field === 'bankAccountInfo') {
+        next.bankAccount = value;
+        next.bankAccountInfo = value;
+      }
+      return next;
+    });
   };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -101,6 +112,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
 
     if (!file.type.startsWith('image/')) {
       showToast('File harus berupa gambar (PNG, JPG, SVG, WebP)', 'error');
+      e.target.value = '';
       return;
     }
 
@@ -138,12 +150,13 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
       img.src = result;
     };
     reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   const handleResetToDefaultLogo = () => {
     const defaultSvg = createDefaultCompanyLogoSvg(
-      profileForm.shortName || 'SURYALAND',
-      profileForm.officialName || 'PT. SURYALAND GROUP'
+      profileForm.shortName || 'RBS',
+      profileForm.officialName || 'PT. RBS GROUP'
     );
     setProfileForm((prev) => ({
       ...prev,
@@ -165,10 +178,16 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
 
     setIsSavingProfile(true);
     try {
+      const resolvedAddress = profileForm.address ?? profileForm.headOfficeAddress ?? '';
+      const resolvedBank = profileForm.bankAccount ?? profileForm.bankAccountInfo ?? '';
       const payload: CompanyProfile = {
         ...profileForm,
         shortName: profileForm.shortName.trim().toUpperCase(),
         officialName: profileForm.officialName.trim(),
+        address: resolvedAddress,
+        headOfficeAddress: resolvedAddress,
+        bankAccount: resolvedBank,
+        bankAccountInfo: resolvedBank,
         updatedAt: new Date().toISOString(),
       };
 
@@ -257,7 +276,59 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
     setManagedUsers(storageService.getManagedUsers());
   };
 
-  // Canvas drawing handlers for signature
+  useEffect(() => {
+    const handleSync = () => {
+      setStaffList(storageService.getCompanyStaff());
+      setManagedUsers(storageService.getManagedUsers());
+      setWorkers(storageService.getWorkers());
+    };
+    window.addEventListener('suryaland_company_staff_sync', handleSync);
+    window.addEventListener('suryaland_workers_sync', handleSync);
+    window.addEventListener('suryaland_firestore_sync', handleSync);
+    return () => {
+      window.removeEventListener('suryaland_company_staff_sync', handleSync);
+      window.removeEventListener('suryaland_workers_sync', handleSync);
+      window.removeEventListener('suryaland_firestore_sync', handleSync);
+    };
+  }, []);
+
+  const resolveStaffUserLevel = (staff: CompanyStaff): ManagedUserLevel => {
+    const jobLower = (staff.jobRole || '').toLowerCase();
+    if (staff.userLevel === 'Superadmin' || staff.staffLevel === 'Direktur' || jobLower.includes('direktur')) {
+      return 'Superadmin';
+    }
+    if (
+      staff.userLevel === 'Site Manager' ||
+      staff.userLevel === 'Manager' ||
+      staff.staffLevel === 'Site Manager' ||
+      staff.staffLevel === 'Manager' ||
+      jobLower.includes('site manager') ||
+      jobLower.includes('manager')
+    ) {
+      return 'Site Manager';
+    }
+    if (staff.userLevel === 'Klien' || staff.staffLevel === 'Klien' || jobLower.includes('klien')) {
+      return 'Klien';
+    }
+    return 'Pengawas';
+  };
+
+  // Canvas drawing handlers for signature (scaled accurately for responsive canvas)
+  const getCanvasPoint = (
+    canvas: HTMLCanvasElement,
+    e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>
+  ) => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = rect.width > 0 ? canvas.width / rect.width : 1;
+    const scaleY = rect.height > 0 ? canvas.height / rect.height : 1;
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    return {
+      x: (clientX - rect.left) * scaleX,
+      y: (clientY - rect.top) * scaleY,
+    };
+  };
+
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -266,9 +337,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
 
     setIsDrawing(true);
     setHasDrawnOnCanvas(true);
-    const rect = canvas.getBoundingClientRect();
-    const x = 'touches' in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
-    const y = 'touches' in e ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
+    const { x, y } = getCanvasPoint(canvas, e);
 
     ctx.beginPath();
     ctx.moveTo(x, y);
@@ -285,10 +354,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const rect = canvas.getBoundingClientRect();
-    const x = 'touches' in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
-    const y = 'touches' in e ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
-
+    const { x, y } = getCanvasPoint(canvas, e);
     ctx.lineTo(x, y);
     ctx.stroke();
   };
@@ -305,13 +371,14 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
 
   const clearCanvas = () => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      setHasDrawnOnCanvas(false);
-      setStaffFormData((prev) => ({ ...prev, signatureUrl: '' }));
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
     }
+    setHasDrawnOnCanvas(false);
+    setStaffFormData((prev) => ({ ...prev, signatureUrl: '' }));
   };
 
   const handleApplyPresetSignature = () => {
@@ -330,6 +397,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
     const num = Math.floor(100 + Math.random() * 900);
     const generated = `${pfx}@${num}`;
     setStaffFormData((prev) => ({ ...prev, password: generated }));
+    setShowModalPassword(true);
     showToast(`Password baru di-generate: ${generated}`, 'info');
   };
 
@@ -373,19 +441,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
              (staffNameLower && u.fullName && u.fullName.trim().toLowerCase() === staffNameLower)
     );
 
-    let resolvedLevel: ManagedUserLevel = 'Pengawas';
-    const staffJobLower = (staff.jobRole || '').toLowerCase();
-    if (staff.userLevel === 'Superadmin' || staff.userLevel === 'Site Manager' || staff.userLevel === 'Pengawas' || staff.userLevel === 'Klien') {
-      resolvedLevel = staff.userLevel;
-    } else if (matchedUser?.userLevel) {
-      resolvedLevel = (matchedUser.userLevel === 'Manager' ? 'Site Manager' : matchedUser.userLevel) as ManagedUserLevel;
-    } else if (staff.staffLevel === 'Direktur' || staffJobLower.includes('direktur')) {
-      resolvedLevel = 'Superadmin';
-    } else if (staff.staffLevel === 'Site Manager' || staff.staffLevel === 'Manager' || staffJobLower.includes('site manager') || staffJobLower.includes('manager')) {
-      resolvedLevel = 'Site Manager';
-    } else if (staff.staffLevel === 'Klien' || staffJobLower.includes('klien')) {
-      resolvedLevel = 'Klien';
-    }
+    const resolvedLevel = resolveStaffUserLevel(staff);
 
     setStaffFormData({
       fullName: staff.fullName || '',
@@ -406,6 +462,18 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
       createdAt: staff.createdAt || matchedUser?.createdAt,
     });
     setIsStaffModalOpen(true);
+  };
+
+  const handleToggleStaffStatus = (staff: CompanyStaff) => {
+    const nextStatus: 'Aktif' | 'Nonaktif' = staff.status === 'Aktif' ? 'Nonaktif' : 'Aktif';
+    const updated: CompanyStaff = {
+      ...staff,
+      status: nextStatus,
+      updatedAt: new Date().toISOString(),
+    };
+    storageService.saveCompanyStaff(updated);
+    reloadStaffAndUsers();
+    showToast(`Status akun ${staff.fullName} (@${staff.username}) diubah menjadi ${nextStatus}.`, 'info');
   };
 
   const handleSaveStaff = (e: React.FormEvent) => {
@@ -434,14 +502,32 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
     }
 
     const staffId = editingStaffId || `staff-${Date.now()}`;
+    const existingStaff = editingStaffId ? staffList.find((s) => s.id === editingStaffId) : undefined;
+    const prevNameLower = (existingStaff?.fullName || '').trim().toLowerCase();
+    const prevUserLower = (existingStaff?.username || '').trim().toLowerCase();
     const formFullNameLower = (staffFormData.fullName || '').trim().toLowerCase();
-    const linkedUserId = editingStaffId
-      ? (staffList.find((s) => s.id === editingStaffId)?.linkedUserId || managedUsers.find((u) => u.fullName && formFullNameLower && u.fullName.trim().toLowerCase() === formFullNameLower)?.id || `user-usr-${staffId.replace(/^staff-/, '')}`)
-      : `user-usr-${staffId.replace(/^staff-/, '')}`;
 
-    // Duplicate username check
+    const matchedExistingUser = editingStaffId
+      ? managedUsers.find(
+          (u) =>
+            (existingStaff?.linkedUserId && u.id === existingStaff.linkedUserId) ||
+            u.id === editingStaffId.replace(/^staff-from-/, '') ||
+            u.id === `user-usr-${editingStaffId.replace(/^staff-/, '')}` ||
+            (prevUserLower && u.username && u.username.trim().toLowerCase() === prevUserLower) ||
+            (prevNameLower && u.fullName && u.fullName.trim().toLowerCase() === prevNameLower) ||
+            (formFullNameLower && u.fullName && u.fullName.trim().toLowerCase() === formFullNameLower)
+        )
+      : undefined;
+
+    const linkedUserId = matchedExistingUser?.id || existingStaff?.linkedUserId || `user-usr-${staffId.replace(/^staff-/, '')}`;
+
+    // Duplicate username check (ignore current user being edited)
     const duplicateUser = managedUsers.find(
-      (u) => u.username && u.username.trim().toLowerCase() === cleanUsername && u.id !== linkedUserId
+      (u) =>
+        u.username &&
+        u.username.trim().toLowerCase() === cleanUsername &&
+        u.id !== linkedUserId &&
+        (!prevUserLower || u.username.trim().toLowerCase() !== prevUserLower)
     );
     if (duplicateUser) {
       showToast(`Username "${cleanUsername}" sudah digunakan oleh ${duplicateUser.fullName}. Silakan buat username lain.`, 'error');
@@ -455,7 +541,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
       ? 'Semua Proyek (Owner)' 
       : isSiteMgr 
       ? 'Semua Proyek (Site Manager Operasional)' 
-      : (selectedClient ? selectedClient.name : 'Semua Proyek');
+      : (selectedClient ? `${selectedClient.contractNumber ? `${selectedClient.contractNumber} - ` : ''}${selectedClient.name}` : 'Semua Proyek');
 
     const signatureFinal = staffFormData.signatureUrl || createSimulatedSignatureSvg(staffFormData.fullName, staffFormData.jobRole);
 
@@ -500,70 +586,23 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
   };
 
   const handleDeleteStaffClick = (staff: CompanyStaff) => {
-    // Validasi akun aktif sendiri
-    const isSelf = 
-      Boolean(staff.username && authUser?.username && staff.username.trim().toLowerCase() === authUser.username.trim().toLowerCase()) ||
-      Boolean(staff.fullName && authUser?.displayName && staff.fullName.trim().toLowerCase() === authUser.displayName.trim().toLowerCase()) ||
-      Boolean(authUser?.id && (staff.id === authUser.id || staff.linkedUserId === authUser.id));
-
-    if (isSelf) {
-      showToast('Akses Ditolak: Anda tidak dapat menghapus akun Anda sendiri yang sedang aktif login.', 'error');
-      return;
-    }
-
-    if (staff.username && staff.username.toLowerCase() === 'direktur') {
-      showToast('Akun Direktur Utama aktif tidak dapat dihapus demi keamanan sistem.', 'warning');
-      return;
-    }
-
-    // Konfirmasi window.confirm sebelum eksekusi penghapusan di UI
-    const confirmed = window.confirm(
-      `Apakah Anda yakin ingin menghapus data staff "${staff.fullName}" (@${staff.username || staff.jobRole})?\n\nData identitas, kredensial login, dan spesimen TTD digital akan dihapus permanen.`
-    );
-    if (!confirmed) {
-      return;
-    }
-
-    const success = storageService.deleteStaff(staff.id, authUser);
-    if (!success) {
-      showToast('Gagal menghapus staff: Anda tidak dapat menghapus akun Anda sendiri yang sedang login.', 'error');
-      return;
-    }
-
-    reloadStaffAndUsers();
-    setStaffToDelete(null);
-
-    recordUserActivity({
-      userId: authUser?.id,
-      userName: authUser?.displayName || 'Direktur',
-      userRole: 'director',
-      actionCategory: 'USER_MANAGEMENT',
-      actionTitle: `Hapus Staff & Akun: ${staff.fullName}`,
-      actionDescription: `Menghapus data staff ${staff.fullName} (@${staff.username || staff.jobRole}) beserta kredensial login & spesimen TTD.`,
-      targetEntity: staff.fullName,
-    });
-
-    showToast(`Data staff & akun ${staff.fullName} berhasil dihapus!`, 'success');
+    // Buka modal konfirmasi hapus staff (tanpa window.confirm yang diblokir di iframe)
+    setStaffToDelete(staff);
   };
 
   const executeDeleteStaff = () => {
     if (!staffToDelete) return;
     const target = staffToDelete;
 
-    // Konfirmasi window.confirm sebelum eksekusi penghapusan di UI
-    if (!window.confirm(`Konfirmasi akhir: Hapus data staff "${target.fullName}" (@${target.username || target.jobRole}) secara permanen?`)) {
-      return;
-    }
+    storageService.deleteStaff(target.id, authUser);
 
-    const success = storageService.deleteStaff(target.id, authUser);
-    if (!success) {
-      showToast('Gagal menghapus: Anda tidak dapat menghapus akun Anda sendiri yang sedang login.', 'error');
-      setStaffToDelete(null);
-      return;
-    }
-
+    setStaffList((prev) => prev.filter((s) => s.id !== target.id));
     reloadStaffAndUsers();
     setStaffToDelete(null);
+    if (editingStaffId === target.id) {
+      setIsStaffModalOpen(false);
+      setEditingStaffId(null);
+    }
 
     recordUserActivity({
       userId: authUser?.id,
@@ -575,22 +614,41 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
       targetEntity: target.fullName,
     });
 
-    showToast(`Data staff & akun ${target.fullName} berhasil dihapus!`, 'success');
+    showToast(`Data staff & akun ${target.fullName} (@${target.username || target.jobRole}) berhasil dihapus!`, 'success');
   };
 
-  const handleCopyStaffCredentials = (staff: CompanyStaff) => {
+  const handleCopyStaffCredentials = async (staff: CompanyStaff) => {
     const textToCopy = `*KREDENSIAL AKSES APLIKASI LAND CLEARING*\n` +
       `Perusahaan: ${companyProfile.officialName} (${companyProfile.shortName})\n\n` +
       `👤 Nama Lengkap: ${staff.fullName}\n` +
       `💳 NIK / NIP: ${staff.employeeIdNumber || '-'}\n` +
       `💼 Jabatan: ${staff.jobRole}\n` +
-      `🛡️ Level Hak Akses: ${staff.userLevel || 'Pengawas'}\n` +
+      `🛡️ Level Hak Akses: ${resolveStaffUserLevel(staff)}\n` +
       `🔑 Username Login: ${staff.username || '-'}\n` +
       `🔒 Password: ${staff.password || '-'}\n` +
       `📍 Penempatan Proyek: ${staff.assignedClientName || 'Semua Proyek'}\n` +
       `✍️ Status TTD Digital: ${staff.signatureUrl ? 'Terdaftar Resmi' : 'Belum Ada'}\n\n` +
       `Gunakan username dan password di atas untuk masuk ke sistem aplikasi ${companyProfile.shortName} APPS.`;
-    navigator.clipboard.writeText(textToCopy);
+
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(textToCopy);
+      } else {
+        throw new Error('Clipboard API unavailable');
+      }
+    } catch {
+      const textarea = document.createElement('textarea');
+      textarea.value = textToCopy;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand('copy');
+      } catch {}
+      document.body.removeChild(textarea);
+    }
+
     setCopiedStaffId(staff.id);
     showToast(`Kredensial akun ${staff.fullName} (@${staff.username}) berhasil disalin ke clipboard!`, 'success');
     setTimeout(() => setCopiedStaffId(null), 3000);
@@ -1049,7 +1107,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                     <textarea
                       rows={2}
                       placeholder="Alamat lengkap kantor..."
-                      value={profileForm.address || ''}
+                      value={profileForm.address ?? profileForm.headOfficeAddress ?? ''}
                       onChange={(e) => handleProfileChange('address', e.target.value)}
                       className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                     />
@@ -1106,7 +1164,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                     <input
                       type="text"
                       placeholder="Bank Mandiri / BCA: 123-xxx-xxxx"
-                      value={profileForm.bankAccount || ''}
+                      value={profileForm.bankAccount ?? profileForm.bankAccountInfo ?? ''}
                       onChange={(e) => handleProfileChange('bankAccount', e.target.value)}
                       className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                     />
@@ -1137,27 +1195,28 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
         // Filter logic
         const q = (staffSearchQuery || '').toLowerCase();
         const filteredStaff = staffList.filter((staff) => {
+          const staffLevel = resolveStaffUserLevel(staff);
           const matchSearch =
+            !q ||
             (staff.fullName && staff.fullName.toLowerCase().includes(q)) ||
             (staff.employeeIdNumber && staff.employeeIdNumber.toLowerCase().includes(q)) ||
             (staff.username && staff.username.toLowerCase().includes(q)) ||
             (staff.phone && staff.phone.includes(q)) ||
             (staff.email && staff.email.toLowerCase().includes(q)) ||
             (staff.jobRole && staff.jobRole.toLowerCase().includes(q)) ||
-            (staff.userLevel && staff.userLevel.toLowerCase().includes(q)) ||
+            (staffLevel && staffLevel.toLowerCase().includes(q)) ||
             (staff.assignedClientName && staff.assignedClientName.toLowerCase().includes(q));
 
-          const staffLevel = staff.userLevel || (staff.staffLevel === 'Direktur' ? 'Superadmin' : staff.staffLevel === 'Manager' ? 'Site Manager' : 'Pengawas');
           const matchLevel = staffFilterLevel === 'ALL' || staffLevel === staffFilterLevel;
           const matchStatus = staffFilterStatus === 'ALL' || staff.status === staffFilterStatus;
 
           return matchSearch && matchLevel && matchStatus;
         });
 
-        const countSuperadmin = staffList.filter(s => s.userLevel === 'Superadmin' || (s.jobRole && s.jobRole.toLowerCase().includes('direktur'))).length;
-        const countSiteManager = staffList.filter(s => s.userLevel === 'Site Manager' || s.userLevel === 'Manager' || (s.jobRole && (s.jobRole.toLowerCase().includes('site manager') || s.jobRole.toLowerCase().includes('manager')))).length;
-        const countPengawas = staffList.filter(s => s.userLevel === 'Pengawas' || (!s.userLevel && s.jobRole && s.jobRole.toLowerCase().includes('pengawas'))).length;
-        const countKlien = staffList.filter(s => s.userLevel === 'Klien' || (s.jobRole && s.jobRole.toLowerCase().includes('klien'))).length;
+        const countSuperadmin = staffList.filter((s) => resolveStaffUserLevel(s) === 'Superadmin').length;
+        const countSiteManager = staffList.filter((s) => resolveStaffUserLevel(s) === 'Site Manager').length;
+        const countPengawas = staffList.filter((s) => resolveStaffUserLevel(s) === 'Pengawas').length;
+        const countKlien = staffList.filter((s) => resolveStaffUserLevel(s) === 'Klien').length;
 
         return (
           <div className="space-y-6">
@@ -1181,23 +1240,63 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                   </div>
                 </div>
 
-                {/* Level Distribution Pills */}
+                {/* Level Distribution Pills (Interactive Filter Buttons) */}
                 <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] font-bold">
-                  <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 border border-slate-200">
-                    Total Staff: <strong className="text-slate-900">{staffList.length}</strong>
-                  </span>
-                  <span className="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-800 border border-rose-200">
+                  <button
+                    type="button"
+                    onClick={() => setStaffFilterLevel('ALL')}
+                    className={`px-2.5 py-1 rounded-lg border transition cursor-pointer ${
+                      staffFilterLevel === 'ALL'
+                        ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                        : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+                    }`}
+                  >
+                    Total Staff: <strong>{staffList.length}</strong>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStaffFilterLevel(staffFilterLevel === 'Superadmin' ? 'ALL' : 'Superadmin')}
+                    className={`px-2.5 py-1 rounded-lg border transition cursor-pointer ${
+                      staffFilterLevel === 'Superadmin'
+                        ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
+                        : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100'
+                    }`}
+                  >
                     Superadmin: <strong>{countSuperadmin}</strong>
-                  </span>
-                  <span className="px-2.5 py-1 rounded-lg bg-sky-50 text-sky-800 border border-sky-200">
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStaffFilterLevel(staffFilterLevel === 'Site Manager' ? 'ALL' : 'Site Manager')}
+                    className={`px-2.5 py-1 rounded-lg border transition cursor-pointer ${
+                      staffFilterLevel === 'Site Manager'
+                        ? 'bg-sky-600 text-white border-sky-600 shadow-xs'
+                        : 'bg-sky-50 text-sky-800 border-sky-200 hover:bg-sky-100'
+                    }`}
+                  >
                     Site Manager: <strong>{countSiteManager}</strong>
-                  </span>
-                  <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200">
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStaffFilterLevel(staffFilterLevel === 'Pengawas' ? 'ALL' : 'Pengawas')}
+                    className={`px-2.5 py-1 rounded-lg border transition cursor-pointer ${
+                      staffFilterLevel === 'Pengawas'
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                        : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                    }`}
+                  >
                     Pengawas: <strong>{countPengawas}</strong>
-                  </span>
-                  <span className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-900 border border-amber-200">
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStaffFilterLevel(staffFilterLevel === 'Klien' ? 'ALL' : 'Klien')}
+                    className={`px-2.5 py-1 rounded-lg border transition cursor-pointer ${
+                      staffFilterLevel === 'Klien'
+                        ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-xs'
+                        : 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100'
+                    }`}
+                  >
                     Klien: <strong>{countKlien}</strong>
-                  </span>
+                  </button>
                 </div>
               </div>
 
@@ -1222,8 +1321,18 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                   placeholder="Cari staff (nama lengkap, NIK, username login, telepon/WA, email, jabatan)..."
                   value={staffSearchQuery}
                   onChange={(e) => setStaffSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 font-medium"
+                  className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 font-medium"
                 />
+                {staffSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setStaffSearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
+                    title="Hapus pencarian"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
 
               <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
@@ -1231,7 +1340,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                 <select
                   value={staffFilterLevel}
                   onChange={(e) => setStaffFilterLevel(e.target.value)}
-                  className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:outline-none"
+                  className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:outline-none cursor-pointer"
                 >
                   <option value="ALL">Semua Level Hak Akses</option>
                   <option value="Superadmin">Superadmin (Direktur)</option>
@@ -1244,12 +1353,27 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                 <select
                   value={staffFilterStatus}
                   onChange={(e) => setStaffFilterStatus(e.target.value)}
-                  className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:bg-white focus:outline-none"
+                  className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:bg-white focus:outline-none cursor-pointer"
                 >
                   <option value="ALL">Semua Status</option>
                   <option value="Aktif">Aktif</option>
                   <option value="Nonaktif">Nonaktif</option>
                 </select>
+
+                {(staffSearchQuery || staffFilterLevel !== 'ALL' || staffFilterStatus !== 'ALL') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStaffSearchQuery('');
+                      setStaffFilterLevel('ALL');
+                      setStaffFilterStatus('ALL');
+                    }}
+                    className="px-2.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer"
+                    title="Reset Filter"
+                  >
+                    Reset
+                  </button>
+                )}
 
                 {/* Grid / Table View Switcher */}
                 <div className="flex border border-slate-200 rounded-xl overflow-hidden p-0.5 bg-slate-100">
@@ -1282,7 +1406,8 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                 {filteredStaff.map((staff) => {
                   const isPwdVisible = visiblePasswords[staff.id] || false;
-                  const userLevel = staff.userLevel || (staff.staffLevel === 'Direktur' ? 'Superadmin' : staff.staffLevel === 'Manager' ? 'Site Manager' : 'Pengawas');
+                  const userLevel = resolveStaffUserLevel(staff);
+                  const isProtectedRoot = false;
 
                   const levelBadgeStyle =
                     userLevel === 'Superadmin'
@@ -1301,15 +1426,22 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                       <div className="space-y-3.5">
                         {/* Header: Level Badge & Action Buttons */}
                         <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <span className={`px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border ${levelBadgeStyle}`}>
                               {userLevel}
                             </span>
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              staff.status === 'Aktif' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
-                            }`}>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleStaffStatus(staff)}
+                              title="Klik untuk mengubah status Aktif / Nonaktif"
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition cursor-pointer border ${
+                                staff.status === 'Aktif'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                  : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'
+                              }`}
+                            >
                               ● {staff.status}
-                            </span>
+                            </button>
                           </div>
 
                           <div className="flex items-center gap-1">
@@ -1332,8 +1464,12 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                             <button
                               type="button"
                               onClick={() => handleDeleteStaffClick(staff)}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                              title="Hapus Staff & Akun"
+                              className={`p-1.5 rounded-lg transition cursor-pointer ${
+                                isProtectedRoot
+                                  ? 'text-slate-300 hover:text-rose-400 hover:bg-rose-50/50'
+                                  : 'text-rose-500 hover:text-rose-700 hover:bg-rose-50'
+                              }`}
+                              title={isProtectedRoot ? 'Akun Direktur Utama Aktif (Diproteksi Sistem)' : 'Hapus Staff & Akun'}
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -1431,24 +1567,39 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                       </div>
 
                       {/* Footer Actions */}
-                      <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                      <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-1.5">
                         <button
                           type="button"
                           onClick={() => handleCopyStaffCredentials(staff)}
-                          className="px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 font-bold text-[10px] rounded-lg flex items-center gap-1 transition cursor-pointer"
+                          className="px-2.5 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 font-bold text-[10px] rounded-lg flex items-center gap-1 transition cursor-pointer"
                         >
-                          <Copy className="w-3 h-3" />
-                          <span>Salin Kredensial WA</span>
+                          {copiedStaffId === staff.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                          <span>{copiedStaffId === staff.id ? 'Tersalin' : 'Salin WA'}</span>
                         </button>
 
-                        <button
-                          type="button"
-                          onClick={() => handleOpenEditStaff(staff)}
-                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] rounded-lg flex items-center gap-1 transition cursor-pointer"
-                        >
-                          <Edit3 className="w-3 h-3" />
-                          <span>Edit Data</span>
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditStaff(staff)}
+                            className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] rounded-lg flex items-center gap-1 transition cursor-pointer"
+                          >
+                            <Edit3 className="w-3 h-3" />
+                            <span>Edit Data</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteStaffClick(staff)}
+                            className={`px-2.5 py-1.5 font-bold text-[10px] rounded-lg flex items-center gap-1 transition cursor-pointer border ${
+                              isProtectedRoot
+                                ? 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-rose-50 hover:text-rose-500'
+                                : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200'
+                            }`}
+                            title={isProtectedRoot ? 'Akun Direktur Utama Aktif (Diproteksi)' : 'Hapus Staff & Akun'}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>Hapus</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -1474,7 +1625,8 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                     <tbody className="divide-y divide-slate-100 text-slate-700">
                       {filteredStaff.map((staff) => {
                         const isPwdVisible = visiblePasswords[staff.id] || false;
-                        const userLevel = staff.userLevel || (staff.staffLevel === 'Direktur' ? 'Superadmin' : staff.staffLevel === 'Manager' ? 'Site Manager' : 'Pengawas');
+                        const userLevel = resolveStaffUserLevel(staff);
+                        const isProtectedRoot = false;
 
                         const levelBadgeStyle =
                           userLevel === 'Superadmin'
@@ -1505,6 +1657,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                                   type="button"
                                   onClick={() => setVisiblePasswords((prev) => ({ ...prev, [staff.id]: !prev[staff.id] }))}
                                   className="text-slate-400 hover:text-slate-700 cursor-pointer"
+                                  title={isPwdVisible ? 'Sembunyikan' : 'Lihat Sandi'}
                                 >
                                   {isPwdVisible ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
                                 </button>
@@ -1529,18 +1682,25 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                               <div className="text-[10px] text-slate-400 truncate max-w-[140px]">{staff.email || '-'}</div>
                             </td>
                             <td className="py-3 px-4">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                staff.status === 'Aktif' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
-                              }`}>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleStaffStatus(staff)}
+                                title="Klik untuk mengubah status Aktif / Nonaktif"
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition cursor-pointer border ${
+                                  staff.status === 'Aktif'
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                    : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'
+                                }`}
+                              >
                                 {staff.status}
-                              </span>
+                              </button>
                             </td>
                             <td className="py-3 px-4 text-right">
                               <div className="flex items-center justify-end gap-1">
                                 <button
                                   type="button"
                                   onClick={() => handleCopyStaffCredentials(staff)}
-                                  className="p-1.5 text-slate-400 hover:text-sky-600 rounded cursor-pointer"
+                                  className="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-lg cursor-pointer transition"
                                   title="Salin Kredensial WA"
                                 >
                                   {copiedStaffId === staff.id ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
@@ -1548,7 +1708,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => handleOpenEditStaff(staff)}
-                                  className="p-1.5 text-slate-400 hover:text-amber-600 rounded cursor-pointer"
+                                  className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg cursor-pointer transition"
                                   title="Edit Staff & Akun"
                                 >
                                   <Edit3 className="w-3.5 h-3.5" />
@@ -1556,8 +1716,12 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteStaffClick(staff)}
-                                  className="p-1.5 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
-                                  title="Hapus Staff & Akun"
+                                  className={`p-1.5 rounded-lg cursor-pointer transition ${
+                                    isProtectedRoot
+                                      ? 'text-slate-300 hover:text-rose-400'
+                                      : 'text-rose-500 hover:text-rose-700 hover:bg-rose-50'
+                                  }`}
+                                  title={isProtectedRoot ? 'Akun Direktur Utama Aktif (Diproteksi)' : 'Hapus Staff & Akun'}
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
@@ -1808,7 +1972,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                     <input
                       type="text"
                       required
-                      placeholder="Contoh: Ir. Hendra Wijaya, M.Si atau Bambang Sugiarto, S.P."
+                      placeholder="Contoh: Bambang Sugiarto, S.P. atau Ahmad Rizky Pratama, S.T."
                       value={staffFormData.fullName}
                       onChange={(e) => {
                         const val = e.target.value;
@@ -1951,6 +2115,46 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                     >
                       <option value="Aktif">🟢 Aktif (Dapat Login ke Sistem)</option>
                       <option value="Nonaktif">🔴 Nonaktif (Akses Dikunci Sementara)</option>
+                    </select>
+                  </div>
+
+                  {/* Penugasan Proyek / Klien SPK */}
+                  <div className="sm:col-span-2">
+                    <label className="block font-bold text-slate-800 mb-1">
+                      Penugasan Proyek / Klien SPK *
+                    </label>
+                    <select
+                      value={staffFormData.assignedClientId || 'all'}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const foundClient = clients.find((c) => c.id === val);
+                        setStaffFormData((prev) => ({
+                          ...prev,
+                          assignedClientId: val,
+                          assignedClientName:
+                            val === 'all'
+                              ? prev.userLevel === 'Superadmin'
+                                ? 'Semua Proyek (Owner)'
+                                : prev.userLevel === 'Site Manager'
+                                ? 'Semua Proyek (Site Manager Operasional)'
+                                : 'Semua Proyek'
+                              : foundClient?.name || 'Semua Proyek',
+                          assignedBlockCodes:
+                            val === 'all'
+                              ? ['Akses Semua Blok (Tanpa Batas)']
+                              : foundClient?.contractNumber
+                              ? [foundClient.contractNumber]
+                              : [],
+                        }));
+                      }}
+                      className="w-full px-3.5 py-2.5 bg-white border border-sky-300 rounded-xl font-bold text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 cursor-pointer"
+                    >
+                      <option value="all">🌐 Akses Semua Proyek / Semua Klien SPK</option>
+                      {clients.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          🏢 {c.name} {c.contractNumber ? `(SPK: ${c.contractNumber})` : ''}
+                        </option>
+                      ))}
                     </select>
                   </div>
 
@@ -2100,11 +2304,14 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                           const file = e.target.files?.[0];
                           if (!file) return;
                           const r = new FileReader();
-                          r.onload = (ev) => {
-                            setStaffFormData((prev) => ({ ...prev, signatureUrl: ev.target?.result as string }));
-                            showToast('Spesimen tanda tangan berhasil diupload.', 'success');
+                          r.onload = async (ev) => {
+                            const rawDataUrl = ev.target?.result as string;
+                            const compressed = await compressSignatureDataUrl(rawDataUrl);
+                            setStaffFormData((prev) => ({ ...prev, signatureUrl: compressed }));
+                            showToast('Spesimen tanda tangan berhasil diupload & dioptimalkan.', 'success');
                           };
                           r.readAsDataURL(file);
+                          e.target.value = '';
                         }}
                       />
                     </label>
@@ -2113,16 +2320,28 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
 
                 {/* Preview TTD Box */}
                 {staffFormData.signatureUrl && (
-                  <div className="p-3 bg-white rounded-xl border border-slate-200 flex items-center justify-between">
+                  <div className="p-3 bg-white rounded-xl border border-slate-200 flex items-center justify-between gap-3">
                     <div>
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                         Preview Tanda Tangan Resmi Terpasang:
                       </span>
-                      <span className="text-[11px] font-semibold text-slate-700">
+                      <span className="text-[11px] font-semibold text-slate-700 block">
                         {staffFormData.fullName || 'Staff'} ({staffFormData.jobRole || 'Jabatan'})
                       </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          clearCanvas();
+                          setStaffFormData((prev) => ({ ...prev, signatureUrl: '' }));
+                          showToast('Spesimen tanda tangan dihapus dari form.', 'success');
+                        }}
+                        className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 hover:text-rose-700 hover:underline cursor-pointer"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>Hapus / Reset TTD</span>
+                      </button>
                     </div>
-                    <div className="h-14 w-40 bg-slate-50 rounded-lg border border-slate-200 p-1 flex items-center justify-center overflow-hidden">
+                    <div className="h-14 w-40 bg-slate-50 rounded-lg border border-slate-200 p-1 flex items-center justify-center overflow-hidden shrink-0">
                       <img src={staffFormData.signatureUrl} alt="Preview TTD" className="max-h-full max-w-full object-contain" />
                     </div>
                   </div>
@@ -2142,21 +2361,41 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
               </div>
 
               {/* Modal Actions */}
-              <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsStaffModalOpen(false)}
-                  className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl cursor-pointer transition text-xs"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl shadow-md cursor-pointer transition flex items-center gap-2 text-xs"
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Simpan Data Staff & Akun Login</span>
-                </button>
+              <div className="pt-4 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  {editingStaffId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = staffList.find((s) => s.id === editingStaffId);
+                        if (target) {
+                          setIsStaffModalOpen(false);
+                          handleDeleteStaffClick(target);
+                        }
+                      }}
+                      className="px-4 py-2.5 bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white border border-rose-200 font-bold rounded-xl cursor-pointer transition flex items-center gap-1.5 text-xs"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Hapus Staff Ini</span>
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-3 ml-auto">
+                  <button
+                    type="button"
+                    onClick={() => setIsStaffModalOpen(false)}
+                    className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl cursor-pointer transition text-xs"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl shadow-md cursor-pointer transition flex items-center gap-2 text-xs"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Simpan Data Staff & Akun Login</span>
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -2266,6 +2505,37 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                     </button>
                   </div>
                 )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Penugasan SPK / Klien</label>
+                  <select
+                    value={workerForm.assignedClientId || ''}
+                    onChange={(e) => setWorkerForm({ ...workerForm, assignedClientId: e.target.value })}
+                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  >
+                    <option value="">Umum / Stand-by Pool</option>
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Status Kehadiran</label>
+                  <select
+                    value={workerForm.status || 'Hadir'}
+                    onChange={(e) => setWorkerForm({ ...workerForm, status: e.target.value as any })}
+                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  >
+                    <option value="Hadir">🟢 Hadir / Aktif</option>
+                    <option value="Izin">🟡 Izin</option>
+                    <option value="Cuti">🔴 Cuti / Off</option>
+                  </select>
+                </div>
               </div>
 
               <div>

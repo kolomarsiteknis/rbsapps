@@ -65,7 +65,7 @@ export const MasterDataView: React.FC = () => {
   const [workAssignments, setWorkAssignments] = useState<WorkAssignment[]>(() => storageService.getWorkAssignments());
   const [companyStaffList, setCompanyStaffList] = useState<CompanyStaff[]>(() => storageService.getCompanyStaff());
 
-  // Real-time synchronization listener for master data
+  // Real-time synchronization listener for master data & company staff
   React.useEffect(() => {
     const handleSync = () => {
       setClients(storageService.getClients());
@@ -74,11 +74,14 @@ export const MasterDataView: React.FC = () => {
       setWorkers(storageService.getWorkers());
       setWorkAssignments(storageService.getWorkAssignments());
       setDailyTargets(storageService.getDailyTargets());
+      setCompanyStaffList(storageService.getCompanyStaff());
     };
     window.addEventListener('suryaland_master_sync', handleSync);
+    window.addEventListener('suryaland_company_staff_sync', handleSync);
     window.addEventListener('suryaland_firestore_sync', handleSync);
     return () => {
       window.removeEventListener('suryaland_master_sync', handleSync);
+      window.removeEventListener('suryaland_company_staff_sync', handleSync);
       window.removeEventListener('suryaland_firestore_sync', handleSync);
     };
   }, []);
@@ -977,6 +980,7 @@ export const MasterDataView: React.FC = () => {
     notes: string; // Catatan / Instruksi Kerja (Opsional)
 
     // A. TIM STAFF (bekerja diseluruh blok kerja SPK terpilih)
+    siteManagerStaffId?: string;
     siteManagerName: string;
     siteManagerPhone: string;
     supervisors: StaffSupervisorAssignment[];
@@ -1155,17 +1159,28 @@ export const MasterDataView: React.FC = () => {
     const generatedNo = storageService.generateAssignmentNumber(targetClient, todayStr, workAssignments);
     const availableBlocks = blocks.filter((b) => b.clientId === initialClientId);
 
+    const defaultSmStaff =
+      currentStaffList.find(
+        (s) =>
+          s.status === 'Aktif' &&
+          (s.userLevel === 'Site Manager' ||
+            s.staffLevel === 'Site Manager' ||
+            (s.jobRole || '').toLowerCase().includes('site manager'))
+      ) || null;
+
     setAssignmentForm({
       assignmentNumber: generatedNo,
       clientId: initialClientId,
       assignedDate: todayStr,
       status: 'Aktif',
       notes: '',
-      siteManagerName: '',
-      siteManagerPhone: '',
+      siteManagerStaffId: defaultSmStaff?.id || undefined,
+      siteManagerName: defaultSmStaff?.fullName || '',
+      siteManagerPhone: defaultSmStaff?.phone || '',
       supervisors: [
         {
           id: `spv-${Date.now()}-1`,
+          staffId: undefined,
           name: '',
           phone: '',
           coverageType: 'ALL',
@@ -1181,19 +1196,51 @@ export const MasterDataView: React.FC = () => {
   const handleOpenEditAssignment = (asg: WorkAssignment) => {
     setEditingAssignmentId(asg.id);
     setManualWorkerInputMode({});
+    const currentStaffList = storageService.getCompanyStaff();
+    setCompanyStaffList(currentStaffList);
     setWorkers(storageService.getWorkers());
     setEquipments(storageService.getEquipments());
     const clientBlocks = blocks.filter((b) => b.clientId === asg.clientId);
 
+    const matchedSm = currentStaffList.find(
+      (s) =>
+        (asg.siteManagerStaffId && s.id === asg.siteManagerStaffId) ||
+        (asg.siteManagerName && s.fullName.trim().toLowerCase() === asg.siteManagerName.trim().toLowerCase())
+    );
+
     let sups: StaffSupervisorAssignment[] = [];
     if (asg.supervisors && asg.supervisors.length > 0) {
-      sups = asg.supervisors;
+      sups = asg.supervisors.map((spv) => {
+        const matchedSpv = currentStaffList.find(
+          (s) =>
+            (spv.staffId && s.id === spv.staffId) ||
+            (spv.name && s.fullName.trim().toLowerCase() === spv.name.trim().toLowerCase())
+        );
+        if (matchedSpv) {
+          return {
+            ...spv,
+            staffId: matchedSpv.id,
+            name: matchedSpv.fullName,
+            phone: spv.phone || matchedSpv.phone,
+            jobRole: matchedSpv.jobRole,
+            employeeIdNumber: matchedSpv.employeeIdNumber,
+          };
+        }
+        return spv;
+      });
     } else {
+      const fallbackSpvName = asg.staffName || '';
+      const matchedFallbackSpv = currentStaffList.find(
+        (s) => s.fullName.trim().toLowerCase() === fallbackSpvName.trim().toLowerCase()
+      );
       sups = [
         {
           id: `spv-${asg.id}-1`,
-          name: asg.staffName || 'Ahmad Noor',
-          phone: '+62 813-1122-3344',
+          staffId: matchedFallbackSpv?.id,
+          name: matchedFallbackSpv?.fullName || fallbackSpvName,
+          phone: matchedFallbackSpv?.phone || '',
+          jobRole: matchedFallbackSpv?.jobRole,
+          employeeIdNumber: matchedFallbackSpv?.employeeIdNumber,
           coverageType: asg.blockId === 'ALL' ? 'ALL' : 'CUSTOM',
           assignedBlockIds: asg.blockId === 'ALL' ? clientBlocks.map((b) => b.id) : (asg.blockId ? [asg.blockId] : []),
           assignedBlockCodes: asg.blockId === 'ALL' ? clientBlocks.map((b) => b.code) : (asg.blockCode ? [asg.blockCode] : []),
@@ -1216,15 +1263,7 @@ export const MasterDataView: React.FC = () => {
         },
       ];
     } else {
-      supTeam = [
-        {
-          id: `sup-${Date.now()}-1`,
-          role: 'Operator',
-          workerName: 'Hendri Gunawan',
-          equipmentId: 'EX-04',
-          equipmentName: 'Excavator Kobelco SK200-10',
-        },
-      ];
+      supTeam = [];
     }
 
     setAssignmentForm({
@@ -1234,8 +1273,9 @@ export const MasterDataView: React.FC = () => {
       assignedDate: asg.assignedDate || new Date().toISOString().slice(0, 10),
       status: asg.status,
       notes: asg.notes || '',
-      siteManagerName: asg.siteManagerName || (asg.staffLevel === 'Site Manager' ? asg.staffName || '' : 'Bambang Sugiarto, S.P.'),
-      siteManagerPhone: asg.siteManagerPhone || '+62 812-3456-7890',
+      siteManagerStaffId: matchedSm?.id || asg.siteManagerStaffId,
+      siteManagerName: matchedSm?.fullName || asg.siteManagerName || (asg.staffLevel === 'Site Manager' ? asg.staffName || '' : ''),
+      siteManagerPhone: asg.siteManagerPhone || matchedSm?.phone || '',
       supervisors: sups,
       supportTeam: supTeam,
     });
@@ -1336,15 +1376,32 @@ export const MasterDataView: React.FC = () => {
     }
   };
 
+  // Handler pilih Site Manager dari Daftar Staff (Menu Identitas Perusahaan)
+  const handleSiteManagerSelect = (selectedValue: string) => {
+    const foundStaff = companyStaffList.find(
+      (s) =>
+        s.fullName.trim().toLowerCase() === (selectedValue || '').trim().toLowerCase() ||
+        s.id === selectedValue
+    );
+    setAssignmentForm((prev) => ({
+      ...prev,
+      siteManagerStaffId: foundStaff?.id,
+      siteManagerName: foundStaff ? foundStaff.fullName : selectedValue,
+      siteManagerPhone: foundStaff ? (foundStaff.phone || '') : (selectedValue ? prev.siteManagerPhone : ''),
+    }));
+  };
+
   // Supervisor helpers
   const handleAddSupervisor = () => {
+    const clientBlocks = blocks.filter((b) => b.clientId === assignmentForm.clientId);
     const newSpv: StaffSupervisorAssignment = {
       id: `spv-${Date.now()}`,
+      staffId: undefined,
       name: '',
       phone: '',
-      coverageType: 'CUSTOM',
-      assignedBlockIds: [],
-      assignedBlockCodes: [],
+      coverageType: 'ALL',
+      assignedBlockIds: clientBlocks.map((b) => b.id),
+      assignedBlockCodes: clientBlocks.map((b) => b.code),
     };
     setAssignmentForm((prev) => ({
       ...prev,
@@ -1374,16 +1431,33 @@ export const MasterDataView: React.FC = () => {
           cur.assignedBlockIds = clientBlocks.map((b) => b.id);
           cur.assignedBlockCodes = clientBlocks.map((b) => b.code);
         }
-      } else {
-        (cur as any)[field] = value;
-        if (field === 'name') {
+      } else if (field === 'name') {
+        const foundStaff = companyStaffList.find(
+          (s) =>
+            s.fullName?.trim().toLowerCase() === (value || '').trim().toLowerCase() ||
+            s.id === value
+        );
+        if (foundStaff) {
+          cur.staffId = foundStaff.id;
+          cur.name = foundStaff.fullName;
+          cur.phone = foundStaff.phone || '';
+          cur.jobRole = foundStaff.jobRole;
+          cur.employeeIdNumber = foundStaff.employeeIdNumber;
+        } else if (!value) {
+          cur.staffId = undefined;
+          cur.name = '';
+          cur.phone = '';
+          cur.jobRole = undefined;
+          cur.employeeIdNumber = undefined;
+        } else {
+          cur.name = value;
           const foundWorker = workers.find((w) => w.name.toLowerCase() === (value || '').toLowerCase());
-          const foundStaff = companyStaffList.find((s) => s.fullName?.toLowerCase() === (value || '').toLowerCase());
-          const matchedPhone = foundWorker?.phone || foundStaff?.phone;
-          if (matchedPhone && !cur.phone) {
-            cur.phone = matchedPhone;
+          if (foundWorker?.phone) {
+            cur.phone = foundWorker.phone;
           }
         }
+      } else {
+        (cur as any)[field] = value;
       }
       nextSups[index] = cur;
       return { ...prev, supervisors: nextSups };
@@ -1533,11 +1607,13 @@ export const MasterDataView: React.FC = () => {
         ? (workAssignments.find((a) => a.id === editingAssignmentId)?.createdAt || new Date().toISOString()) 
         : new Date().toISOString(),
 
+      siteManagerStaffId: assignmentForm.siteManagerStaffId,
       siteManagerName: assignmentForm.siteManagerName.trim(),
       siteManagerPhone: assignmentForm.siteManagerPhone.trim() || undefined,
       supervisors: assignmentForm.supervisors,
       supportTeam: assignmentForm.supportTeam,
 
+      staffId: assignmentForm.siteManagerStaffId,
       staffName: assignmentForm.siteManagerName || firstSupervisor?.name,
       staffLevel: 'Site Manager',
       workerName: `${firstOperator?.workerName || 'Tim Pendukung'} dkk (${assignmentForm.supportTeam.length} Personil)`,
@@ -1550,6 +1626,7 @@ export const MasterDataView: React.FC = () => {
 
     storageService.saveWorkAssignment(newAsg);
     setWorkAssignments([...storageService.getWorkAssignments()]);
+    setCompanyStaffList([...storageService.getCompanyStaff()]);
     setWorkers([...storageService.getWorkers()]);
     setIsAssignmentModalOpen(false);
     setEditingAssignmentId(null);
@@ -5809,210 +5886,364 @@ export const MasterDataView: React.FC = () => {
                   </div>
 
                   {/* A. TIM STAFF (Bekerja diseluruh blok kerja SPK terpilih) */}
-                  <div className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-200 space-y-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-indigo-100 pb-2">
-                      <div>
-                        <span className="font-black text-indigo-950 text-xs uppercase tracking-wide flex items-center gap-1.5">
-                          <ShieldCheck className="w-4 h-4 text-indigo-600" />
-                          <span>A. Tim Staff (Bekerja di Seluruh Blok SPK Terpilih)</span>
-                        </span>
-                        <p className="text-[11px] text-indigo-700 mt-0.5">
-                          Site Manager penanggung jawab teknis &amp; pengawas lapangan per blok kerja.
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleAddSupervisor}
-                        className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-[11px] transition cursor-pointer self-start sm:self-auto shadow-xs"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Tambah Pengawas</span>
-                      </button>
-                    </div>
+                  {(() => {
+                    // Kelompokkan Daftar Staff dari Menu Identitas Perusahaan
+                    const siteManagerStaffOptions = companyStaffList.filter(
+                      (s) =>
+                        s.userLevel === 'Site Manager' ||
+                        s.staffLevel === 'Site Manager' ||
+                        (s.jobRole || '').toLowerCase().includes('manager')
+                    );
+                    const otherStaffForSiteManager = companyStaffList.filter(
+                      (s) =>
+                        s.userLevel !== 'Klien' &&
+                        s.staffLevel !== 'Klien' &&
+                        !siteManagerStaffOptions.some((sm) => sm.id === s.id)
+                    );
 
-                    {/* Site Manager Field */}
-                    <div className="bg-white p-3.5 rounded-xl border border-indigo-200 shadow-2xs space-y-2">
-                      <div className="flex items-center justify-between">
-                        <label className="font-black text-indigo-950 text-xs flex items-center gap-1.5">
-                          <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
-                          <span>Site Manager <span className="text-rose-600">*</span></span>
-                        </label>
-                        <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
-                          Penanggung Jawab Seluruh Blok SPK
-                        </span>
-                      </div>
+                    const supervisorStaffOptions = companyStaffList.filter(
+                      (s) =>
+                        s.userLevel === 'Pengawas' ||
+                        s.staffLevel === 'Pengawas' ||
+                        (s.jobRole || '').toLowerCase().includes('pengawas') ||
+                        (s.jobRole || '').toLowerCase().includes('mandor') ||
+                        (s.jobRole || '').toLowerCase().includes('supervisor')
+                    );
+                    const otherStaffForSupervisor = companyStaffList.filter(
+                      (s) =>
+                        s.userLevel !== 'Klien' &&
+                        s.staffLevel !== 'Klien' &&
+                        !supervisorStaffOptions.some((sp) => sp.id === s.id)
+                    );
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                            Nama Lengkap Site Manager <span className="text-rose-600">*</span>
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            placeholder="Contoh: Bambang Sugiarto, S.P."
-                            value={assignmentForm.siteManagerName}
-                            onChange={(e) => setAssignmentForm({ ...assignmentForm, siteManagerName: e.target.value })}
-                            className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg font-bold text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-indigo-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                            No. Telepon / WhatsApp
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="+62 812-3456-7890"
-                            value={assignmentForm.siteManagerPhone}
-                            onChange={(e) => setAssignmentForm({ ...assignmentForm, siteManagerPhone: e.target.value })}
-                            className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-indigo-500"
-                          />
-                        </div>
-                      </div>
-                    </div>
+                    const selectedSmStaff = companyStaffList.find(
+                      (s) =>
+                        (assignmentForm.siteManagerStaffId && s.id === assignmentForm.siteManagerStaffId) ||
+                        (assignmentForm.siteManagerName &&
+                          s.fullName.trim().toLowerCase() === assignmentForm.siteManagerName.trim().toLowerCase())
+                    );
 
-                    {/* Supervisors Section */}
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-slate-700 text-xs">
-                          Daftar Pengawas Lapangan ({assignmentForm.supervisors.length} Personil):
-                        </span>
-                        <span className="text-[10px] text-slate-500 italic">
-                          (Bisa 1 pengawas untuk seluruh blok, atau beberapa pengawas per blok kerja)
-                        </span>
-                      </div>
-
-                      {assignmentForm.supervisors.map((spv, spvIdx) => (
-                        <div key={spv.id || spvIdx} className="bg-white p-3.5 rounded-xl border border-indigo-200 shadow-2xs space-y-3">
-                          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                            <span className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
-                              <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-800 flex items-center justify-center font-black text-[10px]">
-                                {spvIdx + 1}
-                              </span>
-                              <span>Pengawas Lapangan #{spvIdx + 1}</span>
+                    return (
+                      <div className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-200 space-y-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-indigo-100 pb-2">
+                          <div>
+                            <span className="font-black text-indigo-950 text-xs uppercase tracking-wide flex items-center gap-1.5">
+                              <ShieldCheck className="w-4 h-4 text-indigo-600" />
+                              <span>A. Tim Staff (Bekerja di Seluruh Blok SPK Terpilih)</span>
                             </span>
-                            {assignmentForm.supervisors.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveSupervisor(spvIdx)}
-                                className="text-rose-500 hover:text-rose-700 p-1 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                                title="Hapus Pengawas Ini"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
+                            <p className="text-[11px] text-indigo-700 mt-0.5">
+                              Site Manager penanggung jawab teknis &amp; pengawas lapangan per blok kerja (Terhubung otomatis dengan Daftar Staff di Menu Identitas Perusahaan).
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleAddSupervisor}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-[11px] transition cursor-pointer self-start sm:self-auto shadow-xs"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Tambah Pengawas</span>
+                          </button>
+                        </div>
+
+                        {/* Site Manager Field (Dropdown dari Daftar Staff - Menu Identitas Perusahaan) */}
+                        <div className="bg-white p-3.5 rounded-xl border border-indigo-200 shadow-2xs space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="font-black text-indigo-950 text-xs flex items-center gap-1.5">
+                              <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                              <span>Site Manager <span className="text-rose-600">*</span></span>
+                            </label>
+                            <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
+                              Penanggung Jawab Seluruh Blok SPK
+                            </span>
                           </div>
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div>
-                              <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                                Nama Pengawas <span className="text-rose-600">*</span>
-                              </label>
-                              <input
-                                type="text"
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="block text-[11px] font-bold text-slate-700">
+                                  Nama Lengkap Site Manager <span className="text-rose-600">*</span>
+                                </label>
+                                <span className="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-100">
+                                  🔗 Daftar Staff
+                                </span>
+                              </div>
+                              <select
                                 required
-                                list="supervisor-suggestions-list"
-                                placeholder="Contoh: Ahmad Noor / Dedi Kurniawan"
-                                value={spv.name}
-                                onChange={(e) => handleSupervisorChange(spvIdx, 'name', e.target.value)}
-                                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg font-bold text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-indigo-500"
-                              />
-                              <datalist id="supervisor-suggestions-list">
-                                <option value="Ahmad Noor" />
-                                <option value="Dedi Kurniawan" />
-                                <option value="Budi Santoso" />
-                                <option value="Faisal Akbar" />
-                                <option value="Aris Munandar" />
-                                {workers
-                                  .filter((w) => (w.category || '').toLowerCase().includes('pengawas') || (w.role || '').toLowerCase().includes('pengawas'))
-                                  .map((w) => (
-                                    <option key={w.id} value={w.name} />
-                                  ))}
-                              </datalist>
+                                value={assignmentForm.siteManagerName || ''}
+                                onChange={(e) => handleSiteManagerSelect(e.target.value)}
+                                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg font-bold text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-indigo-500 cursor-pointer"
+                              >
+                                <option value="">-- Pilih Site Manager (Dari Daftar Staff) --</option>
+
+                                {/* Jika nama tersimpan belum ada di Daftar Staff, tetap tampilkan agar tidak hilang */}
+                                {assignmentForm.siteManagerName &&
+                                  !companyStaffList.some(
+                                    (s) => s.fullName.trim().toLowerCase() === assignmentForm.siteManagerName.trim().toLowerCase()
+                                  ) && (
+                                    <option value={assignmentForm.siteManagerName}>
+                                      {assignmentForm.siteManagerName} (Tercatat Saat Ini)
+                                    </option>
+                                  )}
+
+                                {siteManagerStaffOptions.length > 0 && (
+                                  <optgroup label={`Daftar Staff — Site Manager (${siteManagerStaffOptions.length} Staff)`}>
+                                    {siteManagerStaffOptions.map((s) => (
+                                      <option key={s.id} value={s.fullName}>
+                                        {s.fullName} — {s.jobRole} ({s.employeeIdNumber})
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                )}
+
+                                {otherStaffForSiteManager.length > 0 && (
+                                  <optgroup label={`Daftar Staff Perusahaan Lainnya (${otherStaffForSiteManager.length} Staff)`}>
+                                    {otherStaffForSiteManager.map((s) => (
+                                      <option key={s.id} value={s.fullName}>
+                                        {s.fullName} — {s.jobRole} ({s.employeeIdNumber})
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                )}
+                              </select>
+                              {selectedSmStaff && (
+                                <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-indigo-700 font-semibold">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                                  <span>
+                                    Terhubung: <strong>{selectedSmStaff.employeeIdNumber}</strong> • {selectedSmStaff.jobRole}
+                                    {selectedSmStaff.username ? ` (@${selectedSmStaff.username})` : ''}
+                                  </span>
+                                </div>
+                              )}
                             </div>
+
                             <div>
                               <label className="block text-[11px] font-bold text-slate-700 mb-1">
                                 No. Telepon / WhatsApp
                               </label>
                               <input
                                 type="text"
-                                placeholder="+62 813-xxxx-xxxx"
-                                value={spv.phone || ''}
-                                onChange={(e) => handleSupervisorChange(spvIdx, 'phone', e.target.value)}
-                                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-indigo-500"
+                                placeholder="Otomatis terisi dari Daftar Staff..."
+                                value={assignmentForm.siteManagerPhone}
+                                onChange={(e) => setAssignmentForm({ ...assignmentForm, siteManagerPhone: e.target.value })}
+                                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium text-slate-900 focus:outline-none focus:bg-white focus:border-indigo-500"
                               />
+                              <span className="text-[9px] text-slate-400 mt-0.5 block">
+                                Otomatis terisi saat memilih Site Manager &amp; tersinkronisasi dengan Daftar Staff.
+                              </span>
                             </div>
-                          </div>
-
-                          {/* Cakupan Blok Pengawasan */}
-                          <div className="pt-2 border-t border-slate-100 space-y-2">
-                            <label className="block text-[11px] font-bold text-slate-700">
-                              Cakupan Wilayah Pengawasan Blok Kerja:
-                            </label>
-
-                            <div className="flex flex-wrap items-center gap-4 text-xs">
-                              <label className="flex items-center gap-1.5 font-bold cursor-pointer text-slate-800">
-                                <input
-                                  type="radio"
-                                  name={`spv-coverage-${spvIdx}`}
-                                  checked={spv.coverageType === 'ALL'}
-                                  onChange={() => handleSupervisorChange(spvIdx, 'coverageType', 'ALL')}
-                                  className="text-amber-500 focus:ring-amber-400"
-                                />
-                                <span>Mengawasi Seluruh Blok Kerja SPK Terpilih</span>
-                              </label>
-
-                              <label className="flex items-center gap-1.5 font-bold cursor-pointer text-slate-800">
-                                <input
-                                  type="radio"
-                                  name={`spv-coverage-${spvIdx}`}
-                                  checked={spv.coverageType === 'CUSTOM'}
-                                  onChange={() => handleSupervisorChange(spvIdx, 'coverageType', 'CUSTOM')}
-                                  className="text-amber-500 focus:ring-amber-400"
-                                />
-                                <span>Pilih Blok Tertentu Yang Diawasi</span>
-                              </label>
-                            </div>
-
-                            {/* Block Multi-Checkboxes if CUSTOM */}
-                            {spv.coverageType === 'CUSTOM' && (
-                              <div className="mt-2 p-2.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
-                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                                  Pilih Blok Kerja Yang Diawasi (Centang Blok):
-                                </span>
-                                {availableBlocks.length === 0 ? (
-                                  <div className="text-slate-400 text-xs italic">
-                                    Belum ada data blok kerja untuk klien SPK ini.
-                                  </div>
-                                ) : (
-                                  <div className="flex flex-wrap gap-2">
-                                    {availableBlocks.map((blk) => {
-                                      const isSelected = spv.assignedBlockIds?.includes(blk.id);
-                                      return (
-                                        <button
-                                          key={blk.id}
-                                          type="button"
-                                          onClick={() => handleToggleSupervisorBlock(spvIdx, blk.id, blk.code)}
-                                          className={`px-3 py-1.5 rounded-lg font-bold text-xs transition cursor-pointer flex items-center gap-1.5 border ${
-                                            isSelected
-                                              ? 'bg-amber-500 text-slate-950 border-amber-600 shadow-2xs font-black'
-                                              : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
-                                          }`}
-                                        >
-                                          <span>{isSelected ? '✓' : '+'}</span>
-                                          <span>{blk.code} ({blk.targetAreaHa || 0} Ha)</span>
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                              </div>
-                            )}
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  </div>
+
+                        {/* Supervisors Section (Dropdown dari Daftar Staff - Menu Identitas Perusahaan) */}
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-slate-700 text-xs">
+                              Daftar Pengawas Lapangan ({assignmentForm.supervisors.length} Personil):
+                            </span>
+                            <span className="text-[10px] text-slate-500 italic">
+                              (Bisa 1 pengawas untuk seluruh blok, atau beberapa pengawas per blok kerja)
+                            </span>
+                          </div>
+
+                          {assignmentForm.supervisors.map((spv, spvIdx) => {
+                            const selectedSpvStaff = companyStaffList.find(
+                              (s) =>
+                                (spv.staffId && s.id === spv.staffId) ||
+                                (spv.name && s.fullName.trim().toLowerCase() === spv.name.trim().toLowerCase())
+                            );
+
+                            return (
+                              <div key={spv.id || spvIdx} className="bg-white p-3.5 rounded-xl border border-indigo-200 shadow-2xs space-y-3">
+                                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                                  <span className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                                    <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-800 flex items-center justify-center font-black text-[10px]">
+                                      {spvIdx + 1}
+                                    </span>
+                                    <span>Pengawas Lapangan #{spvIdx + 1}</span>
+                                    {spv.name && (
+                                      <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
+                                        {spv.name}
+                                      </span>
+                                    )}
+                                  </span>
+                                  {assignmentForm.supervisors.length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveSupervisor(spvIdx)}
+                                      className="text-rose-500 hover:text-rose-700 p-1 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                      title="Hapus Pengawas Ini"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  <div>
+                                    <div className="flex items-center justify-between mb-1">
+                                      <label className="block text-[11px] font-bold text-slate-700">
+                                        Nama Pengawas <span className="text-rose-600">*</span>
+                                      </label>
+                                      <span className="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-100">
+                                        🔗 Daftar Staff
+                                      </span>
+                                    </div>
+                                    <select
+                                      required
+                                      value={spv.name || ''}
+                                      onChange={(e) => handleSupervisorChange(spvIdx, 'name', e.target.value)}
+                                      className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg font-bold text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-indigo-500 cursor-pointer"
+                                    >
+                                      <option value="">-- Pilih Pengawas Lapangan (Dari Daftar Staff) --</option>
+
+                                      {/* Jika nama pengawas saat ini belum ada di Daftar Staff, tetap tampilkan agar tidak hilang */}
+                                      {spv.name &&
+                                        !companyStaffList.some(
+                                          (s) => s.fullName.trim().toLowerCase() === spv.name.trim().toLowerCase()
+                                        ) && (
+                                          <option value={spv.name}>
+                                            {spv.name} (Tercatat Saat Ini)
+                                          </option>
+                                        )}
+
+                                      {supervisorStaffOptions.length > 0 && (
+                                        <optgroup label={`Daftar Staff — Pengawas Lapangan (${supervisorStaffOptions.length} Staff)`}>
+                                          {supervisorStaffOptions.map((s) => {
+                                            const isChosenElsewhere = assignmentForm.supervisors.some(
+                                              (other, idx) =>
+                                                idx !== spvIdx &&
+                                                other.name &&
+                                                other.name.trim().toLowerCase() === s.fullName.trim().toLowerCase()
+                                            );
+                                            return (
+                                              <option key={s.id} value={s.fullName} disabled={isChosenElsewhere}>
+                                                {s.fullName} — {s.jobRole} ({s.employeeIdNumber})
+                                                {isChosenElsewhere ? ' [Sudah Dipilih]' : ''}
+                                              </option>
+                                            );
+                                          })}
+                                        </optgroup>
+                                      )}
+
+                                      {otherStaffForSupervisor.length > 0 && (
+                                        <optgroup label={`Daftar Staff Perusahaan Lainnya (${otherStaffForSupervisor.length} Staff)`}>
+                                          {otherStaffForSupervisor.map((s) => {
+                                            const isChosenElsewhere = assignmentForm.supervisors.some(
+                                              (other, idx) =>
+                                                idx !== spvIdx &&
+                                                other.name &&
+                                                other.name.trim().toLowerCase() === s.fullName.trim().toLowerCase()
+                                            );
+                                            return (
+                                              <option key={s.id} value={s.fullName} disabled={isChosenElsewhere}>
+                                                {s.fullName} — {s.jobRole} ({s.employeeIdNumber})
+                                                {isChosenElsewhere ? ' [Sudah Dipilih]' : ''}
+                                              </option>
+                                            );
+                                          })}
+                                        </optgroup>
+                                      )}
+                                    </select>
+                                    {selectedSpvStaff && (
+                                      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-indigo-700 font-semibold">
+                                        <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                                        <span>
+                                          Terhubung: <strong>{selectedSpvStaff.employeeIdNumber}</strong> • {selectedSpvStaff.jobRole}
+                                          {selectedSpvStaff.username ? ` (@${selectedSpvStaff.username})` : ''}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                                      No. Telepon / WhatsApp
+                                    </label>
+                                    <input
+                                      type="text"
+                                      placeholder="Otomatis terisi dari Daftar Staff..."
+                                      value={spv.phone || ''}
+                                      onChange={(e) => handleSupervisorChange(spvIdx, 'phone', e.target.value)}
+                                      className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium text-slate-900 focus:outline-none focus:bg-white focus:border-indigo-500"
+                                    />
+                                    <span className="text-[9px] text-slate-400 mt-0.5 block">
+                                      Otomatis terisi saat memilih Pengawas &amp; tersinkronisasi dengan Daftar Staff.
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Cakupan Blok Pengawasan */}
+                                <div className="pt-2 border-t border-slate-100 space-y-2">
+                                  <label className="block text-[11px] font-bold text-slate-700">
+                                    Cakupan Wilayah Pengawasan Blok Kerja:
+                                  </label>
+
+                                  <div className="flex flex-wrap items-center gap-4 text-xs">
+                                    <label className="flex items-center gap-1.5 font-bold cursor-pointer text-slate-800">
+                                      <input
+                                        type="radio"
+                                        name={`spv-coverage-${spvIdx}`}
+                                        checked={spv.coverageType === 'ALL'}
+                                        onChange={() => handleSupervisorChange(spvIdx, 'coverageType', 'ALL')}
+                                        className="text-amber-500 focus:ring-amber-400"
+                                      />
+                                      <span>Mengawasi Seluruh Blok Kerja SPK Terpilih</span>
+                                    </label>
+
+                                    <label className="flex items-center gap-1.5 font-bold cursor-pointer text-slate-800">
+                                      <input
+                                        type="radio"
+                                        name={`spv-coverage-${spvIdx}`}
+                                        checked={spv.coverageType === 'CUSTOM'}
+                                        onChange={() => handleSupervisorChange(spvIdx, 'coverageType', 'CUSTOM')}
+                                        className="text-amber-500 focus:ring-amber-400"
+                                      />
+                                      <span>Pilih Blok Tertentu Yang Diawasi</span>
+                                    </label>
+                                  </div>
+
+                                  {/* Block Multi-Checkboxes if CUSTOM */}
+                                  {spv.coverageType === 'CUSTOM' && (
+                                    <div className="mt-2 p-2.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
+                                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                                        Pilih Blok Kerja Yang Diawasi (Centang Blok):
+                                      </span>
+                                      {availableBlocks.length === 0 ? (
+                                        <div className="text-slate-400 text-xs italic">
+                                          Belum ada data blok kerja untuk klien SPK ini.
+                                        </div>
+                                      ) : (
+                                        <div className="flex flex-wrap gap-2">
+                                          {availableBlocks.map((blk) => {
+                                            const isSelected = spv.assignedBlockIds?.includes(blk.id);
+                                            return (
+                                              <button
+                                                key={blk.id}
+                                                type="button"
+                                                onClick={() => handleToggleSupervisorBlock(spvIdx, blk.id, blk.code)}
+                                                className={`px-3 py-1.5 rounded-lg font-bold text-xs transition cursor-pointer flex items-center gap-1.5 border ${
+                                                  isSelected
+                                                    ? 'bg-amber-500 text-slate-950 border-amber-600 shadow-2xs font-black'
+                                                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                                                }`}
+                                              >
+                                                <span>{isSelected ? '✓' : '+'}</span>
+                                                <span>{blk.code} ({blk.targetAreaHa || 0} Ha)</span>
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* B. TIM PENDUKUNG (Bekerja diseluruh blok kerja SPK terpilih) */}
                   <div className="bg-slate-50 p-4 rounded-2xl border border-slate-300 space-y-4">

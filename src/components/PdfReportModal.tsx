@@ -639,7 +639,7 @@ ${report.equipmentWorkLogs
 
                 <div>
                   <div className="font-bold text-slate-900 border-t border-slate-400 pt-1">
-                    ( {directorStaff?.fullName || report.signatures.director?.name || 'Ir. Hendra Wijaya, M.Si'} )
+                    ( {directorStaff?.fullName || (report.signatures.director?.name && !report.signatures.director.name.toLowerCase().includes('hendra wijaya') ? report.signatures.director.name : 'Direktur Utama')} )
                   </div>
                   <div className="text-[10px] text-slate-500 font-medium">
                     {companyProfile.officialName || 'PT. RBS GROUP'}

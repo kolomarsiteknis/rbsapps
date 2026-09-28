@@ -61,6 +61,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
   // Modal State for CRUD
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [userToDelete, setUserToDelete] = useState<ManagedUser | null>(null);
 
   // Form State (Fokus murni pada data akun dan identitas user)
   const [formData, setFormData] = useState<{
@@ -453,22 +454,12 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
 
   // Delete User
   const handleDeleteUser = (user: ManagedUser) => {
-    // Protection: Cannot delete own account
-    if (authUser && authUser.username === user.username) {
-      showToast('Tidak dapat menghapus akun Anda sendiri yang sedang aktif digunakan.', 'error');
-      return;
-    }
+    setUserToDelete(user);
+  };
 
-    // Protection: Superadmin primary check
-    if (user.username === 'DIREKTUR' && users.filter((u) => u.userLevel === 'Superadmin').length <= 1) {
-      showToast('Tidak dapat menghapus satu-satunya akun Superadmin Utama.', 'error');
-      return;
-    }
-
-    if (!window.confirm(`Apakah Anda yakin ingin menghapus pengguna "${user.fullName}" (${user.username}) secara permanen? Tindakan ini tidak dapat dibatalkan.`)) {
-      return;
-    }
-
+  const executeDeleteUser = () => {
+    if (!userToDelete) return;
+    const user = userToDelete;
     const success = storageService.deleteManagedUser(user.id);
     if (success) {
       recordUserActivity({
@@ -483,8 +474,10 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       });
 
       reloadData();
+      setUserToDelete(null);
       showToast(`Pengguna "${user.fullName}" berhasil dihapus dari sistem.`, 'success');
     } else {
+      setUserToDelete(null);
       showToast('Gagal menghapus pengguna.', 'error');
     }
   };
@@ -1403,6 +1396,43 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL KONFIRMASI HAPUS USER */}
+      {userToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-rose-100 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-rose-100 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900">Hapus Akun Pengguna</h3>
+                <p className="text-xs text-rose-600 font-bold">Konfirmasi Penghapusan Permanen</p>
+              </div>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Apakah Anda yakin ingin menghapus pengguna <strong>{userToDelete.fullName}</strong> (@{userToDelete.username}) secara permanen?
+            </p>
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setUserToDelete(null)}
+                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 font-bold text-xs cursor-pointer"
+              >
+                Batalkan
+              </button>
+              <button
+                type="button"
+                onClick={executeDeleteUser}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs shadow-md flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Ya, Hapus User</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -65,7 +65,14 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
   const isDirector = userRole === 'director' || authUser?.role === 'director';
   const isManager = userRole === 'manager' || authUser?.role === 'manager';
   const isSupervisor = userRole === 'supervisor' || authUser?.role === 'supervisor';
+  const isClient = userRole === 'client' || authUser?.role === 'client' || authUser?.userLevel === 'Klien';
   const canApprove = isDirector || isManager;
+
+  const clientAuthorizedSpks = isClient ? storageService.getAuthorizedClientsForUser(authUser) : clients;
+  const clientAllowedIds = new Set(clientAuthorizedSpks.map((c) => c.id));
+  const clientAllowedContracts = new Set(
+    clientAuthorizedSpks.map((c) => (c.contractNumber || '').trim().toLowerCase()).filter(Boolean)
+  );
 
   const allBlocks = storageService.getBlocks(undefined, authUser);
   const availableBlocks = isSupervisor && authUser?.assignedBlockCodes && authUser.assignedBlockCodes.length > 0 && !authUser.assignedBlockCodes[0].includes('Semua Blok')
@@ -76,9 +83,14 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
       }))
     : (selectedClientId === 'ALL' ? allBlocks : allBlocks.filter((b) => b.clientId === selectedClientId));
 
-  // Filter logic: Pengawas HANYA mengawasi 1 Klien PT dan blok kerja yang ditugaskan
+  // Filter logic: Klien hanya melihat SPK miliknya; Pengawas hanya mengawasi 1 Klien PT dan blok kerja yang ditugaskan
   const filteredReports = reports.filter((r) => {
-    if (isSupervisor) {
+    if (isClient) {
+      const matchId = clientAllowedIds.has(r.clientId);
+      const matchContract = r.contractNumber && clientAllowedContracts.has(r.contractNumber.trim().toLowerCase());
+      if (!matchId && !matchContract) return false;
+      if (selectedClientId !== 'ALL' && r.clientId !== selectedClientId) return false;
+    } else if (isSupervisor) {
       if (authUser?.assignedClientId && authUser.assignedClientId !== 'all' && r.clientId !== authUser.assignedClientId) {
         return false;
       }
@@ -203,7 +215,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
               <span>Ekspor Excel (CSV)</span>
             </button>
 
-            {/* Tombol Input Laporan Harian: HANYA UNTUK PENGAWAS (Direktur & Manager tidak boleh input) */}
+            {/* Tombol Input Laporan Harian: HANYA UNTUK PENGAWAS (Direktur, Manager & Klien tidak boleh input) */}
             {isSupervisor ? (
               <button
                 onClick={onNewReport}
@@ -212,6 +224,11 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                 <Plus className="w-4 h-4" />
                 <span>+ Input Laporan Baru</span>
               </button>
+            ) : isClient ? (
+              <div className="flex items-center gap-1.5 px-3 py-2 bg-teal-50 text-teal-900 text-xs rounded-xl font-bold border border-teal-200">
+                <Lock className="w-4 h-4 text-teal-600" />
+                <span>Akses Klien: Hanya Lihat Laporan Sesuai SPK ({clientAuthorizedSpks.length} SPK)</span>
+              </div>
             ) : (
               <div className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 text-slate-600 text-xs rounded-xl font-bold border border-slate-200">
                 <ShieldCheck className="w-4 h-4 text-emerald-600" />
@@ -226,7 +243,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
           {/* Client Filter */}
           <div className="relative">
             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-              {isSupervisor ? 'Penempatan Proyek (Klien)' : 'Filter Klien'}
+              {isSupervisor ? 'Penempatan Proyek (Klien)' : isClient ? 'Filter Nomor SPK Anda' : 'Filter Klien'}
             </label>
             {isSupervisor ? (
               <div className="flex items-center bg-amber-50 border border-amber-300 rounded-xl px-2.5 py-1.5 gap-1.5 text-xs font-bold text-amber-950">
@@ -247,10 +264,14 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                   }}
                   className="w-full bg-transparent text-xs font-bold text-slate-800 focus:outline-none"
                 >
-                  <option value="ALL">Semua Klien ({clients.length} PT)</option>
-                  {clients.map((c) => (
+                  <option value="ALL">
+                    {isClient
+                      ? `Semua SPK Anda (${clientAuthorizedSpks.length} SPK)`
+                      : `Semua Klien (${clients.length} PT)`}
+                  </option>
+                  {(isClient ? clientAuthorizedSpks : clients).map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.name} ({c.totalAreaHa} Ha)
+                      {isClient ? `${c.contractNumber} - ${c.name}` : `${c.name} (${c.totalAreaHa} Ha)`}
                     </option>
                   ))}
                 </select>
@@ -615,18 +636,20 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                           <Printer className="w-3.5 h-3.5" />
                         </button>
 
-                        {/* 3. HAPUS (Ikon Trash) */}
-                        <button
-                          onClick={() => {
-                            if (window.confirm(`Hapus dokumen laporan ${report.reportNumber}?`)) {
-                              onDeleteReport(report.id);
-                            }
-                          }}
-                          className="p-1.5 hover:bg-rose-100 text-slate-400 hover:text-rose-600 active:scale-95 rounded-lg transition-all duration-200 cursor-pointer"
-                          title="3. Hapus Laporan"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {/* 3. HAPUS (Ikon Trash - disembunyikan untuk Klien) */}
+                        {!isClient && (
+                          <button
+                            onClick={() => {
+                              if (window.confirm(`Hapus dokumen laporan ${report.reportNumber}?`)) {
+                                onDeleteReport(report.id);
+                              }
+                            }}
+                            className="p-1.5 hover:bg-rose-100 text-slate-400 hover:text-rose-600 active:scale-95 rounded-lg transition-all duration-200 cursor-pointer"
+                            title="3. Hapus Laporan"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

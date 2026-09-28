@@ -21,25 +21,423 @@ import { UserManagementView } from './components/UserManagementView';
 import { CompanyProfileView } from './components/CompanyProfileView';
 import { CompanyMasterDataView } from './components/CompanyMasterDataView';
 import { TutorialView } from './components/TutorialView';
+import { ClientPortalView } from './components/ClientPortalView';
 import { LoginPage } from './components/LoginPage';
 import { storageService } from './services/storageService';
 import { initFirestoreSync, onSyncStatusChange, toggleFirestoreNetwork, SyncStatus } from './services/firestoreSync';
 import { recordUserActivity } from './utils/activityLogger';
-import { DailyReport, Equipment, UserRole, Client, AuthUser, CompanyProfile, CompanyStaff } from './types';
+import { DailyReport, Equipment, UserRole, Client, AuthUser, CompanyProfile, CompanyStaff, ManagedUser } from './types';
 import { CheckCircle2, AlertCircle, ShieldAlert, Clock, RotateCcw, LogOut } from 'lucide-react';
 
 const AUTH_STORAGE_KEY = 'suryaland_auth_user_v1';
 const IDLE_STORAGE_KEY = 'suryaland_last_activity_v1';
+const LAST_LOGIN_TIMESTAMP_KEY = 'lastLoginTimestamp';
+const SESSION_TOKEN_KEY = 'suryaland_session_token_v1';
+const DIAGNOSTIC_LOGS_KEY = 'suryaland_auth_diagnostic_logs_v1';
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes of inactivity
 const IDLE_WARNING_MS = 28 * 60 * 1000; // Warning displayed at 28 minutes (last 2 minutes)
+
+export interface AuthDiagnosticLogEntry {
+  id: string;
+  timestamp: string;
+  attemptedUsername: string;
+  failureReason: string;
+  localDataPresent: boolean;
+  localStaffCount: number;
+  localManagedUsersCount: number;
+  corruptedOrExpiredKeysReset: string[];
+  recoveredUserFound: boolean;
+  details: string;
+}
+
+export interface LoginDiagnosticResult {
+  localDataPresent: boolean;
+  repairedKeys: string[];
+  recoveredUser?: ManagedUser;
+  diagnosticEntry?: AuthDiagnosticLogEntry;
+}
+
+/**
+ * Verifies if the user's `lastLoginTimestamp`, idle activity timestamp, or session token
+ * in `localStorage` has become corrupted or expired prematurely, and resets ONLY the problematic key.
+ */
+export function verifyAndRepairSessionStorage(activeUser?: AuthUser | null): string[] {
+  if (typeof window === 'undefined') return [];
+  const repairedKeys: string[] = [];
+  const now = Date.now();
+  const maxFutureSkewMs = 5 * 60 * 1000; // 5 minutes tolerance
+
+  // 1. Check `lastLoginTimestamp` for corruption or premature expiration
+  try {
+    const rawLastLogin = localStorage.getItem(LAST_LOGIN_TIMESTAMP_KEY);
+    if (rawLastLogin !== null) {
+      const parsedTs = Number(rawLastLogin);
+      const isCorrupted = !rawLastLogin.trim() || Number.isNaN(parsedTs) || parsedTs <= 0 || parsedTs > now + maxFutureSkewMs;
+      const loginTimeMs = activeUser?.loginTime ? new Date(activeUser.loginTime).getTime() : null;
+      const isPrematurelyExpired =
+        Boolean(loginTimeMs && !Number.isNaN(loginTimeMs) && now - loginTimeMs < IDLE_TIMEOUT_MS && parsedTs < loginTimeMs - 1000);
+
+      if (isCorrupted || isPrematurelyExpired) {
+        if (activeUser) {
+          localStorage.setItem(LAST_LOGIN_TIMESTAMP_KEY, now.toString());
+        } else {
+          localStorage.removeItem(LAST_LOGIN_TIMESTAMP_KEY);
+        }
+        repairedKeys.push(LAST_LOGIN_TIMESTAMP_KEY);
+      }
+    }
+  } catch {
+    try {
+      localStorage.removeItem(LAST_LOGIN_TIMESTAMP_KEY);
+      repairedKeys.push(LAST_LOGIN_TIMESTAMP_KEY);
+    } catch {}
+  }
+
+  // 2. Check `IDLE_STORAGE_KEY` (`suryaland_last_activity_v1`) for corruption or premature expiration
+  try {
+    const rawIdle = localStorage.getItem(IDLE_STORAGE_KEY);
+    if (rawIdle !== null) {
+      const parsedIdle = parseInt(rawIdle, 10);
+      const isCorrupted = !rawIdle.trim() || Number.isNaN(parsedIdle) || parsedIdle <= 0 || parsedIdle > now + maxFutureSkewMs;
+      const loginTimeMs = activeUser?.loginTime ? new Date(activeUser.loginTime).getTime() : null;
+      // Premature expiration: user logged in recently (< IDLE_TIMEOUT_MS), but IDLE_STORAGE_KEY holds an old stale timestamp
+      const isPrematurelyExpired =
+        Boolean(
+          loginTimeMs &&
+            !Number.isNaN(loginTimeMs) &&
+            now - loginTimeMs < IDLE_TIMEOUT_MS &&
+            (parsedIdle < loginTimeMs - 5000 || now - parsedIdle >= IDLE_TIMEOUT_MS)
+        );
+
+      if (isCorrupted || isPrematurelyExpired) {
+        if (activeUser) {
+          localStorage.setItem(IDLE_STORAGE_KEY, now.toString());
+        } else {
+          localStorage.removeItem(IDLE_STORAGE_KEY);
+        }
+        repairedKeys.push(IDLE_STORAGE_KEY);
+      }
+    }
+  } catch {
+    try {
+      localStorage.removeItem(IDLE_STORAGE_KEY);
+      repairedKeys.push(IDLE_STORAGE_KEY);
+    } catch {}
+  }
+
+  // 3. Check `SESSION_TOKEN_KEY` (`suryaland_session_token_v1`) for corruption or premature expiration
+  try {
+    const rawToken = localStorage.getItem(SESSION_TOKEN_KEY);
+    if (rawToken !== null) {
+      let tokenCorrupted = false;
+      let tokenPrematurelyExpired = false;
+      try {
+        const parsedToken = JSON.parse(rawToken);
+        if (
+          !parsedToken ||
+          typeof parsedToken !== 'object' ||
+          typeof parsedToken.username !== 'string' ||
+          typeof parsedToken.issuedAt !== 'number' ||
+          typeof parsedToken.expiresAt !== 'number' ||
+          Number.isNaN(parsedToken.issuedAt) ||
+          Number.isNaN(parsedToken.expiresAt) ||
+          parsedToken.issuedAt > now + maxFutureSkewMs
+        ) {
+          tokenCorrupted = true;
+        } else if (
+          parsedToken.expiresAt <= parsedToken.issuedAt ||
+          (activeUser &&
+            parsedToken.username.toLowerCase() === activeUser.username.toLowerCase() &&
+            now - parsedToken.issuedAt < IDLE_TIMEOUT_MS &&
+            parsedToken.expiresAt <= now)
+        ) {
+          tokenPrematurelyExpired = true;
+        }
+      } catch {
+        tokenCorrupted = true;
+      }
+
+      if (tokenCorrupted || tokenPrematurelyExpired) {
+        if (activeUser) {
+          localStorage.setItem(
+            SESSION_TOKEN_KEY,
+            JSON.stringify({
+              token: `sess_${activeUser.id || activeUser.username}_${now}`,
+              username: activeUser.username,
+              issuedAt: now,
+              expiresAt: now + IDLE_TIMEOUT_MS,
+            })
+          );
+        } else {
+          localStorage.removeItem(SESSION_TOKEN_KEY);
+        }
+        repairedKeys.push(SESSION_TOKEN_KEY);
+      }
+    }
+  } catch {
+    try {
+      localStorage.removeItem(SESSION_TOKEN_KEY);
+      repairedKeys.push(SESSION_TOKEN_KEY);
+    } catch {}
+  }
+
+  // 4. Check `AUTH_STORAGE_KEY` (`suryaland_auth_user_v1`) for structural corruption
+  try {
+    const rawAuth = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (rawAuth !== null) {
+      let authCorrupted = false;
+      try {
+        const parsedAuth = JSON.parse(rawAuth);
+        if (
+          !parsedAuth ||
+          typeof parsedAuth !== 'object' ||
+          !parsedAuth.username ||
+          typeof parsedAuth.username !== 'string' ||
+          !parsedAuth.role
+        ) {
+          authCorrupted = true;
+        } else if (parsedAuth.loginTime) {
+          const loginTs = new Date(parsedAuth.loginTime).getTime();
+          if (Number.isNaN(loginTs) || loginTs <= 0 || loginTs > now + maxFutureSkewMs) {
+            parsedAuth.loginTime = new Date(now).toISOString();
+            localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(parsedAuth));
+            repairedKeys.push(`${AUTH_STORAGE_KEY}.loginTime`);
+          }
+        }
+      } catch {
+        authCorrupted = true;
+      }
+
+      if (authCorrupted) {
+        localStorage.removeItem(AUTH_STORAGE_KEY);
+        repairedKeys.push(AUTH_STORAGE_KEY);
+      }
+    }
+  } catch {
+    try {
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+      repairedKeys.push(AUTH_STORAGE_KEY);
+    } catch {}
+  }
+
+  return repairedKeys;
+}
+
+/**
+ * Diagnostic logs helper triggered when login fails despite local data being present.
+ * Verifies if `lastLoginTimestamp`, session token, or user sync keys in `localStorage`
+ * have become corrupted or expired prematurely, resets ONLY the problematic key(s),
+ * and attempts to recover the valid local user record.
+ */
+export function triggerLoginFailureDiagnostic(
+  attemptedUsername: string,
+  failureReason: string = 'AUTH_LOOKUP_OR_CREDENTIAL_MISMATCH'
+): LoginDiagnosticResult {
+  if (typeof window === 'undefined') {
+    return { localDataPresent: false, repairedKeys: [] };
+  }
+
+  const normUser = (attemptedUsername || '').trim().replace(/^@+/, '').toLowerCase();
+  const repairedKeys = verifyAndRepairSessionStorage(null);
+
+  let localStaffCount = 0;
+  let localManagedUsersCount = 0;
+  let matchedStaffRecord: CompanyStaff | undefined;
+  let matchedManagedUserRecord: ManagedUser | undefined;
+
+  // Inspect local `suryaland_company_staff_v1`
+  const STAFF_KEY = 'suryaland_company_staff_v1';
+  try {
+    const rawStaff = localStorage.getItem(STAFF_KEY);
+    if (rawStaff !== null) {
+      const parsedStaff = JSON.parse(rawStaff);
+      if (Array.isArray(parsedStaff)) {
+        localStaffCount = parsedStaff.length;
+        matchedStaffRecord = parsedStaff.find(
+          (s: any) =>
+            s &&
+            (String(s.username || '').trim().replace(/^@+/, '').toLowerCase() === normUser ||
+              String(s.employeeIdNumber || '').trim().toLowerCase() === normUser ||
+              String(s.email || '').trim().toLowerCase() === normUser)
+        );
+      } else {
+        localStorage.removeItem(STAFF_KEY);
+        repairedKeys.push(STAFF_KEY);
+      }
+    }
+  } catch {
+    try {
+      localStorage.removeItem(STAFF_KEY);
+      repairedKeys.push(STAFF_KEY);
+    } catch {}
+  }
+
+  // Inspect local `suryaland_managed_users_v1`
+  const USERS_KEY = 'suryaland_managed_users_v1';
+  try {
+    const rawUsers = localStorage.getItem(USERS_KEY);
+    if (rawUsers !== null) {
+      const parsedUsers = JSON.parse(rawUsers);
+      if (Array.isArray(parsedUsers)) {
+        localManagedUsersCount = parsedUsers.length;
+        matchedManagedUserRecord = parsedUsers.find(
+          (u: any) =>
+            u &&
+            (String(u.username || '').trim().replace(/^@+/, '').toLowerCase() === normUser ||
+              String(u.employeeIdNumber || '').trim().toLowerCase() === normUser ||
+              String(u.email || '').trim().toLowerCase() === normUser)
+        );
+      } else {
+        localStorage.removeItem(USERS_KEY);
+        repairedKeys.push(USERS_KEY);
+      }
+    }
+  } catch {
+    try {
+      localStorage.removeItem(USERS_KEY);
+      repairedKeys.push(USERS_KEY);
+    } catch {}
+  }
+
+  const localDataPresent = localStaffCount > 0 || localManagedUsersCount > 0;
+  if (!localDataPresent) {
+    return { localDataPresent: false, repairedKeys };
+  }
+
+  // Check if the user exists in local data but was blocked by corrupted/stale deleted IDs keys
+  const DELETED_USERS_KEY = 'suryaland_deleted_user_ids_v1';
+  const DELETED_STAFF_KEY = 'suryaland_deleted_staff_ids_v1';
+
+  if (matchedStaffRecord || matchedManagedUserRecord) {
+    const candidateStaffId = matchedStaffRecord?.id;
+    const candidateUserId =
+      matchedManagedUserRecord?.id ||
+      matchedStaffRecord?.linkedUserId ||
+      (candidateStaffId ? `user-usr-${candidateStaffId.replace(/^staff-/, '')}` : undefined);
+
+    try {
+      const rawDelUsers = localStorage.getItem(DELETED_USERS_KEY);
+      if (rawDelUsers) {
+        const parsedDelUsers = JSON.parse(rawDelUsers);
+        if (!Array.isArray(parsedDelUsers)) {
+          localStorage.removeItem(DELETED_USERS_KEY);
+          repairedKeys.push(DELETED_USERS_KEY);
+        } else if (candidateUserId && parsedDelUsers.includes(candidateUserId)) {
+          const cleaned = parsedDelUsers.filter((id: string) => id !== candidateUserId);
+          localStorage.setItem(DELETED_USERS_KEY, JSON.stringify(cleaned));
+          repairedKeys.push(`${DELETED_USERS_KEY}[${candidateUserId}]`);
+        }
+      }
+    } catch {
+      localStorage.removeItem(DELETED_USERS_KEY);
+      repairedKeys.push(DELETED_USERS_KEY);
+    }
+
+    try {
+      const rawDelStaff = localStorage.getItem(DELETED_STAFF_KEY);
+      if (rawDelStaff) {
+        const parsedDelStaff = JSON.parse(rawDelStaff);
+        if (!Array.isArray(parsedDelStaff)) {
+          localStorage.removeItem(DELETED_STAFF_KEY);
+          repairedKeys.push(DELETED_STAFF_KEY);
+        } else if (candidateStaffId && parsedDelStaff.includes(candidateStaffId)) {
+          const cleaned = parsedDelStaff.filter((id: string) => id !== candidateStaffId);
+          localStorage.setItem(DELETED_STAFF_KEY, JSON.stringify(cleaned));
+          repairedKeys.push(`${DELETED_STAFF_KEY}[${candidateStaffId}]`);
+        }
+      }
+    } catch {
+      localStorage.removeItem(DELETED_STAFF_KEY);
+      repairedKeys.push(DELETED_STAFF_KEY);
+    }
+
+    // Re-sync staff record into ManagedUsers if it was missing or desynchronized
+    if (matchedStaffRecord && matchedStaffRecord.username && matchedStaffRecord.password) {
+      storageService.saveCompanyStaff(matchedStaffRecord);
+      repairedKeys.push('staff_to_managed_user_resync');
+    }
+  }
+
+  const recoveredUser = storageService.getManagedUserByUsername(normUser);
+
+  const diagnosticEntry: AuthDiagnosticLogEntry = {
+    id: `diag-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    timestamp: new Date().toISOString(),
+    attemptedUsername: normUser,
+    failureReason,
+    localDataPresent,
+    localStaffCount,
+    localManagedUsersCount,
+    corruptedOrExpiredKeysReset: repairedKeys,
+    recoveredUserFound: Boolean(recoveredUser),
+    details:
+      repairedKeys.length > 0
+        ? `Mendeteksi & mereset key bermasalah: ${repairedKeys.join(', ')}. Status pemulihan akun lokal: ${
+            recoveredUser ? 'Berhasil dipulihkan' : 'Tidak ditemukan'
+          }.`
+        : `Data lokal tersedia (Staff: ${localStaffCount}, Users: ${localManagedUsersCount}). Akun @${normUser}: ${
+            recoveredUser ? `Ditemukan (Status: ${recoveredUser.status})` : 'Tidak terdaftar di penyimpanan lokal'
+          }.`,
+  };
+
+  try {
+    const rawLogs = localStorage.getItem(DIAGNOSTIC_LOGS_KEY);
+    const parsedLogs: AuthDiagnosticLogEntry[] = rawLogs ? JSON.parse(rawLogs) : [];
+    const safeLogs = Array.isArray(parsedLogs) ? parsedLogs : [];
+    safeLogs.unshift(diagnosticEntry);
+    localStorage.setItem(DIAGNOSTIC_LOGS_KEY, JSON.stringify(safeLogs.slice(0, 50)));
+  } catch {
+    try {
+      localStorage.removeItem(DIAGNOSTIC_LOGS_KEY);
+    } catch {}
+  }
+
+  console.warn('[Auth Diagnostic Helper] Login failure diagnostic triggered:', diagnosticEntry);
+
+  recordUserActivity({
+    userId: recoveredUser?.id || 'diag-auth-system',
+    userName: recoveredUser?.fullName || `@${normUser}`,
+    userRole: 'supervisor',
+    actionCategory: 'AUTH',
+    actionTitle: `Diagnostik Login: @${normUser}`,
+    actionDescription: diagnosticEntry.details,
+    targetEntity: normUser,
+  });
+
+  return {
+    localDataPresent,
+    repairedKeys,
+    recoveredUser,
+    diagnosticEntry,
+  };
+}
 
 export default function App() {
   // Authentication State
   const [authUser, setAuthUser] = useState<AuthUser | null>(() => {
     try {
+      // Verify and repair any corrupted or prematurely expired session/timestamp keys before reading auth state
+      verifyAndRepairSessionStorage(null);
       const saved = localStorage.getItem(AUTH_STORAGE_KEY);
-      return saved ? JSON.parse(saved) : null;
+      if (!saved) return null;
+      const parsed: AuthUser = JSON.parse(saved);
+      verifyAndRepairSessionStorage(parsed);
+      if (parsed && parsed.displayName && parsed.displayName.toLowerCase().includes('hendra wijaya')) {
+        const staffList = storageService.getCompanyStaff();
+        const directorStaff = staffList.find(
+          (s) => s.userLevel === 'Superadmin' || s.staffLevel === 'Direktur' || (s.jobRole || '').toLowerCase().includes('direktur')
+        );
+        parsed.displayName = directorStaff?.fullName || 'Direktur Utama';
+        if (parsed.email && parsed.email.toLowerCase().includes('hendra.wijaya')) {
+          parsed.email = directorStaff?.email || 'direktur@suryaland.co.id';
+        }
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(parsed));
+      }
+      return parsed;
     } catch {
+      try {
+        localStorage.removeItem(AUTH_STORAGE_KEY);
+      } catch {}
       return null;
     }
   });
@@ -57,6 +455,7 @@ export default function App() {
       const saved = localStorage.getItem(AUTH_STORAGE_KEY);
       if (saved) {
         const u = JSON.parse(saved);
+        if (u.role === 'client' || u.userLevel === 'Klien') return 'client-portal';
         if (u.role === 'manager') return 'approval';
         if (u.role === 'director') return 'dashboard';
         return 'wizard';
@@ -117,8 +516,10 @@ export default function App() {
   // Load initial data
   useEffect(() => {
     if (authUser) {
-      // Set initial tab and enforce client assignment for supervisor
-      if (authUser.role === 'supervisor' && authUser.assignedClientId && authUser.assignedClientId !== 'all') {
+      if (authUser.role === 'client' || authUser.userLevel === 'Klien') {
+        setSelectedClientId('ALL');
+        setActiveTab('client-portal');
+      } else if (authUser.role === 'supervisor' && authUser.assignedClientId && authUser.assignedClientId !== 'all') {
         setSelectedClientId(authUser.assignedClientId);
         setActiveTab('wizard');
       } else if (authUser.role === 'director') {
@@ -153,8 +554,10 @@ export default function App() {
 
   // Reset idle timer timestamp on active user interaction
   const handleExtendSession = useCallback(() => {
+    const now = Date.now();
     try {
-      localStorage.setItem(IDLE_STORAGE_KEY, Date.now().toString());
+      localStorage.setItem(IDLE_STORAGE_KEY, now.toString());
+      localStorage.setItem(LAST_LOGIN_TIMESTAMP_KEY, now.toString());
     } catch {}
     setIdleWarningSeconds(null);
     showToast('Sesi Anda telah diperpanjang.', 'success');
@@ -167,10 +570,16 @@ export default function App() {
       return;
     }
 
+    // Verify & repair any corrupted or prematurely expired timestamp / session token keys first
+    verifyAndRepairSessionStorage(authUser);
+
     // Set initial activity timestamp if not yet stored
     try {
       if (!localStorage.getItem(IDLE_STORAGE_KEY)) {
         localStorage.setItem(IDLE_STORAGE_KEY, Date.now().toString());
+      }
+      if (!localStorage.getItem(LAST_LOGIN_TIMESTAMP_KEY)) {
+        localStorage.setItem(LAST_LOGIN_TIMESTAMP_KEY, Date.now().toString());
       }
     } catch {}
 
@@ -194,11 +603,22 @@ export default function App() {
     const checkIdleInterval = setInterval(() => {
       try {
         const lastActiveStr = localStorage.getItem(IDLE_STORAGE_KEY);
-        const lastActive = lastActiveStr ? parseInt(lastActiveStr, 10) : Date.now();
-        const elapsed = Date.now() - lastActive;
+        const parsedActive = lastActiveStr ? parseInt(lastActiveStr, 10) : NaN;
+        if (Number.isNaN(parsedActive) || parsedActive <= 0) {
+          // Corrupted timestamp detected -> repair only the problematic key instead of logging out
+          verifyAndRepairSessionStorage(authUser);
+          return;
+        }
+        const elapsed = Date.now() - parsedActive;
 
         if (elapsed >= IDLE_TIMEOUT_MS) {
-          // Inactivity limit (30 minutes) reached -> Auto logout immediately
+          // Verify whether this is a premature expiration (e.g. stale key despite recent loginTime)
+          const repaired = verifyAndRepairSessionStorage(authUser);
+          if (repaired.includes(IDLE_STORAGE_KEY) || repaired.includes(LAST_LOGIN_TIMESTAMP_KEY)) {
+            setIdleWarningSeconds(null);
+            return;
+          }
+          // Inactivity limit (30 minutes) genuinely reached -> Auto logout immediately
           setIdleWarningSeconds(null);
           handleLogout(true);
         } else if (elapsed >= IDLE_WARNING_MS) {
@@ -219,11 +639,19 @@ export default function App() {
         try {
           const lastActiveStr = localStorage.getItem(IDLE_STORAGE_KEY);
           if (lastActiveStr) {
-            const elapsed = Date.now() - parseInt(lastActiveStr, 10);
-            if (elapsed >= IDLE_TIMEOUT_MS) {
-              setIdleWarningSeconds(null);
-              handleLogout(true);
+            const parsedActive = parseInt(lastActiveStr, 10);
+            if (Number.isNaN(parsedActive) || parsedActive <= 0) {
+              verifyAndRepairSessionStorage(authUser);
               return;
+            }
+            const elapsed = Date.now() - parsedActive;
+            if (elapsed >= IDLE_TIMEOUT_MS) {
+              const repaired = verifyAndRepairSessionStorage(authUser);
+              if (!repaired.includes(IDLE_STORAGE_KEY)) {
+                setIdleWarningSeconds(null);
+                handleLogout(true);
+                return;
+              }
             }
           }
           recordUserActivityEvent();
@@ -267,17 +695,36 @@ export default function App() {
 
   // Login handler
   const handleLoginSuccess = (user: AuthUser) => {
-    setAuthUser(user);
+    const now = Date.now();
+    const freshUser: AuthUser = {
+      ...user,
+      loginTime: new Date(now).toISOString(),
+    };
+    setAuthUser(freshUser);
     setIdleNotice(null);
     setIdleWarningSeconds(null);
     try {
-      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
-      localStorage.setItem(IDLE_STORAGE_KEY, Date.now().toString());
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(freshUser));
+      localStorage.setItem(IDLE_STORAGE_KEY, now.toString());
+      localStorage.setItem(LAST_LOGIN_TIMESTAMP_KEY, now.toString());
+      localStorage.setItem(
+        SESSION_TOKEN_KEY,
+        JSON.stringify({
+          token: `sess_${freshUser.id || freshUser.username}_${now}`,
+          username: freshUser.username,
+          issuedAt: now,
+          expiresAt: now + IDLE_TIMEOUT_MS,
+        })
+      );
     } catch (e) {
       console.error('Failed to save auth state', e);
     }
 
-    if (user.role === 'supervisor') {
+    if (user.role === 'client' || user.userLevel === 'Klien') {
+      setSelectedClientId('ALL');
+      setActiveTab('client-portal');
+      showToast(`Selamat Datang, ${user.displayName}! Anda masuk ke Portal Monitoring Progress & Laporan SPK Klien.`);
+    } else if (user.role === 'supervisor') {
       const assignedId = (user.assignedClientId && user.assignedClientId !== 'all') ? user.assignedClientId : 'client-1';
       setSelectedClientId(assignedId);
       setActiveTab('wizard');
@@ -300,8 +747,8 @@ export default function App() {
       userEmail: user.email,
       actionCategory: 'AUTH',
       actionTitle: `Masuk Sesi: ${user.displayName}`,
-      actionDescription: `Pengguna berhasil login ke sistem sebagai ${user.role === 'director' ? 'Direktur (Superadmin)' : user.role === 'manager' ? 'Manager Operasional' : 'Pengawas Lapangan'}.`,
-      targetEntity: `Sesi ${user.role === 'director' ? 'Direksi' : user.role === 'manager' ? 'Manajemen Manager' : 'Mobile Pengawas'}`,
+      actionDescription: `Pengguna berhasil login ke sistem sebagai ${user.role === 'director' ? 'Direktur (Superadmin)' : user.role === 'manager' ? 'Manager Operasional' : user.role === 'client' ? 'Klien (Monitoring Progress & Laporan SPK)' : 'Pengawas Lapangan'}.`,
+      targetEntity: `Sesi ${user.role === 'director' ? 'Direksi' : user.role === 'manager' ? 'Manajemen Manager' : user.role === 'client' ? 'Portal Klien SPK' : 'Mobile Pengawas'}`,
     });
   };
 
@@ -329,6 +776,8 @@ export default function App() {
     try {
       localStorage.removeItem(AUTH_STORAGE_KEY);
       localStorage.removeItem(IDLE_STORAGE_KEY);
+      localStorage.removeItem(LAST_LOGIN_TIMESTAMP_KEY);
+      localStorage.removeItem(SESSION_TOKEN_KEY);
     } catch (e) {
       console.error('Failed to remove auth state', e);
     }
@@ -367,7 +816,7 @@ export default function App() {
       return;
     }
     const isManager = authUser.role === 'manager';
-    const approverName = authUser?.displayName || (isManager ? 'Bambang Sugiarto, S.P.' : 'Ir. Hendra Wijaya, M.Si');
+    const approverName = authUser?.displayName || (isManager ? 'Bambang Sugiarto, S.P.' : 'Direktur Utama');
     const updated = isManager 
       ? storageService.approveReportByManager(reportId, approverName)
       : storageService.approveReportByDirector(reportId, approverName);
@@ -397,7 +846,7 @@ export default function App() {
       return;
     }
     const isManager = authUser.role === 'manager';
-    const approverName = authUser?.displayName || (isManager ? 'Bambang Sugiarto, S.P.' : 'Ir. Hendra Wijaya, M.Si');
+    const approverName = authUser?.displayName || (isManager ? 'Bambang Sugiarto, S.P.' : 'Direktur Utama');
     const updated = isManager
       ? storageService.rejectReportByManager(reportId, approverName, reason)
       : storageService.rejectReportByDirector(reportId, approverName, reason);
@@ -409,7 +858,7 @@ export default function App() {
         userName: approverName,
         userRole: authUser.role,
         userEmail: authUser?.email,
-        actionCategory: 'REPORT',
+        actionCategory: 'AUTH',
         actionTitle: `Penolakan Laporan ${updated.reportNumber}`,
         actionDescription: `Menolak laporan ${updated.clientName} (Blok ${updated.blockCode}) dengan catatan alasan: ${reason}.`,
         targetEntity: updated.reportNumber,
@@ -468,8 +917,16 @@ export default function App() {
     loadData();
 
     // Check permissions
+    if (authUser?.role === 'client' || authUser?.userLevel === 'Klien') {
+      if (tab !== 'client-portal' && tab !== 'reports' && tab !== 'official-pdf') {
+        showToast('Akses Ditolak: Akun Klien hanya memiliki hak akses Monitoring Progress & Laporan sesuai SPK.', 'warning');
+        setActiveTab('client-portal');
+        return;
+      }
+    }
+
     if (authUser?.role === 'supervisor') {
-      if (tab === 'dashboard' || tab === 'master' || tab === 'company-profile' || tab === 'director-field-monitor' || tab === 'user-activity-log' || tab === 'user-management' || tab === 'approval' || tab === 'tutorial') {
+      if (tab === 'dashboard' || tab === 'master' || tab === 'company-profile' || tab === 'director-field-monitor' || tab === 'user-activity-log' || tab === 'user-management' || tab === 'approval' || tab === 'tutorial' || tab === 'client-portal') {
         showToast('Akses Ditolak: Fitur ini hanya dapat diakses oleh Manajemen / Direksi.', 'warning');
         setActiveTab('wizard');
         return;
@@ -505,6 +962,7 @@ export default function App() {
     return (
       <LoginPage 
         onLoginSuccess={handleLoginSuccess}
+        onLoginFailureDiagnostic={triggerLoginFailureDiagnostic}
         idleNotice={idleNotice}
         onDismissNotice={() => setIdleNotice(null)}
       />
@@ -841,6 +1299,20 @@ export default function App() {
               </p>
             </div>
           )
+        )}
+
+        {/* Tab: Portal Akses Klien (Monitoring Progress & Laporan Sesuai SPK) */}
+        {activeTab === 'client-portal' && (
+          <div className="max-w-7xl mx-auto py-6 px-3 sm:px-6">
+            <ClientPortalView
+              authUser={authUser}
+              clients={clients}
+              reports={reports}
+              selectedClientId={selectedClientId}
+              onSelectClientId={handleSetSelectedClientId}
+              onViewPdf={(report) => handleOpenPdfModal(report.id)}
+            />
+          </div>
         )}
 
         {/* Tab: Tutorial & Documentation */}

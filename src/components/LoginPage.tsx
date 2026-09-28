@@ -8,17 +8,20 @@ import {
   Truck,
   ShieldAlert
 } from 'lucide-react';
-import { AuthUser } from '../types';
+import { AuthUser, ManagedUser } from '../types';
 import { storageService } from '../services/storageService';
+import type { LoginDiagnosticResult } from '../App';
 
 interface LoginPageProps {
   onLoginSuccess: (user: AuthUser) => void;
+  onLoginFailureDiagnostic?: (attemptedUsername: string, failureReason?: string) => LoginDiagnosticResult;
   idleNotice?: string | null;
   onDismissNotice?: () => void;
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ 
   onLoginSuccess,
+  onLoginFailureDiagnostic,
   idleNotice,
   onDismissNotice
 }) => {
@@ -30,13 +33,59 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
   const companyProfile = storageService.getCompanyProfile();
 
+  const buildAuthUserFromManaged = (user: ManagedUser): AuthUser => {
+    const jobLower = (user.jobTitle || '').toLowerCase();
+    const isSuper = user.userLevel === 'Superadmin' || jobLower.includes('direktur');
+    const isSiteManager =
+      user.userLevel === 'Site Manager' ||
+      user.userLevel === 'Manager' ||
+      jobLower.includes('manager');
+    const isClient = user.userLevel === 'Klien' || jobLower.includes('klien');
+    const role: 'director' | 'manager' | 'supervisor' | 'client' = isSuper
+      ? 'director'
+      : isSiteManager
+      ? 'manager'
+      : isClient
+      ? 'client'
+      : 'supervisor';
+
+    return {
+      id: user.id,
+      username: user.username,
+      displayName: user.fullName,
+      role,
+      roleTitle: isSuper
+        ? `${user.jobTitle} • Owner (Akses Penuh Semua Proyek)`
+        : isSiteManager
+        ? `${user.jobTitle} • Site Manager (Akses Approval & Audit Operasional)`
+        : isClient
+        ? `${user.jobTitle} • ${user.assignedClientName || 'Klien'} (Akses Monitoring Progres Lahan)`
+        : `${user.jobTitle} • ${user.assignedClientName || 'Proyek'} (${user.assignedBlockCodes?.join(', ') || 'Semua Blok'})`,
+      email: user.email,
+      phoneNumber: user.whatsappNumber,
+      address: user.address,
+      jobTitle: user.jobTitle,
+      userLevel: isClient ? 'Klien' : user.userLevel,
+      assignedClientId: isSuper || isSiteManager ? 'all' : user.assignedClientId,
+      assignedClientIds: isClient ? user.assignedClientIds : undefined,
+      assignedContractNumbers: isClient ? user.assignedContractNumbers : undefined,
+      assignedClientName: isSuper
+        ? 'Semua Proyek (Owner)'
+        : isSiteManager
+        ? 'Semua Proyek (Site Manager Operasional)'
+        : user.assignedClientName,
+      assignedBlockCodes: isSuper || isSiteManager ? ['Akses Semua Blok'] : user.assignedBlockCodes,
+      loginTime: new Date().toISOString(),
+    };
+  };
+
   // Validate credentials on submit
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     setIsLoading(true);
 
-    const trimmedUser = username.trim();
+    const trimmedUser = username.trim().replace(/^@+/, '');
     const trimmedPass = password.trim();
 
     if (!trimmedUser) {
@@ -52,80 +101,75 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     }
 
     setTimeout(() => {
-      // 1. Find matching user from managed users (case-insensitive)
-      const user = storageService.getManagedUserByUsername(trimmedUser);
+      // 1. Find matching user from managed users & company staff (case-insensitive, supports with or without @)
+      let user = storageService.getManagedUserByUsername(trimmedUser);
+
+      // If not found on first lookup, trigger diagnostic & self-healing check in App.tsx
+      if (!user && onLoginFailureDiagnostic) {
+        const diag = onLoginFailureDiagnostic(trimmedUser, 'USER_NOT_FOUND_INITIAL_LOOKUP');
+        if (diag.recoveredUser) {
+          user = diag.recoveredUser;
+        }
+      }
 
       if (user) {
         // Check if user is disabled
         if (user.status === 'Nonaktif') {
+          onLoginFailureDiagnostic?.(trimmedUser, 'ACCOUNT_DISABLED');
           setErrorMsg(`Akun "${user.username}" (${user.fullName}) sedang dinonaktifkan oleh Superadmin.`);
           setIsLoading(false);
           return;
         }
 
-        // Validate password
-        if (user.password === trimmedPass) {
-          const jobLower = (user.jobTitle || '').toLowerCase();
-          const isSuper = user.userLevel === 'Superadmin' || jobLower.includes('direktur');
-          const isSiteManager = user.userLevel === 'Site Manager' || user.userLevel === 'Manager' || jobLower.includes('manager');
-          const isClient = user.userLevel === 'Klien' || jobLower.includes('klien');
-          const role: 'director' | 'manager' | 'supervisor' | 'client' = isSuper ? 'director' : isSiteManager ? 'manager' : isClient ? 'client' : 'supervisor';
-
-          const authUserObj: AuthUser = {
-            id: user.id,
-            username: user.username,
-            displayName: user.fullName,
-            role,
-            roleTitle: isSuper
-              ? `${user.jobTitle} • Owner (Akses Penuh Semua Proyek)`
-              : isSiteManager
-              ? `${user.jobTitle} • Site Manager (Akses Approval & Audit Operasional)`
-              : isClient
-              ? `${user.jobTitle} • ${user.assignedClientName || 'Klien'} (Akses Monitoring Progres Lahan)`
-              : `${user.jobTitle} • ${user.assignedClientName || 'Proyek'} (${user.assignedBlockCodes?.join(', ') || 'Semua Blok'})`,
-            email: user.email,
-            phoneNumber: user.whatsappNumber,
-            address: user.address,
-            jobTitle: user.jobTitle,
-            userLevel: isClient ? 'Klien' : user.userLevel,
-            assignedClientId: (isSuper || isSiteManager) ? 'all' : user.assignedClientId,
-            assignedClientIds: isClient ? user.assignedClientIds : undefined,
-            assignedContractNumbers: isClient ? user.assignedContractNumbers : undefined,
-            assignedClientName: isSuper 
-              ? 'Semua Proyek (Owner)' 
-              : isSiteManager 
-              ? 'Semua Proyek (Site Manager Operasional)' 
-              : user.assignedClientName,
-            assignedBlockCodes: (isSuper || isSiteManager) ? ['Akses Semua Blok'] : user.assignedBlockCodes,
-            loginTime: new Date().toISOString(),
-          };
-
-          onLoginSuccess(authUserObj);
+        // Validate password (exact or trimmed match)
+        if ((user.password || '').trim() === trimmedPass) {
+          onLoginSuccess(buildAuthUserFromManaged(user));
           setIsLoading(false);
           return;
         } else {
+          // Run diagnostic in case a stale user record shadowed a newer CompanyStaff credential in localStorage
+          if (onLoginFailureDiagnostic) {
+            const diag = onLoginFailureDiagnostic(trimmedUser, 'PASSWORD_MISMATCH_CHECK_RESYNC');
+            if (
+              diag.recoveredUser &&
+              diag.recoveredUser.status !== 'Nonaktif' &&
+              (diag.recoveredUser.password || '').trim() === trimmedPass
+            ) {
+              onLoginSuccess(buildAuthUserFromManaged(diag.recoveredUser));
+              setIsLoading(false);
+              return;
+            }
+          }
           setErrorMsg('Password salah! Silakan periksa kembali kata sandi Anda.');
           setIsLoading(false);
           return;
         }
       }
 
-      // 2. Fallback checks for standard default usernames
+      // 2. Fallback checks for standard default / core usernames
       const upperUser = trimmedUser.toUpperCase();
-      if (upperUser === 'MANAGER') {
-        if (trimmedPass === 'manager123') {
+      if (upperUser === 'ANDIMUJIBAL' || upperUser === 'MANAGER') {
+        if (trimmedPass === 'andi12345' || trimmedPass === 'manager123') {
+          const staffList = storageService.getCompanyStaff();
+          const mgrStaff = staffList.find(
+            (s) =>
+              (s.username || '').trim().replace(/^@+/, '').toLowerCase() === trimmedUser.toLowerCase() ||
+              s.userLevel === 'Site Manager' ||
+              s.staffLevel === 'Site Manager'
+          );
           const userObj: AuthUser = {
-            id: 'user-usr-03',
-            username: 'MANAGER',
-            displayName: 'Bambang Sugiarto, S.P.',
+            id: mgrStaff?.linkedUserId || mgrStaff?.id || 'user-usr-03',
+            username: mgrStaff?.username || 'andimujibal',
+            displayName: mgrStaff?.fullName || 'Andi Mujibal',
             role: 'manager',
-            roleTitle: 'Manager Operasional • Wilayah Riau & Sumatera',
-            email: 'bambang.sugiarto@suryaland.co.id',
-            phoneNumber: '081388776655',
-            userLevel: 'Manager',
-            jobTitle: 'Manager Operasional',
+            roleTitle: `${mgrStaff?.jobRole || 'Site Manager Operasional'} • Site Manager (Akses Approval & Audit Operasional)`,
+            email: mgrStaff?.email || 'andimujibal@gmail.com',
+            phoneNumber: mgrStaff?.phone || '08222112233',
+            address: mgrStaff?.address || 'Makassar',
+            userLevel: 'Site Manager',
+            jobTitle: mgrStaff?.jobRole || 'Site Manager Operasional',
             assignedClientId: 'all',
-            assignedClientName: 'Semua Proyek (Manager Operasional)',
+            assignedClientName: 'Semua Proyek (Site Manager Operasional)',
             assignedBlockCodes: ['Akses Supervisi Semua Blok'],
             loginTime: new Date().toISOString(),
           };
@@ -133,52 +177,43 @@ export const LoginPage: React.FC<LoginPageProps> = ({
           setIsLoading(false);
           return;
         } else {
+          onLoginFailureDiagnostic?.(trimmedUser, 'FALLBACK_MANAGER_PASSWORD_MISMATCH');
           setErrorMsg('Password salah! Silakan periksa kembali kata sandi Anda.');
           setIsLoading(false);
           return;
         }
       }
 
-      if (upperUser === 'PENGAWAS') {
-        if (trimmedPass === 'satu2345') {
-          const userObj: AuthUser = {
-            id: 'user-usr-02',
-            username: 'PENGAWAS',
-            displayName: 'Ahmad Rizky Pratama, S.T.',
-            role: 'supervisor',
-            roleTitle: 'Pengawas Lapangan • PT. A (Blok AB, Blok AA)',
-            email: 'pengawas@suryaland.co.id',
-            phoneNumber: '081276543210',
-            userLevel: 'Pengawas',
-            assignedClientId: 'client-1',
-            assignedClientName: 'PT. A',
-            assignedBlockCodes: ['Blok AB', 'Blok AA'],
-            loginTime: new Date().toISOString(),
-          };
-          onLoginSuccess(userObj);
-          setIsLoading(false);
-          return;
-        } else {
-          setErrorMsg('Password salah! Silakan periksa kembali kata sandi Anda.');
-          setIsLoading(false);
-          return;
-        }
-      }
-
-      if (upperUser === 'DIREKTUR' || upperUser === 'SUPERADMIN') {
+      if (upperUser === 'BOSDIREKTUR' || upperUser === 'DIREKTUR' || upperUser === 'SUPERADMIN') {
         if (trimmedPass === 'bos12345') {
+          const staffList = storageService.getCompanyStaff();
+          const directorStaff = staffList.find(
+            (s) =>
+              s.userLevel === 'Superadmin' ||
+              s.staffLevel === 'Direktur' ||
+              (s.jobRole || '').toLowerCase().includes('direktur')
+          );
           const userObj: AuthUser = {
-            username: 'Direktur (Superadmin)',
-            displayName: 'Ir. Hendra Wijaya, M.Si',
+            id: directorStaff?.linkedUserId || directorStaff?.id || 'user-usr-01',
+            username: directorStaff?.username || 'bosdirektur',
+            displayName: directorStaff?.fullName || 'Ir. Baso Suriyadi',
             role: 'director',
-            roleTitle: 'Direktur Utama (Superadmin)',
-            email: 'hendra.wijaya@suryaland.co.id',
+            roleTitle: `${directorStaff?.jobRole || 'Direktur Utama'} • Owner (Akses Penuh Semua Proyek)`,
+            email: directorStaff?.email || 'basosuriyadi@gmail.com',
+            phoneNumber: directorStaff?.phone || '0811420312',
+            address: directorStaff?.address || 'Makassar',
+            userLevel: 'Superadmin',
+            jobTitle: directorStaff?.jobRole || 'Direktur Utama',
+            assignedClientId: 'all',
+            assignedClientName: 'Semua Proyek (Owner)',
+            assignedBlockCodes: ['Akses Semua Blok'],
             loginTime: new Date().toISOString(),
           };
           onLoginSuccess(userObj);
           setIsLoading(false);
           return;
         } else {
+          onLoginFailureDiagnostic?.(trimmedUser, 'FALLBACK_DIRECTOR_PASSWORD_MISMATCH');
           setErrorMsg('Password salah! Silakan periksa kembali kata sandi Anda.');
           setIsLoading(false);
           return;

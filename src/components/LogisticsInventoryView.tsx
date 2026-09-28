@@ -56,7 +56,7 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
   const isManager = authUser?.role === 'manager' || authUser?.userLevel === 'Manager';
   const isSupervisor = authUser?.role === 'supervisor';
   const canAuthorizeLogistics = isDirector || isManager;
-  const approverName = authUser?.displayName || (isManager ? 'Bambang Sugiarto, S.P.' : 'Ir. Hendra Wijaya, M.Si');
+  const approverName = authUser?.displayName || (isManager ? 'Bambang Sugiarto, S.P.' : 'Direktur Utama');
   const approverRole: 'director' | 'manager' = isManager ? 'manager' : 'director';
 
   const effectiveClientId = (isSupervisor && authUser?.assignedClientId && authUser.assignedClientId !== 'all')

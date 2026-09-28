@@ -837,7 +837,7 @@ export const LogisticsPrintModal: React.FC<LogisticsPrintModalProps> = ({
                 </div>
                 
                 <p className="font-black text-slate-900 underline font-mono text-xs uppercase">
-                  {directorStaff?.fullName || 'IR. HENDRA WIJAYA, M.SI'}
+                  {directorStaff?.fullName || 'DIREKTUR UTAMA'}
                 </p>
                 <p className="text-[10px] text-slate-500">
                   {directorStaff?.jobRole || 'Direktur Utama'} {companyProfile.officialName || 'PT. RBS GROUP'}

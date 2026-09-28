@@ -40,7 +40,8 @@ import {
   initialWorkAssignments,
   initialCompanyProfile,
   initialCompanyStaff,
-  createDefaultCompanyLogoSvg
+  createDefaultCompanyLogoSvg,
+  compressSignatureDataUrl
 } from '../data/mockData';
 import { 
   syncDocWrite, 
@@ -70,10 +71,25 @@ const STORAGE_KEYS = {
   JOB_TITLES: 'suryaland_job_titles_v1',
   COMPANY_PROFILE: 'suryaland_company_profile_v1',
   COMPANY_STAFF: 'suryaland_company_staff_v1',
+  DELETED_STAFF_IDS: 'suryaland_deleted_staff_ids_v1',
+  DELETED_USER_IDS: 'suryaland_deleted_user_ids_v1',
 };
+
+function isObsoleteHendraRecord(item: any): boolean {
+  if (!item) return false;
+  const nameLower = String(item.fullName || item.name || item.displayName || '').trim().toLowerCase();
+  const emailLower = String(item.email || '').trim().toLowerCase();
+  return nameLower.includes('hendra wijaya') || emailLower.includes('hendra.wijaya');
+}
+
+function normalizeUsername(u?: string): string {
+  return String(u || '').trim().replace(/^@+/, '').toLowerCase();
+}
 
 // Migration & purge flag: Purge dummy data from Master Data Proyek & Personil Tim Pendukung so user can fill real field data
 const REAL_DATA_PURGE_FLAG = 'rbs_clean_dummy_master_data_v2026_09';
+const USER_SYNC_REPAIR_FLAG = 'rbs_user_sync_repair_v2026_09_28_v2';
+
 if (typeof window !== 'undefined') {
   try {
     if (localStorage.getItem(REAL_DATA_PURGE_FLAG) !== 'done') {
@@ -86,6 +102,167 @@ if (typeof window !== 'undefined') {
       localStorage.setItem(STORAGE_KEYS.WORKERS, JSON.stringify([]));
       localStorage.setItem(REAL_DATA_PURGE_FLAG, 'done');
     }
+
+    // Self-healing repair: unpoison deleted IDs & ensure active staff and managedUsers are 100% synced
+    const rawDeletedStaff = localStorage.getItem(STORAGE_KEYS.DELETED_STAFF_IDS);
+    const deletedStaffSet = new Set<string>(rawDeletedStaff ? JSON.parse(rawDeletedStaff) : []);
+
+    const rawDeletedUsers = localStorage.getItem(STORAGE_KEYS.DELETED_USER_IDS);
+    const deletedUsersSet = new Set<string>(rawDeletedUsers ? JSON.parse(rawDeletedUsers) : []);
+
+    if (localStorage.getItem(USER_SYNC_REPAIR_FLAG) !== 'done') {
+      ['staff-1', 'staff-2', 'staff-3'].forEach((id) => deletedStaffSet.delete(id));
+      ['user-usr-01', 'user-usr-02', 'user-usr-03', 'user-usr-1', 'user-usr-2', 'user-usr-3'].forEach((id) =>
+        deletedUsersSet.delete(id)
+      );
+      localStorage.setItem(USER_SYNC_REPAIR_FLAG, 'done');
+    }
+
+    const rawStaffStr = localStorage.getItem(STORAGE_KEYS.COMPANY_STAFF);
+    let currentStaffList: CompanyStaff[] = [];
+    if (rawStaffStr) {
+      const parsedStaff: CompanyStaff[] = JSON.parse(rawStaffStr);
+      if (Array.isArray(parsedStaff)) {
+        currentStaffList = parsedStaff.filter((s) => {
+          if (isObsoleteHendraRecord(s)) {
+            if (s.id) deletedStaffSet.add(s.id);
+            return false;
+          }
+          return true;
+        });
+      }
+    }
+
+    // Ensure initial verified core accounts (Ir. Baso Suriyadi & Andi Mujibal) exist if missing
+    for (const initStaff of initialCompanyStaff) {
+      const initUserNorm = normalizeUsername(initStaff.username);
+      const initNameNorm = initStaff.fullName.trim().toLowerCase();
+      const exists = currentStaffList.some(
+        (s) =>
+          s.id === initStaff.id ||
+          normalizeUsername(s.username) === initUserNorm ||
+          (s.fullName || '').trim().toLowerCase() === initNameNorm
+      );
+      if (!exists && !deletedStaffSet.has(initStaff.id)) {
+        currentStaffList.push(initStaff);
+      }
+    }
+
+    // Any staff present in currentStaffList is active -> ensure its ID and linkedUserId are NOT in deleted sets
+    currentStaffList.forEach((s) => {
+      if (s.id) deletedStaffSet.delete(s.id);
+      if (s.linkedUserId) deletedUsersSet.delete(s.linkedUserId);
+      const derivedUserId = `user-usr-${(s.id || '').replace(/^staff-/, '')}`;
+      deletedUsersSet.delete(derivedUserId);
+    });
+
+    const rawUsersStr = localStorage.getItem(STORAGE_KEYS.MANAGED_USERS);
+    let currentUsersList: ManagedUser[] = [];
+    if (rawUsersStr) {
+      const parsedUsers: ManagedUser[] = JSON.parse(rawUsersStr);
+      if (Array.isArray(parsedUsers)) {
+        currentUsersList = parsedUsers.filter((u) => {
+          if (isObsoleteHendraRecord(u)) {
+            if (u.id) deletedUsersSet.add(u.id);
+            return false;
+          }
+          return true;
+        });
+      }
+    }
+
+    // Synchronize all staff with credentials into currentUsersList
+    currentStaffList.forEach((s) => {
+      const cleanU = normalizeUsername(s.username);
+      if (!cleanU || !s.password) return;
+      const sNameLower = (s.fullName || '').trim().toLowerCase();
+      const existingIdx = currentUsersList.findIndex(
+        (u) =>
+          (s.linkedUserId && u.id === s.linkedUserId) ||
+          normalizeUsername(u.username) === cleanU ||
+          (sNameLower && (u.fullName || '').trim().toLowerCase() === sNameLower)
+      );
+      const resolvedUserId =
+        (existingIdx >= 0 ? currentUsersList[existingIdx].id : undefined) ||
+        s.linkedUserId ||
+        `user-usr-${(s.id || '').replace(/^staff-/, '')}`;
+      s.linkedUserId = resolvedUserId;
+      deletedUsersSet.delete(resolvedUserId);
+
+      const safeSig =
+        s.signatureUrl && s.signatureUrl.length > 120000
+          ? existingIdx >= 0 &&
+            currentUsersList[existingIdx].signatureUrl &&
+            currentUsersList[existingIdx].signatureUrl!.length <= 120000
+            ? currentUsersList[existingIdx].signatureUrl
+            : undefined
+          : s.signatureUrl;
+
+      const syncedUser: ManagedUser = {
+        id: resolvedUserId,
+        fullName: s.fullName.trim(),
+        address: s.address || (existingIdx >= 0 ? currentUsersList[existingIdx].address : '') || '-',
+        whatsappNumber: s.phone || (existingIdx >= 0 ? currentUsersList[existingIdx].whatsappNumber : '') || '-',
+        email: s.email || (existingIdx >= 0 ? currentUsersList[existingIdx].email : '') || '-',
+        jobTitle: s.jobRole || (existingIdx >= 0 ? currentUsersList[existingIdx].jobTitle : 'Staff'),
+        userLevel: (s.userLevel ||
+          (s.staffLevel === 'Direktur'
+            ? 'Superadmin'
+            : s.staffLevel === 'Site Manager'
+            ? 'Site Manager'
+            : s.staffLevel === 'Klien'
+            ? 'Klien'
+            : 'Pengawas')) as any,
+        username: cleanU,
+        password: s.password,
+        signatureUrl: safeSig,
+        employeeIdNumber: s.employeeIdNumber,
+        assignedClientId: s.assignedClientId || 'all',
+        assignedClientName: s.assignedClientName || 'Semua Proyek',
+        assignedBlockCodes: s.assignedBlockCodes || ['Akses Semua Blok'],
+        status: s.status || 'Aktif',
+        createdAt: s.createdAt || new Date().toISOString(),
+        updatedAt: s.updatedAt || new Date().toISOString(),
+        notes: s.notes || '',
+      };
+
+      if (existingIdx >= 0) {
+        currentUsersList[existingIdx] = { ...currentUsersList[existingIdx], ...syncedUser };
+      } else {
+        currentUsersList.push(syncedUser);
+      }
+    });
+
+    localStorage.setItem(STORAGE_KEYS.DELETED_STAFF_IDS, JSON.stringify(Array.from(deletedStaffSet)));
+    localStorage.setItem(STORAGE_KEYS.DELETED_USER_IDS, JSON.stringify(Array.from(deletedUsersSet)));
+    localStorage.setItem(STORAGE_KEYS.COMPANY_STAFF, JSON.stringify(currentStaffList));
+    localStorage.setItem(STORAGE_KEYS.MANAGED_USERS, JSON.stringify(currentUsersList));
+
+    // Background compression for any existing oversized signature images (> 100KB) so Firestore sync succeeds
+    setTimeout(async () => {
+      try {
+        let staffCompressed = false;
+        for (const st of currentStaffList) {
+          if (st.signatureUrl && st.signatureUrl.length > 100000) {
+            st.signatureUrl = await compressSignatureDataUrl(st.signatureUrl);
+            staffCompressed = true;
+            syncDocWrite(FIRESTORE_COLLECTIONS.COMPANY_STAFF, st);
+          }
+        }
+        if (staffCompressed) {
+          localStorage.setItem(STORAGE_KEYS.COMPANY_STAFF, JSON.stringify(currentStaffList));
+        }
+        for (const usr of currentUsersList) {
+          if (usr.signatureUrl && usr.signatureUrl.length > 100000) {
+            usr.signatureUrl = await compressSignatureDataUrl(usr.signatureUrl);
+          }
+          syncDocWrite(FIRESTORE_COLLECTIONS.USERS, usr);
+        }
+        localStorage.setItem(STORAGE_KEYS.MANAGED_USERS, JSON.stringify(currentUsersList));
+      } catch (err) {
+        console.warn('Signature optimization notice:', err);
+      }
+    }, 500);
   } catch (err) {
     console.warn('Initial storage purge notice:', err);
   }
@@ -107,7 +284,24 @@ function saveToStorage<T>(key: string, value: T): void {
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch (err) {
-    console.error(`Error saving key ${key} to storage:`, err);
+    console.warn(`Quota notice saving key ${key}, optimizing storage...`, err);
+    try {
+      if (key !== STORAGE_KEYS.USER_ACTIVITIES) {
+        localStorage.removeItem(STORAGE_KEYS.USER_ACTIVITIES);
+      }
+      if (key === STORAGE_KEYS.MANAGED_USERS && Array.isArray(value)) {
+        const slimUsers = (value as any[]).map((u) =>
+          u && typeof u.signatureUrl === 'string' && u.signatureUrl.length > 100000
+            ? { ...u, signatureUrl: undefined }
+            : u
+        );
+        localStorage.setItem(key, JSON.stringify(slimUsers));
+        return;
+      }
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch (retryErr) {
+      console.error(`Error saving key ${key} to storage after optimization:`, retryErr);
+    }
   }
 }
 
@@ -793,13 +987,53 @@ export const storageService = {
   getWorkAssignments(clientId?: string, blockId?: string): WorkAssignment[] {
     const raw = loadFromStorage<WorkAssignment[]>(STORAGE_KEYS.WORK_ASSIGNMENTS, initialWorkAssignments);
     const clients = this.getClients();
+    const staffList = this.getCompanyStaff();
 
-    // Pastikan setiap penugasan memiliki assignmentNumber terisi
+    // Pastikan setiap penugasan memiliki assignmentNumber terisi & tersinkronisasi dengan Daftar Staff
     const all = raw.map((asg, idx) => {
-      if (asg.assignmentNumber) return asg;
-      const client = clients.find((c) => c.id === asg.clientId);
-      const generated = this.generateAssignmentNumber(client, asg.assignedDate, raw.slice(0, idx));
-      return { ...asg, assignmentNumber: generated };
+      let enriched = { ...asg };
+      if (!enriched.assignmentNumber) {
+        const client = clients.find((c) => c.id === enriched.clientId);
+        enriched.assignmentNumber = this.generateAssignmentNumber(client, enriched.assignedDate, raw.slice(0, idx));
+      }
+
+      // Sinkronisasi data Site Manager dengan Daftar Staff (Menu Identitas Perusahaan)
+      if (enriched.siteManagerStaffId || enriched.siteManagerName) {
+        const matchedSm = staffList.find(
+          (s) =>
+            (enriched.siteManagerStaffId && s.id === enriched.siteManagerStaffId) ||
+            (enriched.siteManagerName && s.fullName && s.fullName.trim().toLowerCase() === enriched.siteManagerName.trim().toLowerCase())
+        );
+        if (matchedSm) {
+          enriched.siteManagerStaffId = matchedSm.id;
+          enriched.siteManagerName = matchedSm.fullName;
+          enriched.siteManagerPhone = enriched.siteManagerPhone || matchedSm.phone;
+        }
+      }
+
+      // Sinkronisasi data Pengawas Lapangan dengan Daftar Staff (Menu Identitas Perusahaan)
+      if (enriched.supervisors && enriched.supervisors.length > 0) {
+        enriched.supervisors = enriched.supervisors.map((spv) => {
+          const matchedSpv = staffList.find(
+            (s) =>
+              (spv.staffId && s.id === spv.staffId) ||
+              (spv.name && s.fullName && s.fullName.trim().toLowerCase() === spv.name.trim().toLowerCase())
+          );
+          if (matchedSpv) {
+            return {
+              ...spv,
+              staffId: matchedSpv.id,
+              name: matchedSpv.fullName,
+              phone: spv.phone || matchedSpv.phone,
+              jobRole: matchedSpv.jobRole,
+              employeeIdNumber: matchedSpv.employeeIdNumber,
+            };
+          }
+          return spv;
+        });
+      }
+
+      return enriched;
     });
 
     return all.filter((item) => {
@@ -817,12 +1051,76 @@ export const storageService = {
   saveWorkAssignment(assignment: WorkAssignment): WorkAssignment {
     const list = this.getWorkAssignments();
     const idx = list.findIndex((a) => a.id === assignment.id);
-    
+    const staffList = this.getCompanyStaff();
+
     // Pastikan ada assignmentNumber
     let finalAssignment = { ...assignment };
     if (!finalAssignment.assignmentNumber) {
       const client = this.getClientById(finalAssignment.clientId);
       finalAssignment.assignmentNumber = this.generateAssignmentNumber(client, finalAssignment.assignedDate, list);
+    }
+
+    // 1. Hubungkan & sinkronkan Site Manager dengan Daftar Staff (Identitas Perusahaan)
+    if (finalAssignment.siteManagerStaffId || finalAssignment.siteManagerName) {
+      const matchedSm = staffList.find(
+        (s) =>
+          (finalAssignment.siteManagerStaffId && s.id === finalAssignment.siteManagerStaffId) ||
+          (finalAssignment.siteManagerName &&
+            s.fullName &&
+            s.fullName.trim().toLowerCase() === finalAssignment.siteManagerName.trim().toLowerCase())
+      );
+      if (matchedSm) {
+        finalAssignment.siteManagerStaffId = matchedSm.id;
+        finalAssignment.siteManagerName = matchedSm.fullName;
+        finalAssignment.siteManagerPhone = finalAssignment.siteManagerPhone?.trim() || matchedSm.phone;
+
+        // Jika nomor telepon Site Manager diubah pada form penugasan, update juga di Daftar Staff
+        if (finalAssignment.siteManagerPhone && finalAssignment.siteManagerPhone !== matchedSm.phone) {
+          this.saveCompanyStaff({
+            ...matchedSm,
+            phone: finalAssignment.siteManagerPhone,
+          });
+        }
+      }
+    }
+
+    // 2. Hubungkan & sinkronkan Pengawas Lapangan dengan Daftar Staff (Identitas Perusahaan)
+    if (finalAssignment.supervisors && finalAssignment.supervisors.length > 0) {
+      finalAssignment.supervisors = finalAssignment.supervisors.map((spv) => {
+        const matchedSpv = this.getCompanyStaff().find(
+          (s) =>
+            (spv.staffId && s.id === spv.staffId) ||
+            (spv.name && s.fullName && s.fullName.trim().toLowerCase() === spv.name.trim().toLowerCase())
+        );
+        if (matchedSpv) {
+          const syncedPhone = spv.phone?.trim() || matchedSpv.phone;
+          const syncedBlockCodes =
+            spv.coverageType === 'ALL'
+              ? ['Akses Semua Blok (Tanpa Batas)']
+              : spv.assignedBlockCodes && spv.assignedBlockCodes.length > 0
+              ? spv.assignedBlockCodes
+              : matchedSpv.assignedBlockCodes;
+
+          // Update penempatan proyek SPK, cakupan blok, dan no WA pada Daftar Staff & Akun Login Pengawas
+          this.saveCompanyStaff({
+            ...matchedSpv,
+            phone: syncedPhone,
+            assignedClientId: finalAssignment.clientId,
+            assignedClientName: finalAssignment.clientName,
+            assignedBlockCodes: syncedBlockCodes,
+          });
+
+          return {
+            ...spv,
+            staffId: matchedSpv.id,
+            name: matchedSpv.fullName,
+            phone: syncedPhone,
+            jobRole: matchedSpv.jobRole,
+            employeeIdNumber: matchedSpv.employeeIdNumber,
+          };
+        }
+        return spv;
+      });
     }
 
     if (idx >= 0) {
@@ -832,9 +1130,26 @@ export const storageService = {
     }
     saveToStorage(STORAGE_KEYS.WORK_ASSIGNMENTS, list);
 
-    // Sync to Worker record
-    if (finalAssignment.workerId) {
-      const workers = this.getWorkers();
+    // 3. Sync to Worker records (Tim Pendukung)
+    const workers = this.getWorkers();
+    let workersChanged = false;
+    if (finalAssignment.supportTeam && finalAssignment.supportTeam.length > 0) {
+      finalAssignment.supportTeam.forEach((sup) => {
+        const wIdx = workers.findIndex(
+          (w) =>
+            (sup.workerId && w.id === sup.workerId) ||
+            (sup.workerName && w.name.trim().toLowerCase() === sup.workerName.trim().toLowerCase())
+        );
+        if (wIdx >= 0) {
+          workers[wIdx].assignedClientId = finalAssignment.clientId;
+          if (sup.equipmentId) {
+            workers[wIdx].assignedEquipmentId = sup.equipmentId;
+          }
+          syncDocWrite(FIRESTORE_COLLECTIONS.WORKERS, workers[wIdx]);
+          workersChanged = true;
+        }
+      });
+    } else if (finalAssignment.workerId) {
       const wIdx = workers.findIndex((w) => w.id === finalAssignment.workerId);
       if (wIdx >= 0) {
         workers[wIdx].assignedClientId = finalAssignment.clientId;
@@ -842,11 +1157,19 @@ export const storageService = {
         if (finalAssignment.equipmentId) {
           workers[wIdx].assignedEquipmentId = finalAssignment.equipmentId;
         }
-        this.saveWorker(workers[wIdx]);
+        syncDocWrite(FIRESTORE_COLLECTIONS.WORKERS, workers[wIdx]);
+        workersChanged = true;
       }
+    }
+    if (workersChanged) {
+      saveToStorage(STORAGE_KEYS.WORKERS, workers);
     }
 
     syncDocWrite(FIRESTORE_COLLECTIONS.WORK_ASSIGNMENTS, finalAssignment);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('suryaland_master_sync'));
+      window.dispatchEvent(new CustomEvent('suryaland_company_staff_sync'));
+    }
     return finalAssignment;
   },
 
@@ -2169,9 +2492,9 @@ export const storageService = {
         timestamp: new Date(Date.now() - 1000 * 60 * 205).toISOString(),
         formattedTime: '24/09/2026, 10:38:12 WIB',
         userId: 'dir-01',
-        userName: 'Ir. Hendra Wijaya, M.Si',
+        userName: 'Direktur Utama',
         userRole: 'director',
-        userEmail: 'direktur@suryaland.co.id',
+        userEmail: 'direktur@rbsgroup.co.id',
         actionCategory: 'REPORT',
         actionTitle: 'Approval Digital Dokumen Laporan',
         actionDescription: 'Memberikan tanda tangan digital persetujuan Direktur untuk Laporan Harian #SRL-2026-001 PT. A.',
@@ -2320,31 +2643,165 @@ export const storageService = {
   // MANAJEMEN USER & JABATAN (CRUD SUPERADMIN)
   // ==========================================
   getManagedUsers(): ManagedUser[] {
-    const raw = loadFromStorage<ManagedUser[]>(STORAGE_KEYS.MANAGED_USERS, initialManagedUsers);
-    // Normalisasi: Direktur / Superadmin adalah Owner tanpa batasan penempatan proyek
-    return raw.map((u) => {
+    const deletedIds = loadFromStorage<string[]>(STORAGE_KEYS.DELETED_USER_IDS, []);
+    const deletedStaffIds = loadFromStorage<string[]>(STORAGE_KEYS.DELETED_STAFF_IDS, []);
+    const hasStored = typeof window !== 'undefined' && localStorage.getItem(STORAGE_KEYS.MANAGED_USERS) !== null;
+    let raw = loadFromStorage<ManagedUser[]>(STORAGE_KEYS.MANAGED_USERS, initialManagedUsers);
+    if (!Array.isArray(raw) || (!hasStored && raw.length === 0)) {
+      raw = initialManagedUsers.filter((u) => !deletedIds.includes(u.id) && !isObsoleteHendraRecord(u));
+      saveToStorage(STORAGE_KEYS.MANAGED_USERS, raw);
+    } else {
+      raw = raw.filter((u) => {
+        if (isObsoleteHendraRecord(u)) {
+          syncDocDelete(FIRESTORE_COLLECTIONS.USERS, u.id);
+          return false;
+        }
+        return true;
+      });
+    }
+
+    // Merge active CompanyStaff credentials so Staff & ManagedUsers are NEVER out of sync
+    const rawStaff = loadFromStorage<CompanyStaff[]>(STORAGE_KEYS.COMPANY_STAFF, initialCompanyStaff);
+    const validStaff = Array.isArray(rawStaff)
+      ? rawStaff.filter((s) => s && !isObsoleteHendraRecord(s) && !deletedStaffIds.includes(s.id))
+      : [];
+
+    const activeStaffUserIds = new Set<string>();
+    const activeStaffUsernames = new Set<string>();
+    let usersListChanged = false;
+
+    validStaff.forEach((staff) => {
+      const cleanU = normalizeUsername(staff.username);
+      if (!cleanU || !staff.password) return;
+      activeStaffUsernames.add(cleanU);
+
+      const staffNameLower = (staff.fullName || '').trim().toLowerCase();
+      const idx = raw.findIndex(
+        (u) =>
+          (staff.linkedUserId && u.id === staff.linkedUserId) ||
+          normalizeUsername(u.username) === cleanU ||
+          (staffNameLower && (u.fullName || '').trim().toLowerCase() === staffNameLower)
+      );
+
+      const resolvedUserId =
+        (idx >= 0 ? raw[idx].id : undefined) ||
+        staff.linkedUserId ||
+        `user-usr-${(staff.id || '').replace(/^staff-/, '')}`;
+      activeStaffUserIds.add(resolvedUserId);
+
+      const resolvedLevel: ManagedUser['userLevel'] =
+        staff.userLevel ||
+        (staff.staffLevel === 'Direktur'
+          ? 'Superadmin'
+          : staff.staffLevel === 'Site Manager'
+          ? 'Site Manager'
+          : staff.staffLevel === 'Klien'
+          ? 'Klien'
+          : 'Pengawas');
+
+      const safeSig =
+        staff.signatureUrl && staff.signatureUrl.length > 120000
+          ? idx >= 0 && raw[idx].signatureUrl && raw[idx].signatureUrl!.length <= 120000
+            ? raw[idx].signatureUrl
+            : undefined
+          : staff.signatureUrl;
+
+      if (idx >= 0) {
+        const existing = raw[idx];
+        if (
+          normalizeUsername(existing.username) !== cleanU ||
+          existing.password !== staff.password ||
+          existing.status !== staff.status ||
+          existing.userLevel !== resolvedLevel ||
+          existing.fullName !== staff.fullName
+        ) {
+          raw[idx] = {
+            ...existing,
+            fullName: staff.fullName.trim(),
+            address: staff.address || existing.address || '-',
+            whatsappNumber: staff.phone || existing.whatsappNumber || '-',
+            email: staff.email || existing.email || '-',
+            jobTitle: staff.jobRole || existing.jobTitle || 'Staff',
+            userLevel: resolvedLevel,
+            username: cleanU,
+            password: staff.password,
+            signatureUrl: safeSig || existing.signatureUrl,
+            employeeIdNumber: staff.employeeIdNumber || existing.employeeIdNumber,
+            assignedClientId: staff.assignedClientId || existing.assignedClientId || 'all',
+            assignedClientName: staff.assignedClientName || existing.assignedClientName || 'Semua Proyek',
+            assignedBlockCodes: staff.assignedBlockCodes || existing.assignedBlockCodes || ['Akses Semua Blok'],
+            status: staff.status || existing.status || 'Aktif',
+          };
+          usersListChanged = true;
+        }
+      } else {
+        const constructed: ManagedUser = {
+          id: resolvedUserId,
+          fullName: staff.fullName.trim(),
+          address: staff.address || '-',
+          whatsappNumber: staff.phone || '-',
+          email: staff.email || '-',
+          jobTitle: staff.jobRole || 'Staff',
+          userLevel: resolvedLevel,
+          username: cleanU,
+          password: staff.password,
+          signatureUrl: safeSig,
+          employeeIdNumber: staff.employeeIdNumber,
+          assignedClientId: staff.assignedClientId || 'all',
+          assignedClientName: staff.assignedClientName || 'Semua Proyek',
+          assignedBlockCodes: staff.assignedBlockCodes || ['Akses Semua Blok'],
+          status: staff.status || 'Aktif',
+          createdAt: staff.createdAt || new Date().toISOString(),
+          updatedAt: staff.updatedAt || new Date().toISOString(),
+          notes: staff.notes || '',
+        };
+        raw.push(constructed);
+        usersListChanged = true;
+      }
+    });
+
+    const filteredUsers = raw.filter(
+      (u) =>
+        activeStaffUserIds.has(u.id) ||
+        activeStaffUsernames.has(normalizeUsername(u.username)) ||
+        !deletedIds.includes(u.id)
+    );
+
+    if (usersListChanged) {
+      saveToStorage(STORAGE_KEYS.MANAGED_USERS, filteredUsers);
+    }
+
+    // Normalisasi: Direktur / Superadmin & Site Manager
+    return filteredUsers.map((u) => {
       const jobLower = (u.jobTitle || '').toLowerCase();
       if (u.userLevel === 'Superadmin' || jobLower.includes('direktur')) {
         return {
           ...u,
+          username: normalizeUsername(u.username) || u.username,
           assignedClientId: 'all',
           assignedClientName: 'Semua Proyek (Owner)',
-          assignedBlockCodes: u.assignedBlockCodes && u.assignedBlockCodes.length > 0 && !u.assignedBlockCodes.includes('Blok AB')
-            ? u.assignedBlockCodes
-            : ['Akses Semua Blok (Tanpa Batas)'],
+          assignedBlockCodes:
+            u.assignedBlockCodes && u.assignedBlockCodes.length > 0 && !u.assignedBlockCodes.includes('Blok AB')
+              ? u.assignedBlockCodes
+              : ['Akses Semua Blok (Tanpa Batas)'],
         };
       }
-      if (u.userLevel === 'Manager' || jobLower.includes('manager')) {
+      if (u.userLevel === 'Site Manager' || u.userLevel === 'Manager' || jobLower.includes('manager')) {
         return {
           ...u,
+          username: normalizeUsername(u.username) || u.username,
           assignedClientId: u.assignedClientId || 'all',
-          assignedClientName: u.assignedClientName || 'Semua Proyek (Manager Operasional)',
-          assignedBlockCodes: u.assignedBlockCodes && u.assignedBlockCodes.length > 0 && !u.assignedBlockCodes.includes('Blok AB')
-            ? u.assignedBlockCodes
-            : ['Akses Supervisi Semua Blok'],
+          assignedClientName: u.assignedClientName || 'Semua Proyek (Site Manager Operasional)',
+          assignedBlockCodes:
+            u.assignedBlockCodes && u.assignedBlockCodes.length > 0 && !u.assignedBlockCodes.includes('Blok AB')
+              ? u.assignedBlockCodes
+              : ['Akses Supervisi Semua Blok'],
         };
       }
-      return u;
+      return {
+        ...u,
+        username: normalizeUsername(u.username) || u.username,
+      };
     });
   },
 
@@ -2353,14 +2810,51 @@ export const storageService = {
   },
 
   getManagedUserByUsername(username: string): ManagedUser | undefined {
-    const trimmed = (username || '').trim().toLowerCase();
+    const trimmed = normalizeUsername(username);
     if (!trimmed) return undefined;
 
-    const existing = this.getManagedUsers().find((u) => (u.username || '').trim().toLowerCase() === trimmed);
+    // 1. Cari dari daftar ManagedUsers (yang sudah digabung dengan CompanyStaff aktif)
+    let existing = this.getManagedUsers().find((u) => normalizeUsername(u.username) === trimmed);
+
+    // 2. Cek langsung ke CompanyStaff jika ada update kredensial terbaru di Submenu 2
+    const staffMatch = this.getCompanyStaff().find((s) => normalizeUsername(s.username) === trimmed);
+    if (staffMatch && staffMatch.password) {
+      const resolvedLevel: ManagedUser['userLevel'] =
+        staffMatch.userLevel ||
+        (staffMatch.staffLevel === 'Direktur'
+          ? 'Superadmin'
+          : staffMatch.staffLevel === 'Site Manager'
+          ? 'Site Manager'
+          : staffMatch.staffLevel === 'Klien'
+          ? 'Klien'
+          : 'Pengawas');
+
+      existing = {
+        ...(existing || {}),
+        id: existing?.id || staffMatch.linkedUserId || `user-usr-${staffMatch.id.replace(/^staff-/, '')}`,
+        fullName: staffMatch.fullName.trim(),
+        address: staffMatch.address || existing?.address || '-',
+        whatsappNumber: staffMatch.phone || existing?.whatsappNumber || '-',
+        email: staffMatch.email || existing?.email || '-',
+        jobTitle: staffMatch.jobRole || existing?.jobTitle || 'Staff',
+        userLevel: resolvedLevel,
+        username: trimmed,
+        password: staffMatch.password,
+        signatureUrl: staffMatch.signatureUrl || existing?.signatureUrl,
+        employeeIdNumber: staffMatch.employeeIdNumber || existing?.employeeIdNumber,
+        assignedClientId: staffMatch.assignedClientId || existing?.assignedClientId || 'all',
+        assignedClientName: staffMatch.assignedClientName || existing?.assignedClientName || 'Semua Proyek',
+        assignedBlockCodes: staffMatch.assignedBlockCodes || existing?.assignedBlockCodes || ['Akses Semua Blok'],
+        status: staffMatch.status || existing?.status || 'Aktif',
+        createdAt: staffMatch.createdAt || existing?.createdAt || new Date().toISOString(),
+        notes: staffMatch.notes || existing?.notes || '',
+      };
+    }
+
     const allClients = loadFromStorage<Client[]>(STORAGE_KEYS.CLIENTS, initialClients);
     const matchingClients = allClients.filter(
       (c) =>
-        (c.username && c.username.trim().toLowerCase() === trimmed) ||
+        (c.username && normalizeUsername(c.username) === trimmed) ||
         (existing &&
           existing.userLevel === 'Klien' &&
           (c.id === existing.assignedClientId ||
@@ -2429,32 +2923,51 @@ export const storageService = {
   },
 
   saveManagedUser(user: ManagedUser): ManagedUser {
-    const list = this.getManagedUsers();
-    const idx = list.findIndex((u) => u.id === user.id);
+    const cleanUser: ManagedUser = {
+      ...user,
+      username: normalizeUsername(user.username) || user.username.trim(),
+    };
+    const list = loadFromStorage<ManagedUser[]>(STORAGE_KEYS.MANAGED_USERS, initialManagedUsers).filter(
+      (u) => !isObsoleteHendraRecord(u)
+    );
+    const idx = list.findIndex(
+      (u) => u.id === cleanUser.id || (cleanUser.username && normalizeUsername(u.username) === cleanUser.username)
+    );
 
-    // If Superadmin / Direktur: Owner tanpa batasan penempatan proyek
-    const jobLower = (user.jobTitle || '').toLowerCase();
-    const isSuper = user.userLevel === 'Superadmin' || jobLower.includes('direktur');
-    const isManager = user.userLevel === 'Manager' || jobLower.includes('manager');
+    const jobLower = (cleanUser.jobTitle || '').toLowerCase();
+    const isSuper = cleanUser.userLevel === 'Superadmin' || jobLower.includes('direktur');
+    const isManager =
+      cleanUser.userLevel === 'Site Manager' || cleanUser.userLevel === 'Manager' || jobLower.includes('manager');
+
+    const safeSignatureUrl =
+      cleanUser.signatureUrl && cleanUser.signatureUrl.length > 120000 ? undefined : cleanUser.signatureUrl;
+
     const normalizedUser: ManagedUser = isSuper
       ? {
-          ...user,
+          ...cleanUser,
+          signatureUrl: safeSignatureUrl,
           assignedClientId: 'all',
           assignedClientName: 'Semua Proyek (Owner)',
           assignedBlockCodes: ['Akses Semua Blok (Tanpa Batas)'],
         }
       : isManager
       ? {
-          ...user,
-          assignedClientId: user.assignedClientId || 'all',
-          assignedClientName: user.assignedClientName || 'Semua Proyek (Manager Operasional)',
+          ...cleanUser,
+          signatureUrl: safeSignatureUrl,
+          assignedClientId: cleanUser.assignedClientId || 'all',
+          assignedClientName: cleanUser.assignedClientName || 'Semua Proyek (Site Manager Operasional)',
           assignedBlockCodes: ['Akses Supervisi Semua Blok'],
         }
-      : user;
+      : {
+          ...cleanUser,
+          signatureUrl: safeSignatureUrl,
+        };
 
     if (idx >= 0) {
       list[idx] = {
+        ...list[idx],
         ...normalizedUser,
+        id: list[idx].id,
         updatedAt: new Date().toISOString(),
       };
     } else {
@@ -2464,6 +2977,10 @@ export const storageService = {
       });
     }
 
+    const deletedIds = loadFromStorage<string[]>(STORAGE_KEYS.DELETED_USER_IDS, []);
+    if (deletedIds.includes(normalizedUser.id)) {
+      saveToStorage(STORAGE_KEYS.DELETED_USER_IDS, deletedIds.filter((id) => id !== normalizedUser.id));
+    }
     saveToStorage(STORAGE_KEYS.MANAGED_USERS, list);
     syncDocWrite(FIRESTORE_COLLECTIONS.USERS, normalizedUser);
 
@@ -2484,35 +3001,17 @@ export const storageService = {
     return normalizedUser;
   },
 
-  deleteManagedUser(userId: string, currentAuthUser?: AuthUser | null): boolean {
-    let activeUser = currentAuthUser;
-    if (!activeUser && typeof window !== 'undefined') {
-      try {
-        const raw = localStorage.getItem('suryaland_auth_user_v1');
-        if (raw) activeUser = JSON.parse(raw);
-      } catch {
-        // ignore
-      }
-    }
-    if (activeUser) {
-      const targetUser = this.getManagedUserById(userId);
-      if (
-        (activeUser.id && activeUser.id === userId) ||
-        (activeUser.username && targetUser?.username && activeUser.username.trim().toLowerCase() === targetUser.username.trim().toLowerCase())
-      ) {
-        console.warn(`[storageService] Keamanan: Akun user '${activeUser.username}' yang sedang aktif tidak dapat menghapus dirinya sendiri.`);
-        return false;
-      }
+  deleteManagedUser(userId: string, _currentAuthUser?: AuthUser | null): boolean {
+    const deletedIds = loadFromStorage<string[]>(STORAGE_KEYS.DELETED_USER_IDS, []);
+    if (!deletedIds.includes(userId)) {
+      saveToStorage(STORAGE_KEYS.DELETED_USER_IDS, [...deletedIds, userId]);
     }
 
-    const list = this.getManagedUsers();
+    const list = loadFromStorage<ManagedUser[]>(STORAGE_KEYS.MANAGED_USERS, initialManagedUsers);
     const filtered = list.filter((u) => u.id !== userId);
-    if (filtered.length !== list.length) {
-      saveToStorage(STORAGE_KEYS.MANAGED_USERS, filtered);
-      syncDocDelete(FIRESTORE_COLLECTIONS.USERS, userId);
-      return true;
-    }
-    return false;
+    saveToStorage(STORAGE_KEYS.MANAGED_USERS, filtered);
+    syncDocDelete(FIRESTORE_COLLECTIONS.USERS, userId);
+    return true;
   },
 
   getJobTitles(): string[] {
@@ -2618,35 +3117,59 @@ export const storageService = {
   // INFORMASI STAFF PERUSAHAAN & TTD DIGITAL
   // ==========================================
   getCompanyStaff(): CompanyStaff[] {
-    const rawStaff = loadFromStorage<CompanyStaff[]>(STORAGE_KEYS.COMPANY_STAFF, initialCompanyStaff);
-    const users = this.getManagedUsers();
+    const deletedStaffIds = loadFromStorage<string[]>(STORAGE_KEYS.DELETED_STAFF_IDS, []);
+    const hasStoredStaff = typeof window !== 'undefined' && localStorage.getItem(STORAGE_KEYS.COMPANY_STAFF) !== null;
+    let rawStaff = loadFromStorage<CompanyStaff[]>(STORAGE_KEYS.COMPANY_STAFF, initialCompanyStaff);
+    if (!Array.isArray(rawStaff) || (!hasStoredStaff && rawStaff.length === 0)) {
+      rawStaff = initialCompanyStaff.filter((s) => !deletedStaffIds.includes(s.id) && !isObsoleteHendraRecord(s));
+      saveToStorage(STORAGE_KEYS.COMPANY_STAFF, rawStaff);
+    } else {
+      const beforeLen = rawStaff.length;
+      rawStaff = rawStaff.filter((s) => {
+        if (isObsoleteHendraRecord(s)) {
+          syncDocDelete(FIRESTORE_COLLECTIONS.COMPANY_STAFF, s.id);
+          return false;
+        }
+        return !deletedStaffIds.includes(s.id);
+      });
+      if (rawStaff.length !== beforeLen) {
+        saveToStorage(STORAGE_KEYS.COMPANY_STAFF, rawStaff);
+      }
+    }
+
+    const rawUsers = loadFromStorage<ManagedUser[]>(STORAGE_KEYS.MANAGED_USERS, initialManagedUsers);
+    const users = Array.isArray(rawUsers) ? rawUsers.filter((u) => !isObsoleteHendraRecord(u)) : [];
 
     // Enrich staff with corresponding managed user credentials if not already set
     return rawStaff.map((staff) => {
-      const staffUserLower = (staff.username || '').trim().toLowerCase();
+      const staffUserLower = normalizeUsername(staff.username);
       const staffNameLower = (staff.fullName || '').trim().toLowerCase();
       const matchedUser = users.find(
-        (u) => (staff.linkedUserId && u.id === staff.linkedUserId) ||
-               (staffUserLower && u.username && u.username.trim().toLowerCase() === staffUserLower) ||
-               (staffNameLower && u.fullName && u.fullName.trim().toLowerCase() === staffNameLower)
+        (u) =>
+          (staff.linkedUserId && u.id === staff.linkedUserId) ||
+          (staffUserLower && normalizeUsername(u.username) === staffUserLower) ||
+          (staffNameLower && u.fullName && u.fullName.trim().toLowerCase() === staffNameLower)
       );
 
       if (matchedUser) {
         return {
           ...staff,
-          username: staff.username || matchedUser.username,
+          username: normalizeUsername(staff.username || matchedUser.username),
           password: staff.password || matchedUser.password,
           userLevel: staff.userLevel || matchedUser.userLevel,
           address: staff.address || matchedUser.address,
           signatureUrl: staff.signatureUrl || matchedUser.signatureUrl,
-          employeeIdNumber: staff.employeeIdNumber || matchedUser.employeeIdNumber || staff.employeeIdNumber,
+          employeeIdNumber: staff.employeeIdNumber || matchedUser.employeeIdNumber,
           linkedUserId: matchedUser.id,
           assignedClientId: staff.assignedClientId || matchedUser.assignedClientId,
           assignedClientName: staff.assignedClientName || matchedUser.assignedClientName,
           assignedBlockCodes: staff.assignedBlockCodes || matchedUser.assignedBlockCodes,
         };
       }
-      return staff;
+      return {
+        ...staff,
+        username: staff.username ? normalizeUsername(staff.username) : staff.username,
+      };
     });
   },
 
@@ -2656,26 +3179,59 @@ export const storageService = {
   },
 
   saveCompanyStaff(staff: CompanyStaff): CompanyStaff {
+    const deletedStaffIds = loadFromStorage<string[]>(STORAGE_KEYS.DELETED_STAFF_IDS, []);
+    if (deletedStaffIds.includes(staff.id)) {
+      saveToStorage(STORAGE_KEYS.DELETED_STAFF_IDS, deletedStaffIds.filter((id) => id !== staff.id));
+    }
+
     const staffList = this.getCompanyStaff();
     const existingIndex = staffList.findIndex((s) => s.id === staff.id);
+    const previousStaff = existingIndex >= 0 ? staffList[existingIndex] : undefined;
     let updatedList: CompanyStaff[];
+    const cleanUser = normalizeUsername(staff.username || previousStaff?.username);
+    const cleanPass = staff.password || previousStaff?.password;
+
     const payload: CompanyStaff = {
+      ...previousStaff,
       ...staff,
+      username: cleanUser || staff.username,
+      password: cleanPass,
       updatedAt: new Date().toISOString(),
     };
 
     // Auto-synchronize to ManagedUser if credentials (username & password) exist
     if (payload.username && payload.password) {
       const users = this.getManagedUsers();
-      const payloadUserLower = payload.username.trim().toLowerCase();
+      const payloadUserLower = normalizeUsername(payload.username);
       const payloadNameLower = (payload.fullName || '').trim().toLowerCase();
+      const prevUserLower = normalizeUsername(previousStaff?.username);
+      const prevNameLower = (previousStaff?.fullName || '').trim().toLowerCase();
+
       const existingUser = users.find(
-        (u) => (payload.linkedUserId && u.id === payload.linkedUserId) ||
-               (payloadUserLower && u.username && u.username.trim().toLowerCase() === payloadUserLower) ||
-               (payloadNameLower && u.fullName && u.fullName.trim().toLowerCase() === payloadNameLower)
+        (u) =>
+          (payload.linkedUserId && u.id === payload.linkedUserId) ||
+          (previousStaff?.linkedUserId && u.id === previousStaff.linkedUserId) ||
+          (prevUserLower && normalizeUsername(u.username) === prevUserLower) ||
+          (prevNameLower && u.fullName && u.fullName.trim().toLowerCase() === prevNameLower) ||
+          (payloadUserLower && normalizeUsername(u.username) === payloadUserLower) ||
+          (payloadNameLower && u.fullName && u.fullName.trim().toLowerCase() === payloadNameLower)
       );
-      const userId = payload.linkedUserId || existingUser?.id || `user-usr-${payload.id.replace(/^staff-/, '')}`;
+      const userId =
+        existingUser?.id ||
+        payload.linkedUserId ||
+        previousStaff?.linkedUserId ||
+        `user-usr-${payload.id.replace(/^staff-/, '')}`;
       payload.linkedUserId = userId;
+
+      const resolvedLevel: ManagedUser['userLevel'] =
+        payload.userLevel ||
+        (payload.staffLevel === 'Direktur'
+          ? 'Superadmin'
+          : payload.staffLevel === 'Site Manager'
+          ? 'Site Manager'
+          : payload.staffLevel === 'Klien'
+          ? 'Klien'
+          : 'Pengawas');
 
       const userPayload: ManagedUser = {
         id: userId,
@@ -2684,15 +3240,16 @@ export const storageService = {
         whatsappNumber: payload.phone?.trim() || '',
         email: payload.email?.trim() || '',
         jobTitle: payload.jobRole.trim(),
-        userLevel: payload.userLevel || 'Pengawas',
-        username: payload.username.trim().toLowerCase(),
+        userLevel: resolvedLevel,
+        username: payloadUserLower,
         password: payload.password,
-        signatureUrl: payload.signatureUrl,
+        signatureUrl:
+          payload.signatureUrl && payload.signatureUrl.length <= 100000 ? payload.signatureUrl : undefined,
         employeeIdNumber: payload.employeeIdNumber,
-        assignedClientId: payload.assignedClientId,
-        assignedClientName: payload.assignedClientName,
-        assignedBlockCodes: payload.assignedBlockCodes,
-        status: payload.status,
+        assignedClientId: payload.assignedClientId || 'all',
+        assignedClientName: payload.assignedClientName || 'Semua Proyek',
+        assignedBlockCodes: payload.assignedBlockCodes || ['Akses Semua Blok'],
+        status: payload.status || 'Aktif',
         notes: payload.notes,
         createdAt: existingUser?.createdAt || payload.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -2709,70 +3266,122 @@ export const storageService = {
     }
 
     saveToStorage(STORAGE_KEYS.COMPANY_STAFF, updatedList);
-    syncDocWrite(FIRESTORE_COLLECTIONS.COMPANY_STAFF, payload);
+
+    if (payload.signatureUrl && payload.signatureUrl.length > 100000) {
+      compressSignatureDataUrl(payload.signatureUrl).then((compressedSig) => {
+        const compressedPayload: CompanyStaff = { ...payload, signatureUrl: compressedSig };
+        const currentList = loadFromStorage<CompanyStaff[]>(STORAGE_KEYS.COMPANY_STAFF, []);
+        const idx = currentList.findIndex((s) => s.id === compressedPayload.id);
+        if (idx >= 0) {
+          currentList[idx] = compressedPayload;
+          saveToStorage(STORAGE_KEYS.COMPANY_STAFF, currentList);
+        }
+        syncDocWrite(FIRESTORE_COLLECTIONS.COMPANY_STAFF, compressedPayload);
+      });
+    } else {
+      syncDocWrite(FIRESTORE_COLLECTIONS.COMPANY_STAFF, payload);
+    }
+
+    // Sinkronkan juga perubahan Nama / Telepon / Jabatan Staff ke Penugasan Kerja (Menu 4) yang terhubung
+    const rawAssignments = loadFromStorage<WorkAssignment[]>(STORAGE_KEYS.WORK_ASSIGNMENTS, initialWorkAssignments);
+    if (Array.isArray(rawAssignments) && rawAssignments.length > 0) {
+      const oldNameLower = (previousStaff?.fullName || '').trim().toLowerCase();
+      const newNameLower = (payload.fullName || '').trim().toLowerCase();
+      let assignmentsChanged = false;
+
+      const syncedAssignments = rawAssignments.map((asg) => {
+        let updatedAsg = { ...asg };
+        let asgModified = false;
+
+        // Cek apakah staff ini adalah Site Manager pada penugasan ini
+        const asgSmLower = (updatedAsg.siteManagerName || '').trim().toLowerCase();
+        if (
+          updatedAsg.siteManagerStaffId === payload.id ||
+          (asgSmLower && (asgSmLower === oldNameLower || asgSmLower === newNameLower))
+        ) {
+          updatedAsg.siteManagerStaffId = payload.id;
+          updatedAsg.siteManagerName = payload.fullName;
+          updatedAsg.siteManagerPhone = payload.phone || updatedAsg.siteManagerPhone;
+          if (updatedAsg.staffLevel === 'Site Manager') {
+            updatedAsg.staffName = payload.fullName;
+          }
+          asgModified = true;
+        }
+
+        // Cek apakah staff ini ada di daftar Pengawas Lapangan pada penugasan ini
+        if (updatedAsg.supervisors && updatedAsg.supervisors.length > 0) {
+          updatedAsg.supervisors = updatedAsg.supervisors.map((spv) => {
+            const spvNameLower = (spv.name || '').trim().toLowerCase();
+            if (
+              spv.staffId === payload.id ||
+              (spvNameLower && (spvNameLower === oldNameLower || spvNameLower === newNameLower))
+            ) {
+              asgModified = true;
+              return {
+                ...spv,
+                staffId: payload.id,
+                name: payload.fullName,
+                phone: payload.phone || spv.phone,
+                jobRole: payload.jobRole,
+                employeeIdNumber: payload.employeeIdNumber,
+              };
+            }
+            return spv;
+          });
+        }
+
+        if (asgModified) {
+          assignmentsChanged = true;
+          syncDocWrite(FIRESTORE_COLLECTIONS.WORK_ASSIGNMENTS, updatedAsg);
+        }
+        return updatedAsg;
+      });
+
+      if (assignmentsChanged) {
+        saveToStorage(STORAGE_KEYS.WORK_ASSIGNMENTS, syncedAssignments);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('suryaland_master_sync'));
+        }
+      }
+    }
+
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('suryaland_company_staff_sync', { detail: payload }));
     }
     return payload;
   },
 
-  // Menghapus data staff beserta akun & TTD digital dengan proteksi self-deletion
-  deleteStaff(id: string, currentAuthUser?: AuthUser | null): boolean {
+  // Menghapus data staff beserta akun & TTD digital secara tuntas
+  deleteStaff(id: string, _currentAuthUser?: AuthUser | null): boolean {
     const staffList = this.getCompanyStaff();
-    const target = staffList.find((s) => s.id === id);
-    if (!target) return false;
+    const rawStoredStaff = loadFromStorage<CompanyStaff[]>(STORAGE_KEYS.COMPANY_STAFF, []);
+    const target =
+      staffList.find((s) => s.id === id) ||
+      rawStoredStaff.find((s) => s.id === id) ||
+      initialCompanyStaff.find((s) => s.id === id);
 
-    // Deteksi akun yang sedang aktif/login
-    let activeUser = currentAuthUser;
-    if (!activeUser && typeof window !== 'undefined') {
-      try {
-        const raw = localStorage.getItem('suryaland_auth_user_v1');
-        if (raw) activeUser = JSON.parse(raw);
-      } catch {
-        // ignore
+    if (target) {
+      // Also delete linked ManagedUser account if exists
+      if (target.linkedUserId) {
+        this.deleteManagedUser(target.linkedUserId);
+      }
+      if (target.username) {
+        const u = this.getManagedUserByUsername(target.username);
+        if (u) this.deleteManagedUser(u.id);
+      }
+      const fullNameLower = (target.fullName || '').trim().toLowerCase();
+      if (fullNameLower) {
+        const matchingUsers = this.getManagedUsers().filter(
+          (u) => (u.fullName || '').trim().toLowerCase() === fullNameLower
+        );
+        matchingUsers.forEach((u) => this.deleteManagedUser(u.id));
       }
     }
 
-    // VALIDASI: Akun yang sedang login tidak bisa menghapus dirinya sendiri
-    if (activeUser) {
-      const activeUsername = (activeUser.username || '').trim().toLowerCase();
-      const activeDisplayName = (activeUser.displayName || '').trim().toLowerCase();
-      const activeId = activeUser.id;
-
-      const targetUsername = (target.username || '').trim().toLowerCase();
-      const targetFullName = (target.fullName || '').trim().toLowerCase();
-      const targetLinkedId = target.linkedUserId;
-      const targetId = target.id;
-
-      const isSelf = 
-        Boolean(activeId && (targetId === activeId || targetLinkedId === activeId)) ||
-        Boolean(activeUsername && targetUsername && activeUsername === targetUsername) ||
-        Boolean(activeDisplayName && targetFullName && activeDisplayName === targetFullName);
-
-      if (isSelf) {
-        console.warn(`[storageService] Keamanan: Akun staff '${target.fullName}' (@${target.username}) yang sedang login tidak diizinkan menghapus dirinya sendiri.`);
-        return false;
-      }
-    }
-
-    // Proteksi akun Direktur Utama sistem
-    if (target.username && target.username.trim().toLowerCase() === 'direktur') {
-      console.warn('[storageService] Keamanan: Akun Direktur Utama tidak dapat dihapus.');
-      return false;
-    }
-
-    // Also delete linked ManagedUser account if exists
-    if (target.linkedUserId) {
-      this.deleteManagedUser(target.linkedUserId, activeUser);
-    } 
-    if (target.username) {
-      const u = this.getManagedUserByUsername(target.username);
-      if (u) this.deleteManagedUser(u.id, activeUser);
-    }
-    const fullNameLower = (target.fullName || '').trim().toLowerCase();
-    if (fullNameLower) {
-      const uByName = this.getManagedUsers().find((u) => (u.fullName || '').trim().toLowerCase() === fullNameLower);
-      if (uByName) this.deleteManagedUser(uByName.id, activeUser);
+    // Record deleted staff ID so it will not be re-seeded from initialCompanyStaff or Firestore
+    const deletedStaffIds = loadFromStorage<string[]>(STORAGE_KEYS.DELETED_STAFF_IDS, []);
+    if (!deletedStaffIds.includes(id)) {
+      saveToStorage(STORAGE_KEYS.DELETED_STAFF_IDS, [...deletedStaffIds, id]);
     }
 
     const filtered = staffList.filter((s) => s.id !== id);
@@ -2813,6 +3422,8 @@ export const storageService = {
 
   // Reset database to initial seed
   resetToDefault(): void {
+    saveToStorage(STORAGE_KEYS.DELETED_STAFF_IDS, []);
+    saveToStorage(STORAGE_KEYS.DELETED_USER_IDS, []);
     saveToStorage(STORAGE_KEYS.REPORTS, initialDailyReports);
     saveToStorage(STORAGE_KEYS.EQUIPMENTS, initialEquipments);
     saveToStorage(STORAGE_KEYS.WORKERS, initialWorkers);
