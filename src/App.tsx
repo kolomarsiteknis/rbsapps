@@ -1045,6 +1045,9 @@ export default function App() {
               selectedClientId={selectedClientId}
               setSelectedClientId={setSelectedClientId}
               onNavigateMaster={() => setActiveTab('master')}
+              authUser={authUser}
+              onRefreshData={loadData}
+              showToast={showToast}
             />
           ) : (
             <div className="max-w-xl mx-auto my-12 p-6 bg-white rounded-2xl border border-rose-200 text-center space-y-3 shadow-lg">

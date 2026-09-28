@@ -675,7 +675,7 @@ export interface CompanyStaff {
   fullName: string;           // Nama Lengkap & Gelar
   jobRole: string;            // Jabatan: Direktur, Site Manager, Pengawas, Klien, Akuntan, atau custom
   staffLevel?: 'Direktur' | 'Site Manager' | 'Pengawas' | 'Klien' | 'Akuntan' | 'Staff' | string;
-  employeeIdNumber: string;   // NIK / NIP Karyawan
+  employeeIdNumber?: string;   // NIK / NIP Karyawan
   email: string;              // Email Staff
   phone: string;              // No HP / WA
   address?: string;           // Alamat Domisili / Kantor

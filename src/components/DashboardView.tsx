@@ -40,12 +40,16 @@ import {
   ExternalLink,
   RefreshCw,
   Smartphone,
-  Info
+  Info,
+  Database,
+  LayoutDashboard,
+  HardDrive
 } from 'lucide-react';
-import { DailyReport, Equipment, UserRole, Client } from '../types';
+import { DailyReport, Equipment, UserRole, Client, AuthUser } from '../types';
 import { storageService } from '../services/storageService';
 import { WeeklyFuelRatioChart } from './WeeklyFuelRatioChart';
 import { ConnectionHealthCheck } from './ConnectionHealthCheck';
+import { DataRecoveryView } from './DataRecoveryView';
 
 interface DashboardViewProps {
   reports: DailyReport[];
@@ -64,6 +68,9 @@ interface DashboardViewProps {
   selectedClientId: string;
   setSelectedClientId: (id: string) => void;
   onNavigateMaster?: () => void;
+  authUser?: AuthUser | null;
+  onRefreshData?: () => void;
+  showToast?: (message: string, type?: 'success' | 'warning' | 'info' | 'error') => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -83,7 +90,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   selectedClientId,
   setSelectedClientId,
   onNavigateMaster,
+  authUser,
+  onRefreshData,
+  showToast,
 }) => {
+  // Sub-menu navigation within Dashboard for Directors
+  const [activeDashboardSubMenu, setActiveDashboardSubMenu] = useState<'overview' | 'data-recovery'>('overview');
+
   const metrics = storageService.getExecutiveDashboardMetrics(selectedClientId);
   const isFiltered = selectedClientId !== 'ALL';
   const activeClient = clients.find((c) => c.id === selectedClientId);
@@ -385,7 +398,75 @@ _Pesan ini dikirim resmi melalui Sistem RBS APPS — Executive Monitoring & Aler
       {/* 1. CONNECTION HEALTH CHECK BANNER / STATUS */}
       <ConnectionHealthCheck variant="dashboard" />
 
-      {/* PORTOFOLIO PROYEK KLIEN - DROPDOWN SELECTOR (RESPONSIF UNTUK BANYAK PT) */}
+      {/* 2. SUB-MENU NAVIGATION FOR DIRECTORS (OVERVIEW VS DATA RECOVERY) */}
+      <div className="bg-white rounded-2xl p-2 sm:p-2.5 shadow-sm border border-slate-200/90 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={() => setActiveDashboardSubMenu('overview')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black transition-all duration-200 cursor-pointer whitespace-nowrap ${
+              activeDashboardSubMenu === 'overview'
+                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                : 'bg-slate-50 hover:bg-slate-100 text-slate-600'
+            }`}
+          >
+            <LayoutDashboard className="w-4 h-4" />
+            <span>1. Ringkasan Eksekutif & KPI</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveDashboardSubMenu('data-recovery')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black transition-all duration-200 cursor-pointer whitespace-nowrap ${
+              activeDashboardSubMenu === 'data-recovery'
+                ? 'bg-slate-900 text-amber-400 shadow-md shadow-slate-950/20 ring-2 ring-amber-400/40'
+                : 'bg-slate-50 hover:bg-slate-100 text-slate-700'
+            }`}
+          >
+            <Database className="w-4 h-4 text-amber-500" />
+            <span>2. Data Recovery & Cache Diagnostics</span>
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-600 border border-amber-500/30">
+              Direktur
+            </span>
+          </button>
+        </div>
+
+        <div className="hidden lg:flex items-center gap-3 text-xs font-medium text-slate-500 px-2">
+          {activeDashboardSubMenu === 'overview' ? (
+            <button
+              type="button"
+              onClick={() => setActiveDashboardSubMenu('data-recovery')}
+              className="flex items-center gap-1.5 text-xs text-amber-800 hover:text-amber-900 font-bold bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-xl border border-amber-200/80 transition cursor-pointer shadow-2xs"
+              title="Periksa integritas cache lokal atau lakukan sinkronisasi ulang"
+            >
+              <Database className="w-3.5 h-3.5 text-amber-600" />
+              <span>Diagnostik & Pemulihan Cache →</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setActiveDashboardSubMenu('overview')}
+              className="flex items-center gap-1.5 text-xs text-slate-700 hover:text-slate-900 font-bold bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-xl transition cursor-pointer"
+            >
+              <LayoutDashboard className="w-3.5 h-3.5 text-slate-500" />
+              <span>Kembali ke Ringkasan KPI</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {activeDashboardSubMenu === 'data-recovery' ? (
+        <DataRecoveryView
+          authUser={authUser || null}
+          clients={clients}
+          reports={reports}
+          equipments={equipments}
+          onRefreshData={onRefreshData}
+          showToast={showToast}
+        />
+      ) : (
+        <>
+          {/* PORTOFOLIO PROYEK KLIEN - DROPDOWN SELECTOR (RESPONSIF UNTUK BANYAK PT) */}
       <section className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-200/90 transition-all duration-200 hover:shadow-md space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
           <div className="flex items-center gap-2.5">
@@ -1973,6 +2054,8 @@ _Pesan ini dikirim resmi melalui Sistem RBS APPS — Executive Monitoring & Aler
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
 
       {/* MODAL 1: PENGATURAN TARGET HARIAN & TOLERANSI ALERT */}

@@ -3159,7 +3159,7 @@ export const storageService = {
           userLevel: staff.userLevel || matchedUser.userLevel,
           address: staff.address || matchedUser.address,
           signatureUrl: staff.signatureUrl || matchedUser.signatureUrl,
-          employeeIdNumber: staff.employeeIdNumber || matchedUser.employeeIdNumber,
+          employeeIdNumber: staff.employeeIdNumber || matchedUser.employeeIdNumber || '',
           linkedUserId: matchedUser.id,
           assignedClientId: staff.assignedClientId || matchedUser.assignedClientId,
           assignedClientName: staff.assignedClientName || matchedUser.assignedClientName,
@@ -3412,11 +3412,546 @@ export const storageService = {
   },
 
   // Clear sub menu 3 (Personil Tim pendukung: Operator, Mekanik, Logistik, Pendukung)
+  // Clear sub menu 3 (Personil Tim pendukung: Operator, Mekanik, Logistik, Pendukung)
   clearWorkers(): void {
     saveToStorage(STORAGE_KEYS.WORKERS, []);
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('suryaland_workers_sync'));
       window.dispatchEvent(new CustomEvent('suryaland_firestore_sync', { detail: { collection: 'workers' } }));
+    }
+  },
+
+  // =========================================================================
+  // DATA RECOVERY & CACHE DIAGNOSTICS SUITE (FOR DIRECTORS)
+  // =========================================================================
+
+  getStorageDiagnostics(): {
+    totalKeys: number;
+    totalBytes: number;
+    formattedTotalSize: string;
+    estimatedQuotaBytes: number;
+    quotaUsedPercent: number;
+    totalAnomaliesCount: number;
+    keys: Array<{
+      key: string;
+      label: string;
+      category: 'master' | 'operational' | 'system' | 'auth';
+      rawBytes: number;
+      formattedSize: string;
+      itemCount: number;
+      isJsonValid: boolean;
+      hasAnomalies: boolean;
+      anomalyDescriptions: string[];
+    }>;
+    firestoreStatus: {
+      databaseId: string;
+      projectId: string;
+      isReady: boolean;
+    };
+  } {
+    if (typeof window === 'undefined') {
+      return {
+        totalKeys: 0,
+        totalBytes: 0,
+        formattedTotalSize: '0 KB',
+        estimatedQuotaBytes: 5242880,
+        quotaUsedPercent: 0,
+        totalAnomaliesCount: 0,
+        keys: [],
+        firestoreStatus: {
+          databaseId: 'ai-studio-suryalandapps-620aaec9-a67b-4df9-82c6-3c7cbc90551b',
+          projectId: 'gen-lang-client-0997069506',
+          isReady: false,
+        },
+      };
+    }
+
+    const trackedKeys: Array<{
+      key: string;
+      label: string;
+      category: 'master' | 'operational' | 'system' | 'auth';
+    }> = [
+      { key: STORAGE_KEYS.REPORTS, label: 'Laporan Harian Land Clearing', category: 'operational' },
+      { key: STORAGE_KEYS.CLIENTS, label: 'Master Klien & SPK Perkebunan', category: 'master' },
+      { key: STORAGE_KEYS.BLOCKS, label: 'Master Blok & Lokasi Kerja', category: 'master' },
+      { key: STORAGE_KEYS.EQUIPMENTS, label: 'Master Alat Berat & Rasio BBM', category: 'master' },
+      { key: STORAGE_KEYS.WORK_ASSIGNMENTS, label: 'Master Penugasan Kerja Lapangan', category: 'master' },
+      { key: STORAGE_KEYS.DAILY_TARGETS, label: 'Master Target Ritme Harian', category: 'master' },
+      { key: STORAGE_KEYS.WORKERS, label: 'Master Personil Tim Pendukung', category: 'master' },
+      { key: STORAGE_KEYS.INVENTORY, label: 'Inventaris Logistik & Solar B35', category: 'operational' },
+      { key: STORAGE_KEYS.LOGISTICS_TRANSACTIONS, label: 'Transaksi Masuk/Keluar Logistik', category: 'operational' },
+      { key: STORAGE_KEYS.P2H_CHECKLISTS, label: 'P2H Pra-Operasi Harian Alat', category: 'operational' },
+      { key: STORAGE_KEYS.FUEL_BOWSER, label: 'Penerimaan Solar Bowser Keliling', category: 'operational' },
+      { key: STORAGE_KEYS.SOIL_INCIDENTS, label: 'Log Bahaya & Insiden Gambut K3', category: 'operational' },
+      { key: STORAGE_KEYS.GEOTAG_PHOTOS, label: 'Foto Bukti Geotag & Watermark', category: 'operational' },
+      { key: STORAGE_KEYS.COMPANY_STAFF, label: 'Staff Manajemen & TTD Resmi', category: 'master' },
+      { key: STORAGE_KEYS.MANAGED_USERS, label: 'Akun Pengguna Sistem & Kredensial', category: 'master' },
+      { key: STORAGE_KEYS.COMPANY_PROFILE, label: 'Profil Perusahaan & Logo Resmi', category: 'master' },
+      { key: STORAGE_KEYS.USER_ACTIVITIES, label: 'Log Riwayat Audit Aktivitas & GPS', category: 'system' },
+      { key: 'suryaland_auth_diagnostic_logs_v1', label: 'Log Diagnostik Autentikasi Sesi', category: 'system' },
+      { key: 'suryaland_auth_user_v1', label: 'Sesi Akun Pengguna Aktif', category: 'auth' },
+      { key: 'suryaland_session_token_v1', label: 'Token Sesi Terotentikasi', category: 'auth' },
+      { key: 'lastLoginTimestamp', label: 'Timestamp Waktu Login Terakhir', category: 'auth' },
+      { key: 'suryaland_last_activity_v1', label: 'Timestamp Aktivitas Sesi (Idle)', category: 'auth' },
+      { key: STORAGE_KEYS.DELETED_STAFF_IDS, label: 'Indeks ID Staff Terhapus', category: 'system' },
+      { key: STORAGE_KEYS.DELETED_USER_IDS, label: 'Indeks ID Pengguna Terhapus', category: 'system' },
+    ];
+
+    let totalBytes = 0;
+    let totalAnomaliesCount = 0;
+
+    const keyDiagnostics = trackedKeys.map(({ key, label, category }) => {
+      const raw = localStorage.getItem(key);
+      const rawBytes = raw ? new Blob([raw]).size : 0;
+      totalBytes += rawBytes;
+
+      let isJsonValid = true;
+      let itemCount = 0;
+      const anomalyDescriptions: string[] = [];
+
+      if (raw !== null) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            itemCount = parsed.length;
+            // Check for null or undefined entries
+            const nullCount = parsed.filter((x) => x === null || x === undefined).length;
+            if (nullCount > 0) {
+              anomalyDescriptions.push(`${nullCount} entri kosong (null) terdeteksi.`);
+            }
+
+            // Check duplicate IDs
+            const idMap = new Map<string, number>();
+            let dupeCount = 0;
+            parsed.forEach((item) => {
+              if (item && item.id) {
+                const count = idMap.get(item.id) || 0;
+                idMap.set(item.id, count + 1);
+                if (count === 1) dupeCount++;
+              }
+            });
+            if (dupeCount > 0) {
+              anomalyDescriptions.push(`${dupeCount} ID duplikat ditemukan dalam daftar.`);
+            }
+
+            // Check NaN in critical numeric fields
+            let nanCount = 0;
+            parsed.forEach((item) => {
+              if (item && typeof item === 'object') {
+                Object.values(item).forEach((v) => {
+                  if (typeof v === 'number' && Number.isNaN(v)) nanCount++;
+                });
+              }
+            });
+            if (nanCount > 0) {
+              anomalyDescriptions.push(`${nanCount} nilai angka invalid (NaN) terdeteksi.`);
+            }
+          } else if (typeof parsed === 'object' && parsed !== null) {
+            itemCount = 1;
+            let nanCount = 0;
+            Object.values(parsed).forEach((v) => {
+              if (typeof v === 'number' && Number.isNaN(v)) nanCount++;
+            });
+            if (nanCount > 0) {
+              anomalyDescriptions.push(`${nanCount} nilai angka invalid (NaN) terdeteksi.`);
+            }
+          } else {
+            itemCount = 1;
+          }
+        } catch {
+          // If raw is a plain timestamp number or string
+          const parsedNum = Number(raw);
+          if (key === 'lastLoginTimestamp' || key === 'suryaland_last_activity_v1') {
+            if (Number.isNaN(parsedNum) || parsedNum <= 0 || parsedNum > Date.now() + 300000) {
+              isJsonValid = false;
+              anomalyDescriptions.push('Timestamp kedaluwarsa prematur atau format angka rusak.');
+            } else {
+              itemCount = 1;
+            }
+          } else {
+            isJsonValid = false;
+            anomalyDescriptions.push('Format JSON rusak (SyntaxError / Corrupted String).');
+          }
+        }
+      }
+
+      const hasAnomalies = anomalyDescriptions.length > 0 || !isJsonValid;
+      if (hasAnomalies) {
+        totalAnomaliesCount += anomalyDescriptions.length || 1;
+      }
+
+      return {
+        key,
+        label,
+        category,
+        rawBytes,
+        formattedSize: rawBytes > 1048576 
+          ? `${(rawBytes / 1048576).toFixed(2)} MB` 
+          : `${(rawBytes / 1024).toFixed(1)} KB`,
+        itemCount,
+        isJsonValid,
+        hasAnomalies,
+        anomalyDescriptions,
+      };
+    });
+
+    const estimatedQuotaBytes = 5 * 1024 * 1024; // 5 MB standard localStorage quota
+    const quotaUsedPercent = Math.min(100, Number(((totalBytes / estimatedQuotaBytes) * 100).toFixed(2)));
+
+    return {
+      totalKeys: keyDiagnostics.length,
+      totalBytes,
+      formattedTotalSize: totalBytes > 1048576 
+        ? `${(totalBytes / 1048576).toFixed(2)} MB` 
+        : `${(totalBytes / 1024).toFixed(1)} KB`,
+      estimatedQuotaBytes,
+      quotaUsedPercent,
+      totalAnomaliesCount,
+      keys: keyDiagnostics,
+      firestoreStatus: {
+        databaseId: 'ai-studio-suryalandapps-620aaec9-a67b-4df9-82c6-3c7cbc90551b',
+        projectId: 'gen-lang-client-0997069506',
+        isReady: typeof window !== 'undefined' && navigator.onLine,
+      },
+    };
+  },
+
+  repairAllStorageAnomalies(): {
+    fixedCount: number;
+    repairedKeys: string[];
+    details: string[];
+    timestamp: string;
+  } {
+    if (typeof window === 'undefined') {
+      return { fixedCount: 0, repairedKeys: [], details: [], timestamp: new Date().toISOString() };
+    }
+
+    const repairedKeys: string[] = [];
+    const details: string[] = [];
+    let fixedCount = 0;
+
+    // 1. Sanitize & Deduplicate all array storage collections
+    const arrayKeys = [
+      STORAGE_KEYS.REPORTS,
+      STORAGE_KEYS.CLIENTS,
+      STORAGE_KEYS.BLOCKS,
+      STORAGE_KEYS.EQUIPMENTS,
+      STORAGE_KEYS.WORK_ASSIGNMENTS,
+      STORAGE_KEYS.DAILY_TARGETS,
+      STORAGE_KEYS.WORKERS,
+      STORAGE_KEYS.INVENTORY,
+      STORAGE_KEYS.LOGISTICS_TRANSACTIONS,
+      STORAGE_KEYS.P2H_CHECKLISTS,
+      STORAGE_KEYS.FUEL_BOWSER,
+      STORAGE_KEYS.SOIL_INCIDENTS,
+      STORAGE_KEYS.GEOTAG_PHOTOS,
+      STORAGE_KEYS.COMPANY_STAFF,
+      STORAGE_KEYS.MANAGED_USERS,
+      STORAGE_KEYS.DELETED_STAFF_IDS,
+      STORAGE_KEYS.DELETED_USER_IDS,
+    ];
+
+    for (const key of arrayKeys) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (raw !== null) {
+          let parsed: any;
+          try {
+            parsed = JSON.parse(raw);
+          } catch {
+            localStorage.setItem(key, JSON.stringify([]));
+            repairedKeys.push(key);
+            details.push(`Mereset key rusak [${key}] ke array kosong yang valid.`);
+            fixedCount++;
+            continue;
+          }
+
+          if (Array.isArray(parsed)) {
+            let keyModified = false;
+            // Filter out null/undefined
+            const nonNull = parsed.filter((it) => it !== null && it !== undefined);
+            if (nonNull.length !== parsed.length) {
+              keyModified = true;
+              fixedCount += parsed.length - nonNull.length;
+              details.push(`Menghapus ${parsed.length - nonNull.length} entri null pada [${key}].`);
+            }
+
+            // Deduplicate by item ID if items have IDs
+            const seenIds = new Set<string>();
+            const deduplicated: any[] = [];
+            for (const item of nonNull) {
+              if (item && item.id) {
+                if (seenIds.has(item.id)) {
+                  keyModified = true;
+                  fixedCount++;
+                  continue;
+                }
+                seenIds.add(item.id);
+              }
+
+              // Sanitize NaN in object properties
+              if (item && typeof item === 'object') {
+                for (const prop of Object.keys(item)) {
+                  if (typeof item[prop] === 'number' && Number.isNaN(item[prop])) {
+                    item[prop] = 0;
+                    keyModified = true;
+                    fixedCount++;
+                  }
+                }
+              }
+              deduplicated.push(item);
+            }
+
+            if (keyModified) {
+              localStorage.setItem(key, JSON.stringify(deduplicated));
+              if (!repairedKeys.includes(key)) repairedKeys.push(key);
+              details.push(`Deduplikasi & sanitasi angka sukses pada [${key}].`);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`Error repairing array key ${key}:`, err);
+      }
+    }
+
+    // 2. Repair Session & Idle timestamps
+    const now = Date.now();
+    try {
+      const rawLastLogin = localStorage.getItem('lastLoginTimestamp');
+      if (rawLastLogin !== null) {
+        const ts = Number(rawLastLogin);
+        if (Number.isNaN(ts) || ts <= 0 || ts > now + 300000) {
+          localStorage.setItem('lastLoginTimestamp', now.toString());
+          repairedKeys.push('lastLoginTimestamp');
+          details.push('Memperbaiki timestamp lastLoginTimestamp yang kedaluwarsa/rusak.');
+          fixedCount++;
+        }
+      }
+
+      const rawLastActivity = localStorage.getItem('suryaland_last_activity_v1');
+      if (rawLastActivity !== null) {
+        const act = parseInt(rawLastActivity, 10);
+        if (Number.isNaN(act) || act <= 0 || act > now + 300000) {
+          localStorage.setItem('suryaland_last_activity_v1', now.toString());
+          repairedKeys.push('suryaland_last_activity_v1');
+          details.push('Memperbaiki timestamp idle suryaland_last_activity_v1.');
+          fixedCount++;
+        }
+      }
+
+      const rawToken = localStorage.getItem('suryaland_session_token_v1');
+      if (rawToken !== null) {
+        try {
+          const tok = JSON.parse(rawToken);
+          if (!tok || typeof tok !== 'object' || !tok.username) {
+            localStorage.removeItem('suryaland_session_token_v1');
+            repairedKeys.push('suryaland_session_token_v1');
+            details.push('Menghapus token sesi yang rusak.');
+            fixedCount++;
+          }
+        } catch {
+          localStorage.removeItem('suryaland_session_token_v1');
+          repairedKeys.push('suryaland_session_token_v1');
+          details.push('Mereset token sesi tidak valid.');
+          fixedCount++;
+        }
+      }
+    } catch (err) {
+      console.warn('Session repair error:', err);
+    }
+
+    // 3. Re-sync companyStaff to managedUsers
+    try {
+      const staffList = this.getCompanyStaff();
+      let usersList = this.getManagedUsers();
+      let staffResynced = false;
+
+      staffList.forEach((st) => {
+        if (!st.username || !st.password) return;
+        const norm = normalizeUsername(st.username);
+        const existingIdx = usersList.findIndex((u) => normalizeUsername(u.username) === norm);
+        if (existingIdx === -1) {
+          usersList.push({
+            id: st.linkedUserId || `user-usr-${(st.id || '').replace(/^staff-/, '')}`,
+            username: norm,
+            password: st.password,
+            fullName: st.fullName,
+            address: st.address || '',
+            whatsappNumber: st.phone || '',
+            jobTitle: st.jobRole || 'Staff',
+            userLevel: (st.userLevel as any) || 'Pengawas',
+            email: st.email || '',
+            status: st.status || 'Aktif',
+            employeeIdNumber: st.employeeIdNumber || '',
+            assignedClientId: st.assignedClientId,
+            assignedClientName: st.assignedClientName,
+            assignedBlockCodes: st.assignedBlockCodes,
+            createdAt: st.createdAt || new Date().toISOString(),
+          });
+          staffResynced = true;
+          fixedCount++;
+        }
+      });
+
+      if (staffResynced) {
+        localStorage.setItem(STORAGE_KEYS.MANAGED_USERS, JSON.stringify(usersList));
+        repairedKeys.push('staff_to_users_resync');
+        details.push('Sinkronisasi akun login dari daftar Staff Manajemen berhasil.');
+      }
+    } catch (err) {
+      console.warn('Staff user resync notice:', err);
+    }
+
+    // 4. Dispatch synchronization events to refresh UI
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('suryaland_firestore_sync', { detail: { collection: 'all_repaired' } }));
+      window.dispatchEvent(new CustomEvent('suryaland_master_sync'));
+      window.dispatchEvent(new CustomEvent('suryaland_company_staff_sync'));
+      window.dispatchEvent(new CustomEvent('suryaland_reports_sync'));
+    }
+
+    const result = {
+      fixedCount,
+      repairedKeys,
+      details,
+      timestamp: new Date().toISOString(),
+    };
+
+    return result;
+  },
+
+  repairSingleStorageKey(targetKey: string): { success: boolean; message: string } {
+    if (typeof window === 'undefined') return { success: false, message: 'Window tidak tersedia' };
+    try {
+      const raw = localStorage.getItem(targetKey);
+      if (raw === null) {
+        return { success: true, message: `Key ${targetKey} kosong, tidak ada perbaikan yang diperlukan.` };
+      }
+
+      let parsed: any;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        localStorage.setItem(targetKey, JSON.stringify([]));
+        window.dispatchEvent(new CustomEvent('suryaland_firestore_sync', { detail: { collection: targetKey } }));
+        return { success: true, message: `Key ${targetKey} yang rusak berhasil direset ke format valid.` };
+      }
+
+      if (Array.isArray(parsed)) {
+        const seen = new Set<string>();
+        const sanitized: any[] = [];
+        for (const it of parsed) {
+          if (!it) continue;
+          if (it.id) {
+            if (seen.has(it.id)) continue;
+            seen.add(it.id);
+          }
+          if (typeof it === 'object') {
+            for (const p of Object.keys(it)) {
+              if (typeof it[p] === 'number' && Number.isNaN(it[p])) {
+                it[p] = 0;
+              }
+            }
+          }
+          sanitized.push(it);
+        }
+        localStorage.setItem(targetKey, JSON.stringify(sanitized));
+        window.dispatchEvent(new CustomEvent('suryaland_firestore_sync', { detail: { collection: targetKey } }));
+        return { success: true, message: `Daftar ${targetKey} berhasil disanitasi (${sanitized.length} data valid).` };
+      }
+
+      return { success: true, message: `Struktur data pada ${targetKey} sudah dalam kondisi normal.` };
+    } catch (e: any) {
+      return { success: false, message: e?.message || 'Gagal memperbaiki key' };
+    }
+  },
+
+  exportCompleteDatabaseDump(): {
+    appName: string;
+    exportedAt: string;
+    databaseId: string;
+    appletId: string;
+    totalCollections: number;
+    totalRecords: number;
+    storageData: Record<string, any>;
+  } {
+    const collectionsToExport = Object.values(STORAGE_KEYS);
+    const dumpData: Record<string, any> = {};
+    let totalRecords = 0;
+
+    for (const key of collectionsToExport) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (raw !== null) {
+          try {
+            const parsed = JSON.parse(raw);
+            dumpData[key] = parsed;
+            if (Array.isArray(parsed)) totalRecords += parsed.length;
+            else totalRecords += 1;
+          } catch {
+            dumpData[key] = raw;
+          }
+        }
+      } catch (err) {
+        console.warn(`Export dump notice for key ${key}:`, err);
+      }
+    }
+
+    // Include diagnostic logs and audit logs
+    try {
+      const diagRaw = localStorage.getItem('suryaland_auth_diagnostic_logs_v1');
+      if (diagRaw) dumpData['suryaland_auth_diagnostic_logs_v1'] = JSON.parse(diagRaw);
+    } catch {}
+
+    return {
+      appName: 'Suryaland / PT. RBS GROUP Land Clearing Executive Database',
+      exportedAt: new Date().toISOString(),
+      databaseId: 'ai-studio-suryalandapps-620aaec9-a67b-4df9-82c6-3c7cbc90551b',
+      appletId: '9124ebcf-25d8-430e-bb46-d7d118bbffe3',
+      totalCollections: Object.keys(dumpData).length,
+      totalRecords,
+      storageData: dumpData,
+    };
+  },
+
+  importCompleteDatabaseDump(dump: any): { success: boolean; importedKeys: string[]; message: string } {
+    if (!dump || typeof dump !== 'object' || !dump.storageData) {
+      return {
+        success: false,
+        importedKeys: [],
+        message: 'File cadangan tidak valid: properti "storageData" tidak ditemukan.',
+      };
+    }
+
+    const importedKeys: string[] = [];
+    try {
+      for (const [key, value] of Object.entries(dump.storageData)) {
+        if (!key.startsWith('suryaland_') && key !== 'lastLoginTimestamp') continue;
+        if (value !== undefined) {
+          localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+          importedKeys.push(key);
+        }
+      }
+
+      // Dispatch synchronization events
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('suryaland_firestore_sync', { detail: { collection: 'all_restored' } }));
+        window.dispatchEvent(new CustomEvent('suryaland_master_sync'));
+        window.dispatchEvent(new CustomEvent('suryaland_company_staff_sync'));
+        window.dispatchEvent(new CustomEvent('suryaland_reports_sync'));
+      }
+
+      return {
+        success: true,
+        importedKeys,
+        message: `Berhasil memulihkan ${importedKeys.length} koleksi data ke penyimpanan lokal.`,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        importedKeys,
+        message: `Gagal memulihkan cadangan: ${err?.message || 'Kesalahan I/O memori'}`,
+      };
     }
   },
 
