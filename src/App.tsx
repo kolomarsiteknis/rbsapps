@@ -22,6 +22,7 @@ import { CompanyProfileView } from './components/CompanyProfileView';
 import { CompanyMasterDataView } from './components/CompanyMasterDataView';
 import { TutorialView } from './components/TutorialView';
 import { ClientPortalView } from './components/ClientPortalView';
+import { DataRecoveryView } from './components/DataRecoveryView';
 import { LoginPage } from './components/LoginPage';
 import { storageService } from './services/storageService';
 import { initFirestoreSync, onSyncStatusChange, toggleFirestoreNetwork, SyncStatus } from './services/firestoreSync';
@@ -1316,6 +1317,30 @@ export default function App() {
               onViewPdf={(report) => handleOpenPdfModal(report.id)}
             />
           </div>
+        )}
+
+        {/* Tab: Data Recovery & Cache Diagnostics (Directors) */}
+        {activeTab === 'data-recovery' && (
+          authUser.role === 'director' ? (
+            <div className="max-w-7xl mx-auto py-6 px-3 sm:px-6">
+              <DataRecoveryView
+                authUser={authUser}
+                clients={clients}
+                reports={reports}
+                equipments={equipments}
+                onRefreshData={loadData}
+                showToast={showToast}
+              />
+            </div>
+          ) : (
+            <div className="max-w-xl mx-auto my-12 p-6 bg-white rounded-2xl border border-rose-200 text-center space-y-3 shadow-lg">
+              <ShieldAlert className="w-12 h-12 text-rose-500 mx-auto" />
+              <h3 className="font-black text-slate-900 text-base">Akses Khusus Direktur</h3>
+              <p className="text-xs text-slate-600">
+                Menu Data Recovery & Diagnostik Cache hanya dapat diakses oleh akun Direktur.
+              </p>
+            </div>
+          )
         )}
 
         {/* Tab: Tutorial & Documentation */}

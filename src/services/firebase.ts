@@ -1,4 +1,5 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
+import { getAuth, Auth } from 'firebase/auth';
 import { 
   initializeFirestore, 
   persistentLocalCache, 
@@ -13,7 +14,8 @@ import {
   onSnapshot,
   writeBatch,
   enableNetwork,
-  disableNetwork
+  disableNetwork,
+  getDocFromServer
 } from 'firebase/firestore';
 import rawConfig from '../../firebase-applet-config.json';
 
@@ -83,34 +85,19 @@ try {
 // Database ID validated and sanitized
 const dbDatabaseId = sanitizeDbId(config.firestoreDatabaseId);
 
-// Enable Offline Persistence with persistentLocalCache & multi-tab manager
+// Initialize Firestore strictly as required by Firebase skill
 let db: Firestore;
 try {
-  db = dbDatabaseId
-    ? initializeFirestore(app, {
-        localCache: persistentLocalCache({
-          tabManager: persistentMultipleTabManager()
-        })
-      }, dbDatabaseId)
-    : initializeFirestore(app, {
-        localCache: persistentLocalCache({
-          tabManager: persistentMultipleTabManager()
-        })
-      });
+  db = dbDatabaseId ? getFirestore(app, dbDatabaseId) : getFirestore(app);
   isFirebaseReady = true;
-} catch (cacheErr: any) {
+} catch (fsErr: any) {
+  console.warn('[Firestore Initialization Warning] Fallback activated:', fsErr?.message || fsErr);
+  firebaseInitError = fsErr?.message || 'Gagal inisialisasi Firestore.';
   try {
-    db = dbDatabaseId ? getFirestore(app, dbDatabaseId) : getFirestore(app);
+    db = getFirestore(app);
     isFirebaseReady = true;
-  } catch (fsErr: any) {
-    console.warn('[Firestore Initialization Warning] Offline local fallback activated:', fsErr?.message || fsErr);
-    firebaseInitError = fsErr?.message || 'Gagal inisialisasi Firestore.';
-    try {
-      db = getFirestore(app);
-      isFirebaseReady = true;
-    } catch {
-      db = {} as Firestore;
-    }
+  } catch {
+    db = {} as Firestore;
   }
 }
 
@@ -132,6 +119,23 @@ export function cleanForFirestore<T>(data: T): T {
   return data;
 }
 
+export const auth: Auth = getAuth(app);
+
+// Test connection on boot
+export async function testConnection(): Promise<boolean> {
+  try {
+    if (!isFirebaseReady || !db) return false;
+    await getDocFromServer(doc(db, '_connection_health', 'ping'));
+    return true;
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.warn('Please check your Firebase configuration or network status.');
+    }
+    return false;
+  }
+}
+testConnection();
+
 export { 
   app, 
   db, 
@@ -143,5 +147,6 @@ export {
   onSnapshot, 
   writeBatch, 
   enableNetwork, 
-  disableNetwork 
+  disableNetwork,
+  getDocFromServer
 };

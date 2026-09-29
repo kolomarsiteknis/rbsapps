@@ -45,6 +45,7 @@ export type TabKey =
   | 'wizard' 
   | 'supervisor-tools'
   | 'approval'
+  | 'data-recovery'
   | 'client-portal';
 
 interface HeaderProps {
@@ -160,7 +161,7 @@ export const Header: React.FC<HeaderProps> = ({
         },
         {
           key: 'company-master' as TabKey,
-          label: 'Identitas Perusahaan',
+          label: 'Master Data Perusahaan',
           subtitle: 'Profil, Logo, Staff TTD & Tim Pendukung',
           icon: Building2,
           visible: true,

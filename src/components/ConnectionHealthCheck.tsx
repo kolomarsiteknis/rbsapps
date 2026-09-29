@@ -577,8 +577,8 @@ Browser: ${typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown'}`;
               <p className="text-xs text-slate-600 mt-1">
                 {health.status === 'connected' ? (
                   <>
-                    Ping otomatis di balik layar aktif setiap <strong>5 detik</strong> untuk menjaga konektivitas tetap stabil. Database ID:{' '}
-                    <code className="font-mono text-[11px] bg-slate-100 px-1 py-0.5 rounded text-slate-800 border border-slate-200">
+                    <strong className="text-emerald-800">Google Cloud Firebase Firestore Aktif & Real-time:</strong> Database online terdistribusi untuk proyek di lapangan & kantor pusat. Ping otomatis di balik layar aktif tiap <strong>5 detik</strong> menjaga sinkronisasi data tetap stabil. Database ID:{' '}
+                    <code className="font-mono text-[11px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-800 border border-slate-200">
                       {health.databaseId}
                     </code>
                   </>

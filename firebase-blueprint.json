@@ -68,6 +68,66 @@
         "status": { "type": "string" }
       },
       "required": ["id", "fullName", "jobRole", "staffLevel", "status"]
+    },
+    "Equipment": {
+      "title": "Equipment",
+      "type": "object",
+      "description": "Master unit alat berat dan status operasional",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "model": { "type": "string" },
+        "serialNumber": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "name", "type", "status"]
+    },
+    "Worker": {
+      "title": "Worker",
+      "type": "object",
+      "description": "Personil tim lapangan",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "name", "category"]
+    },
+    "Client": {
+      "title": "Client",
+      "type": "object",
+      "description": "Master data SPK dan profil klien",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "contractNumber": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "name", "contractNumber"]
+    },
+    "Block": {
+      "title": "Block",
+      "type": "object",
+      "description": "Blok pengerjaan proyek",
+      "properties": {
+        "id": { "type": "string" },
+        "clientId": { "type": "string" },
+        "code": { "type": "string" },
+        "targetAreaHa": { "type": "number" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "clientId", "code"]
+    },
+    "ConnectionHealth": {
+      "title": "ConnectionHealth",
+      "type": "object",
+      "description": "Dokumen ping untuk validasi koneksi real-time server",
+      "properties": {
+        "ping": { "type": "string" },
+        "timestamp": { "type": "string" }
+      }
     }
   },
   "firestore": {
@@ -86,6 +146,26 @@
     "/companyStaff/{staffId}": {
       "schema": "CompanyStaff",
       "description": "Data staff perusahaan dan tanda tangan digital"
+    },
+    "/equipments/{equipmentId}": {
+      "schema": "Equipment",
+      "description": "Master data alat berat"
+    },
+    "/workers/{workerId}": {
+      "schema": "Worker",
+      "description": "Master data personil dan tenaga kerja"
+    },
+    "/clients/{clientId}": {
+      "schema": "Client",
+      "description": "Master data klien dan kontrak SPK"
+    },
+    "/blocks/{blockId}": {
+      "schema": "Block",
+      "description": "Master data blok kerja"
+    },
+    "/_connection_health/{pingId}": {
+      "schema": "ConnectionHealth",
+      "description": "Health check ping document"
     }
   }
 }

@@ -10,7 +10,9 @@ import {
   writeBatch,
   enableNetwork,
   disableNetwork,
-  isFirebaseReady
+  isFirebaseReady,
+  auth,
+  getDocFromServer
 } from './firebase';
 import { 
   initialDailyReports, 
@@ -95,18 +97,91 @@ export function onSyncStatusChange(callback: (status: SyncStatus) => void): () =
   };
 }
 
+let isNetworkDisabled = false;
+
 export async function toggleFirestoreNetwork(goOnline: boolean): Promise<void> {
+  if (!isFirebaseReady || !db) return;
   try {
     if (goOnline) {
-      await enableNetwork(db);
+      if (isNetworkDisabled) {
+        await enableNetwork(db);
+        isNetworkDisabled = false;
+      }
       setSyncStatus('connected');
     } else {
-      await disableNetwork(db);
+      if (!isNetworkDisabled) {
+        await disableNetwork(db);
+        isNetworkDisabled = true;
+      }
       setSyncStatus('offline');
     }
   } catch (err) {
     console.warn('[Firestore] Network toggle notice:', err);
     setSyncStatus(goOnline ? 'connected' : 'offline');
+  }
+}
+
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  };
+}
+
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth?.currentUser?.uid,
+      email: auth?.currentUser?.email,
+      emailVerified: auth?.currentUser?.emailVerified,
+      isAnonymous: auth?.currentUser?.isAnonymous,
+      tenantId: auth?.currentUser?.tenantId,
+      providerInfo: auth?.currentUser?.providerData?.map((provider) => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || [],
+    },
+    operationType,
+    path,
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
+// Actively ensure connection to Firestore is live & responsive
+export async function ensureFirestoreConnected(): Promise<boolean> {
+  if (!isFirebaseReady || !db) return false;
+  try {
+    await enableNetwork(db);
+    const testDoc = doc(db, '_connection_health', 'ping');
+    await getDocFromServer(testDoc);
+    setSyncStatus('connected');
+    return true;
+  } catch (err: any) {
+    if (err?.code === 'permission-denied') {
+      handleFirestoreError(err, OperationType.GET, '_connection_health/ping');
+    }
+    return false;
   }
 }
 
@@ -123,7 +198,10 @@ export async function syncDocWrite<T extends { id: string }>(
     const cleaned = cleanForFirestore(item);
     const docRef = doc(db, collectionName, String(item.id));
     await setDoc(docRef, cleaned, { merge: true });
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.code === 'permission-denied') {
+      handleFirestoreError(err, OperationType.WRITE, `${collectionName}/${item.id}`);
+    }
     console.warn(`[Firestore Offline Queue] Warning writing to ${collectionName}/${item.id}:`, err);
   }
 }
@@ -137,7 +215,10 @@ export async function syncDocDelete(
   try {
     const docRef = doc(db, collectionName, String(id));
     await deleteDoc(docRef);
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.code === 'permission-denied') {
+      handleFirestoreError(err, OperationType.DELETE, `${collectionName}/${id}`);
+    }
     console.warn(`[Firestore Offline Queue] Warning deleting from ${collectionName}/${id}:`, err);
   }
 }
@@ -185,14 +266,333 @@ function isObsoleteHendraRecord(item: any): boolean {
   return nameLower.includes('hendra wijaya') || emailLower.includes('hendra.wijaya');
 }
 
+// Normalization and Deduplication Engine to prevent duplicate content/database
+function normalizeKey(str?: string): string {
+  return String(str || '')
+    .trim()
+    .replace(/^@+/, '')
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+export interface DeduplicationResult<T> {
+  cleanList: T[];
+  removedDocIds: string[];
+}
+
+export function deduplicateStaffList(list: any[]): DeduplicationResult<any> {
+  const cleanList: any[] = [];
+  const removedDocIds: string[] = [];
+  const deletedStaffIds = getDeletedIdsFromStorage('suryaland_deleted_staff_ids_v1');
+
+  // Multi-index tracking
+  const userMap = new Map<string, number>();
+  const empIdMap = new Map<string, number>();
+  const nameMap = new Map<string, number>();
+  const idMap = new Map<string, number>();
+
+  list.forEach((item) => {
+    if (!item) return;
+    if (isObsoleteHendraRecord(item)) {
+      if (item.id) removedDocIds.push(item.id);
+      return;
+    }
+    if (item.id && deletedStaffIds.includes(item.id)) {
+      removedDocIds.push(item.id);
+      return;
+    }
+
+    const normU = normalizeKey(item.username);
+    const normEmp = normalizeKey(item.employeeIdNumber);
+    const normName = normalizeKey(item.fullName || item.name);
+    const normId = String(item.id || '').trim();
+
+    // Check if item already exists by id, username, employeeIdNumber, or fullName
+    let targetIdx = -1;
+    if (normId && idMap.has(normId)) {
+      targetIdx = idMap.get(normId)!;
+    } else if (normU && userMap.has(normU)) {
+      targetIdx = userMap.get(normU)!;
+    } else if (normEmp && empIdMap.has(normEmp)) {
+      targetIdx = empIdMap.get(normEmp)!;
+    } else if (normName && nameMap.has(normName)) {
+      targetIdx = nameMap.get(normName)!;
+    }
+
+    if (targetIdx >= 0) {
+      // Merge with existing record (preferring record with password, signature, newer updatedAt)
+      const existing = cleanList[targetIdx];
+      if (item.id && item.id !== existing.id) {
+        removedDocIds.push(item.id);
+      }
+      cleanList[targetIdx] = {
+        ...existing,
+        ...item,
+        id: existing.id || item.id,
+        fullName: existing.fullName || item.fullName || item.name,
+        username: existing.username || item.username,
+        password: existing.password || item.password,
+        signatureUrl: existing.signatureUrl || item.signatureUrl,
+        employeeIdNumber: existing.employeeIdNumber || item.employeeIdNumber,
+        status: 'Aktif', // Guarantee active user
+        updatedAt: new Date().toISOString(),
+      };
+    } else {
+      const idx = cleanList.length;
+      const cleanItem = {
+        ...item,
+        status: item.status || 'Aktif',
+      };
+      cleanList.push(cleanItem);
+      if (normId) idMap.set(normId, idx);
+      if (normU) userMap.set(normU, idx);
+      if (normEmp) empIdMap.set(normEmp, idx);
+      if (normName) nameMap.set(normName, idx);
+    }
+  });
+
+  return { cleanList, removedDocIds };
+}
+
+export function deduplicateUsersList(list: any[]): DeduplicationResult<any> {
+  const cleanList: any[] = [];
+  const removedDocIds: string[] = [];
+  const deletedUserIds = getDeletedIdsFromStorage('suryaland_deleted_user_ids_v1');
+
+  const userMap = new Map<string, number>();
+  const empIdMap = new Map<string, number>();
+  const nameMap = new Map<string, number>();
+  const idMap = new Map<string, number>();
+
+  list.forEach((item) => {
+    if (!item) return;
+    if (isObsoleteHendraRecord(item)) {
+      if (item.id) removedDocIds.push(item.id);
+      return;
+    }
+    if (item.id && deletedUserIds.includes(item.id)) {
+      removedDocIds.push(item.id);
+      return;
+    }
+
+    const normU = normalizeKey(item.username);
+    const normEmp = normalizeKey(item.employeeIdNumber);
+    const normName = normalizeKey(item.fullName || item.displayName);
+    const normId = String(item.id || '').trim();
+
+    let targetIdx = -1;
+    if (normId && idMap.has(normId)) {
+      targetIdx = idMap.get(normId)!;
+    } else if (normU && userMap.has(normU)) {
+      targetIdx = userMap.get(normU)!;
+    } else if (normEmp && empIdMap.has(normEmp)) {
+      targetIdx = empIdMap.get(normEmp)!;
+    } else if (normName && nameMap.has(normName)) {
+      targetIdx = nameMap.get(normName)!;
+    }
+
+    if (targetIdx >= 0) {
+      const existing = cleanList[targetIdx];
+      if (item.id && item.id !== existing.id) {
+        removedDocIds.push(item.id);
+      }
+      cleanList[targetIdx] = {
+        ...existing,
+        ...item,
+        id: existing.id || item.id,
+        fullName: existing.fullName || item.fullName,
+        username: existing.username || item.username,
+        password: existing.password || item.password,
+        signatureUrl: existing.signatureUrl || item.signatureUrl,
+        employeeIdNumber: existing.employeeIdNumber || item.employeeIdNumber,
+        status: 'Aktif', // Guarantee active user
+        updatedAt: new Date().toISOString(),
+      };
+    } else {
+      const idx = cleanList.length;
+      const cleanItem = {
+        ...item,
+        status: item.status || 'Aktif',
+      };
+      cleanList.push(cleanItem);
+      if (normId) idMap.set(normId, idx);
+      if (normU) userMap.set(normU, idx);
+      if (normEmp) empIdMap.set(normEmp, idx);
+      if (normName) nameMap.set(normName, idx);
+    }
+  });
+
+  return { cleanList, removedDocIds };
+}
+
+export function deduplicateCollectionItems(collectionName: string, items: any[]): DeduplicationResult<any> {
+  if (collectionName === FIRESTORE_COLLECTIONS.COMPANY_STAFF) {
+    return deduplicateStaffList(items);
+  }
+  if (collectionName === FIRESTORE_COLLECTIONS.USERS) {
+    return deduplicateUsersList(items);
+  }
+
+  const cleanList: any[] = [];
+  const removedDocIds: string[] = [];
+  const keyMap = new Map<string, number>();
+
+  const getDeduplicationKey = (item: any): string => {
+    if (!item) return '';
+    const normId = String(item.id || '').trim();
+
+    switch (collectionName) {
+      case FIRESTORE_COLLECTIONS.CLIENTS:
+        return (
+          normalizeKey(item.contractNumber) ||
+          normalizeKey(item.name) ||
+          normId
+        );
+      case FIRESTORE_COLLECTIONS.BLOCKS:
+        return `${String(item.clientId || '').trim()}__${normalizeKey(item.code)}`;
+      case FIRESTORE_COLLECTIONS.EQUIPMENTS:
+        return normalizeKey(item.code) || normId;
+      case FIRESTORE_COLLECTIONS.WORKERS:
+        return `${normalizeKey(item.name)}__${normalizeKey(item.category)}`;
+      case FIRESTORE_COLLECTIONS.DAILY_TARGETS:
+        return `${String(item.blockId || '').trim()}__${String(item.date || '').trim()}__${normalizeKey(item.shift)}`;
+      case FIRESTORE_COLLECTIONS.WORK_ASSIGNMENTS:
+        return (
+          normalizeKey(item.assignmentNumber) ||
+          `${String(item.clientId || '').trim()}__${String(item.assignedDate || '').trim()}` ||
+          normId
+        );
+      case FIRESTORE_COLLECTIONS.REPORTS:
+        return (
+          normalizeKey(item.reportNumber) ||
+          `${String(item.clientId || '').trim()}__${String(item.blockId || '').trim()}__${String(item.date || '').trim()}__${normalizeKey(item.shift)}` ||
+          normId
+        );
+      case FIRESTORE_COLLECTIONS.INVENTORY:
+        return (
+          normalizeKey(item.itemCode) ||
+          `${normalizeKey(item.category)}__${normalizeKey(item.name)}` ||
+          normId
+        );
+      case FIRESTORE_COLLECTIONS.P2H:
+        return `${String(item.equipmentId || '').trim()}__${String(item.date || '').trim()}__${normalizeKey(item.shift)}`;
+      case FIRESTORE_COLLECTIONS.BOWSER:
+        return (
+          normalizeKey(item.receiptNumber) ||
+          `${String(item.date || '').trim()}__${String(item.equipmentId || '').trim()}__${String(item.time || '').trim()}` ||
+          normId
+        );
+      case FIRESTORE_COLLECTIONS.SOIL:
+        return `${String(item.date || '').trim()}__${String(item.clientId || '').trim()}__${normalizeKey(item.blockCode)}__${String(item.affectedEquipmentId || '').trim()}`;
+      default:
+        return normId;
+    }
+  };
+
+  items.forEach((item) => {
+    if (!item) return;
+    const key = getDeduplicationKey(item);
+    if (!key) {
+      if (item.id) cleanList.push(item);
+      return;
+    }
+
+    if (keyMap.has(key)) {
+      const existingIdx = keyMap.get(key)!;
+      const existing = cleanList[existingIdx];
+      if (item.id && item.id !== existing.id) {
+        removedDocIds.push(item.id);
+      }
+      // Merge newer details
+      cleanList[existingIdx] = {
+        ...existing,
+        ...item,
+        id: existing.id || item.id,
+      };
+    } else {
+      keyMap.set(key, cleanList.length);
+      cleanList.push(item);
+    }
+  });
+
+  return { cleanList, removedDocIds };
+}
+
+// Purge all cloud duplicates across all Firestore collections
+export async function purgeAllCloudDuplicates(): Promise<{ purgedCount: number; details: Record<string, number> }> {
+  if (!isFirebaseReady || !db) {
+    return { purgedCount: 0, details: {} };
+  }
+
+  let totalPurged = 0;
+  const details: Record<string, number> = {};
+
+  const collectionsToCheck = [
+    FIRESTORE_COLLECTIONS.COMPANY_STAFF,
+    FIRESTORE_COLLECTIONS.USERS,
+    FIRESTORE_COLLECTIONS.CLIENTS,
+    FIRESTORE_COLLECTIONS.BLOCKS,
+    FIRESTORE_COLLECTIONS.EQUIPMENTS,
+    FIRESTORE_COLLECTIONS.WORKERS,
+    FIRESTORE_COLLECTIONS.DAILY_TARGETS,
+    FIRESTORE_COLLECTIONS.WORK_ASSIGNMENTS,
+    FIRESTORE_COLLECTIONS.REPORTS,
+    FIRESTORE_COLLECTIONS.INVENTORY,
+    FIRESTORE_COLLECTIONS.P2H,
+    FIRESTORE_COLLECTIONS.BOWSER,
+    FIRESTORE_COLLECTIONS.SOIL,
+  ];
+
+  for (const colName of collectionsToCheck) {
+    try {
+      const colRef = collection(db, colName);
+      const snap = await getDocs(colRef);
+      if (snap.empty) continue;
+
+      const items: any[] = [];
+      snap.forEach((d) => {
+        items.push({ ...d.data(), id: d.id });
+      });
+
+      const { removedDocIds } = deduplicateCollectionItems(colName, items);
+      if (removedDocIds.length > 0) {
+        const batch = writeBatch(db);
+        removedDocIds.forEach((docId) => {
+          const docRef = doc(db, colName, docId);
+          batch.delete(docRef);
+        });
+        await batch.commit();
+        totalPurged += removedDocIds.length;
+        details[colName] = removedDocIds.length;
+        console.log(`[Firestore Deduplication] Cleaned ${removedDocIds.length} duplicate docs from ${colName}.`);
+      }
+    } catch (err) {
+      console.warn(`[Firestore Deduplication] Notice cleaning duplicates from ${colName}:`, err);
+    }
+  }
+
+  return { purgedCount: totalPurged, details };
+}
+
 // Initialize Firestore listeners & initial seeding
 export function initFirestoreSync() {
   if (isInitialized || !isFirebaseReady || !db) return;
   isInitialized = true;
 
   if (typeof window !== 'undefined') {
-    window.addEventListener('online', () => setSyncStatus('connected'));
+    window.addEventListener('online', () => {
+      toggleFirestoreNetwork(true);
+      setSyncStatus('connected');
+    });
     window.addEventListener('offline', () => setSyncStatus('offline'));
+    window.addEventListener('focus', () => {
+      toggleFirestoreNetwork(true);
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        toggleFirestoreNetwork(true);
+      }
+    });
   }
 
   // Setup initial seeding & one-time cleanup of dummy data in the background
@@ -243,6 +643,9 @@ export function initFirestoreSync() {
           console.warn(`[Firestore Cleanup] Notice cleaning ${colName}:`, err);
         }
       }
+
+      // Run automatic background cloud deduplication pass to ensure 0 duplicate documents exist in Firestore
+      await purgeAllCloudDuplicates();
 
       const deletedUserIds = getDeletedIdsFromStorage('suryaland_deleted_user_ids_v1');
       const deletedStaffIds = getDeletedIdsFromStorage('suryaland_deleted_staff_ids_v1');
@@ -307,7 +710,7 @@ export function initFirestoreSync() {
   };
   runInitialSeed();
 
-  // Helper to attach real-time listener to a collection
+  // Helper to attach real-time listener to a collection with automatic deduplication
   const attachSync = <T extends { id: string }>(
     colName: string, 
     storageKey: string,
@@ -322,9 +725,20 @@ export function initFirestoreSync() {
         }
         const items: T[] = [];
         snapshot.forEach((d) => {
-          items.push(d.data() as T);
+          items.push({ ...(d.data() as T), id: (d.data() as any)?.id || d.id });
         });
-        const finalList = transformList ? transformList(items) : items;
+
+        // Run universal collection deduplication
+        const { cleanList, removedDocIds } = deduplicateCollectionItems(colName, items);
+
+        // Delete any duplicate documents found in the Firestore cloud snapshot
+        if (removedDocIds.length > 0) {
+          removedDocIds.forEach((dupId) => {
+            syncDocDelete(colName, dupId);
+          });
+        }
+
+        const finalList = transformList ? transformList(cleanList as T[]) : (cleanList as T[]);
         try {
           localStorage.setItem(storageKey, JSON.stringify(finalList));
         } catch {
@@ -337,9 +751,36 @@ export function initFirestoreSync() {
               detail: { collection: colName, count: finalList.length } 
             })
           );
+
+          // Real-time component dispatch for live updates across field & headquarters
+          if (colName === FIRESTORE_COLLECTIONS.REPORTS) {
+            window.dispatchEvent(new CustomEvent('suryaland_reports_sync', { detail: { reports: finalList } }));
+          } else if (colName === FIRESTORE_COLLECTIONS.COMPANY_STAFF) {
+            window.dispatchEvent(new CustomEvent('suryaland_company_staff_sync', { detail: { staff: finalList } }));
+          } else if (colName === FIRESTORE_COLLECTIONS.USERS) {
+            window.dispatchEvent(new CustomEvent('suryaland_users_sync', { detail: { users: finalList } }));
+          } else if (colName === FIRESTORE_COLLECTIONS.WORKERS) {
+            window.dispatchEvent(new CustomEvent('suryaland_workers_sync', { detail: { workers: finalList } }));
+          } else if (
+            colName === FIRESTORE_COLLECTIONS.EQUIPMENTS ||
+            colName === FIRESTORE_COLLECTIONS.CLIENTS ||
+            colName === FIRESTORE_COLLECTIONS.BLOCKS ||
+            colName === FIRESTORE_COLLECTIONS.DAILY_TARGETS ||
+            colName === FIRESTORE_COLLECTIONS.WORK_ASSIGNMENTS
+          ) {
+            window.dispatchEvent(new CustomEvent('suryaland_master_sync', { detail: { collection: colName } }));
+          } else if (
+            colName === FIRESTORE_COLLECTIONS.INVENTORY ||
+            colName === FIRESTORE_COLLECTIONS.LOGISTICS
+          ) {
+            window.dispatchEvent(new CustomEvent('suryaland_logistics_sync', { detail: { collection: colName } }));
+          }
         }
       }, (error) => {
-        console.warn(`[Firestore] Snapshot error on ${colName}:`, error.message);
+        if (error.code === 'permission-denied') {
+          handleFirestoreError(error, OperationType.GET, colName);
+        }
+        console.warn(`[Firestore] Snapshot notice on ${colName}:`, error.message);
       });
     } catch (err) {
       console.warn(`[Firestore] Listener setup error for ${colName}:`, err);
@@ -369,29 +810,13 @@ export function initFirestoreSync() {
       return !deletedUserIds.includes(d.id);
     });
 
-    // Merge with local users so locally saved accounts are never lost if cloud write was delayed
+    // Merge with local users with smart deduplication
     try {
       const localRaw = localStorage.getItem(LOCAL_STORAGE_KEYS.USERS);
       const localList: any[] = localRaw ? JSON.parse(localRaw) : [];
-      if (Array.isArray(localList) && localList.length > 0) {
-        const mergedMap = new Map<string, any>();
-        validCloudDocs.forEach((d) => mergedMap.set(d.id, d));
-        localList.forEach((loc) => {
-          if (!loc || !loc.id || isObsoleteHendraRecord(loc) || deletedUserIds.includes(loc.id)) return;
-          const cloudItem = mergedMap.get(loc.id);
-          if (!cloudItem) {
-            mergedMap.set(loc.id, loc);
-            syncDocWrite(FIRESTORE_COLLECTIONS.USERS, loc);
-          } else {
-            const locTime = loc.updatedAt ? new Date(loc.updatedAt).getTime() : 0;
-            const cloudTime = cloudItem.updatedAt ? new Date(cloudItem.updatedAt).getTime() : 0;
-            if (locTime > cloudTime) {
-              mergedMap.set(loc.id, { ...cloudItem, ...loc });
-            }
-          }
-        });
-        return Array.from(mergedMap.values());
-      }
+      const combined = [...validCloudDocs, ...(Array.isArray(localList) ? localList : [])];
+      const { cleanList } = deduplicateUsersList(combined);
+      return cleanList;
     } catch {}
     return validCloudDocs;
   });
@@ -406,32 +831,13 @@ export function initFirestoreSync() {
       return !deletedStaffIds.includes(d.id);
     });
 
-    // Merge with local staff so locally saved staff & signatures are never overwritten by older cloud state
+    // Merge with local staff with smart deduplication
     try {
       const localRaw = localStorage.getItem(LOCAL_STORAGE_KEYS.COMPANY_STAFF);
       const localList: any[] = localRaw ? JSON.parse(localRaw) : [];
-      if (Array.isArray(localList) && localList.length > 0) {
-        const mergedMap = new Map<string, any>();
-        validCloudDocs.forEach((d) => mergedMap.set(d.id, d));
-        localList.forEach((loc) => {
-          if (!loc || !loc.id || isObsoleteHendraRecord(loc) || deletedStaffIds.includes(loc.id)) return;
-          const cloudItem = mergedMap.get(loc.id);
-          if (!cloudItem) {
-            mergedMap.set(loc.id, loc);
-          } else {
-            const locTime = loc.updatedAt ? new Date(loc.updatedAt).getTime() : 0;
-            const cloudTime = cloudItem.updatedAt ? new Date(cloudItem.updatedAt).getTime() : 0;
-            if (locTime >= cloudTime) {
-              mergedMap.set(loc.id, {
-                ...cloudItem,
-                ...loc,
-                signatureUrl: loc.signatureUrl || cloudItem.signatureUrl,
-              });
-            }
-          }
-        });
-        return Array.from(mergedMap.values());
-      }
+      const combined = [...validCloudDocs, ...(Array.isArray(localList) ? localList : [])];
+      const { cleanList } = deduplicateStaffList(combined);
+      return cleanList;
     } catch {}
     return validCloudDocs;
   });

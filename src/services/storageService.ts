@@ -47,7 +47,11 @@ import {
   syncDocWrite, 
   syncDocDelete, 
   FIRESTORE_COLLECTIONS,
-  initFirestoreSync
+  initFirestoreSync,
+  deduplicateStaffList,
+  deduplicateUsersList,
+  deduplicateCollectionItems,
+  purgeAllCloudDuplicates
 } from './firestoreSync';
 
 const STORAGE_KEYS = {
@@ -232,6 +236,24 @@ if (typeof window !== 'undefined') {
         currentUsersList.push(syncedUser);
       }
     });
+
+    // Deduplicate currentStaffList and ensure all staff are active
+    const staffDedup = deduplicateStaffList(currentStaffList);
+    currentStaffList = staffDedup.cleanList.map((s) => ({ ...s, status: 'Aktif' }));
+    if (staffDedup.removedDocIds.length > 0) {
+      staffDedup.removedDocIds.forEach((dupId) => {
+        syncDocDelete(FIRESTORE_COLLECTIONS.COMPANY_STAFF, dupId);
+      });
+    }
+
+    // Deduplicate currentUsersList and ensure all users are active
+    const userDedup = deduplicateUsersList(currentUsersList);
+    currentUsersList = userDedup.cleanList.map((u) => ({ ...u, status: 'Aktif' }));
+    if (userDedup.removedDocIds.length > 0) {
+      userDedup.removedDocIds.forEach((dupId) => {
+        syncDocDelete(FIRESTORE_COLLECTIONS.USERS, dupId);
+      });
+    }
 
     localStorage.setItem(STORAGE_KEYS.DELETED_STAFF_IDS, JSON.stringify(Array.from(deletedStaffSet)));
     localStorage.setItem(STORAGE_KEYS.DELETED_USER_IDS, JSON.stringify(Array.from(deletedUsersSet)));
@@ -510,25 +532,36 @@ export const storageService = {
     }
 
     const reports = loadFromStorage<DailyReport[]>(STORAGE_KEYS.REPORTS, initialDailyReports);
-    const existingIndex = reports.findIndex((r) => r.id === report.id);
+    const repNo = (report.reportNumber || '').trim().toLowerCase();
+    const existingIndex = reports.findIndex(
+      (r) =>
+        r.id === report.id ||
+        (repNo && (r.reportNumber || '').trim().toLowerCase() === repNo) ||
+        (r.clientId === report.clientId && r.blockId === report.blockId && r.date === report.date && (r.effectiveWorkShift || '') === (report.effectiveWorkShift || ''))
+    );
     let savedReport: DailyReport;
+    const targetId = existingIndex >= 0 ? reports[existingIndex].id : report.id;
 
     if (existingIndex >= 0) {
       savedReport = {
         ...report,
+        id: targetId,
         updatedAt: new Date().toISOString(),
       };
       reports[existingIndex] = savedReport;
     } else {
       savedReport = {
         ...report,
+        id: targetId,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
       reports.unshift(savedReport);
     }
 
-    saveToStorage(STORAGE_KEYS.REPORTS, reports);
+    const { cleanList: dedupReports, removedDocIds: repRemovedIds } = deduplicateCollectionItems(FIRESTORE_COLLECTIONS.REPORTS, reports);
+    repRemovedIds.forEach((dupId) => syncDocDelete(FIRESTORE_COLLECTIONS.REPORTS, dupId));
+    saveToStorage(STORAGE_KEYS.REPORTS, dedupReports);
     syncDocWrite(FIRESTORE_COLLECTIONS.REPORTS, savedReport);
 
     // Update block cleared area & equipments current HM
@@ -719,11 +752,25 @@ export const storageService = {
 
   saveEquipment(equip: Equipment): void {
     const list = this.getEquipments();
-    const idx = list.findIndex((e) => e.id === equip.id);
-    if (idx >= 0) list[idx] = equip;
-    else list.push(equip);
-    saveToStorage(STORAGE_KEYS.EQUIPMENTS, list);
-    syncDocWrite(FIRESTORE_COLLECTIONS.EQUIPMENTS, equip);
+    const cleanId = (equip.id || '').trim().toLowerCase();
+    const cleanName = (equip.name || '').trim().toLowerCase();
+    const cleanSerial = (equip.serialNumber || '').trim().toLowerCase();
+    const idx = list.findIndex(
+      (e) =>
+        e.id === equip.id ||
+        (cleanId && (e.id || '').trim().toLowerCase() === cleanId) ||
+        (cleanSerial && (e.serialNumber || '').trim().toLowerCase() === cleanSerial) ||
+        (cleanName && (e.name || '').trim().toLowerCase() === cleanName)
+    );
+    const targetId = idx >= 0 ? list[idx].id : equip.id;
+    const finalEquip = { ...equip, id: targetId };
+    if (idx >= 0) list[idx] = finalEquip;
+    else list.push(finalEquip);
+
+    const { cleanList, removedDocIds } = deduplicateCollectionItems(FIRESTORE_COLLECTIONS.EQUIPMENTS, list);
+    removedDocIds.forEach((dupId) => syncDocDelete(FIRESTORE_COLLECTIONS.EQUIPMENTS, dupId));
+    saveToStorage(STORAGE_KEYS.EQUIPMENTS, cleanList);
+    syncDocWrite(FIRESTORE_COLLECTIONS.EQUIPMENTS, finalEquip);
   },
 
   deleteEquipment(equipmentId: string): boolean {
@@ -763,11 +810,22 @@ export const storageService = {
 
   saveWorker(worker: Worker): void {
     const list = this.getWorkers();
-    const idx = list.findIndex((w) => w.id === worker.id);
-    if (idx >= 0) list[idx] = worker;
-    else list.push(worker);
-    saveToStorage(STORAGE_KEYS.WORKERS, list);
-    syncDocWrite(FIRESTORE_COLLECTIONS.WORKERS, worker);
+    const cleanName = (worker.name || '').trim().toLowerCase();
+    const cleanCat = (worker.category || '').trim().toLowerCase();
+    const idx = list.findIndex(
+      (w) =>
+        w.id === worker.id ||
+        (cleanName && (w.name || '').trim().toLowerCase() === cleanName && (!cleanCat || (w.category || '').trim().toLowerCase() === cleanCat))
+    );
+    const targetId = idx >= 0 ? list[idx].id : worker.id;
+    const finalWorker = { ...worker, id: targetId };
+    if (idx >= 0) list[idx] = finalWorker;
+    else list.push(finalWorker);
+
+    const { cleanList, removedDocIds } = deduplicateCollectionItems(FIRESTORE_COLLECTIONS.WORKERS, list);
+    removedDocIds.forEach((dupId) => syncDocDelete(FIRESTORE_COLLECTIONS.WORKERS, dupId));
+    saveToStorage(STORAGE_KEYS.WORKERS, cleanList);
+    syncDocWrite(FIRESTORE_COLLECTIONS.WORKERS, finalWorker);
   },
 
   deleteWorker(workerId: string): boolean {
@@ -877,12 +935,22 @@ export const storageService = {
 
   saveBlock(block: Block): Block {
     const list = this.getBlocks();
-    const idx = list.findIndex((b) => b.id === block.id);
-    if (idx >= 0) list[idx] = block;
-    else list.push(block);
-    saveToStorage(STORAGE_KEYS.BLOCKS, list);
-    syncDocWrite(FIRESTORE_COLLECTIONS.BLOCKS, block);
-    return block;
+    const cleanCode = (block.code || '').trim().toLowerCase();
+    const idx = list.findIndex(
+      (b) =>
+        b.id === block.id ||
+        (cleanCode && b.clientId === block.clientId && (b.code || '').trim().toLowerCase() === cleanCode)
+    );
+    const targetId = idx >= 0 ? list[idx].id : block.id;
+    const finalBlock = { ...block, id: targetId };
+    if (idx >= 0) list[idx] = finalBlock;
+    else list.push(finalBlock);
+
+    const { cleanList, removedDocIds } = deduplicateCollectionItems(FIRESTORE_COLLECTIONS.BLOCKS, list);
+    removedDocIds.forEach((dupId) => syncDocDelete(FIRESTORE_COLLECTIONS.BLOCKS, dupId));
+    saveToStorage(STORAGE_KEYS.BLOCKS, cleanList);
+    syncDocWrite(FIRESTORE_COLLECTIONS.BLOCKS, finalBlock);
+    return finalBlock;
   },
 
   deleteBlock(blockId: string): boolean {
@@ -919,25 +987,35 @@ export const storageService = {
 
   saveDailyTarget(target: DailyLocationTarget): DailyLocationTarget {
     const list = loadFromStorage<DailyLocationTarget[]>(STORAGE_KEYS.DAILY_TARGETS, initialDailyTargets);
-    const idx = list.findIndex((t) => t.id === target.id);
+    const idx = list.findIndex(
+      (t) =>
+        t.id === target.id ||
+        (t.blockId === target.blockId && t.date === target.date && (t.shift || '') === (target.shift || ''))
+    );
+    const targetId = idx >= 0 ? list[idx].id : target.id;
+    const finalTarget = { ...target, id: targetId };
+
     if (idx >= 0) {
-      list[idx] = { ...target };
+      list[idx] = { ...finalTarget };
     } else {
-      list.unshift({ ...target });
+      list.unshift({ ...finalTarget });
     }
-    saveToStorage(STORAGE_KEYS.DAILY_TARGETS, list);
+
+    const { cleanList, removedDocIds } = deduplicateCollectionItems(FIRESTORE_COLLECTIONS.DAILY_TARGETS, list);
+    removedDocIds.forEach((dupId) => syncDocDelete(FIRESTORE_COLLECTIONS.DAILY_TARGETS, dupId));
+    saveToStorage(STORAGE_KEYS.DAILY_TARGETS, cleanList);
 
     // Sync baseline block.dailyTargetAreaHa if matching block
     const blocks = this.getBlocks();
-    const block = blocks.find((b) => b.id === target.blockId);
+    const block = blocks.find((b) => b.id === finalTarget.blockId);
     if (block) {
-      block.dailyTargetAreaHa = target.dailyTargetAreaHa;
+      block.dailyTargetAreaHa = finalTarget.dailyTargetAreaHa;
       saveToStorage(STORAGE_KEYS.BLOCKS, blocks);
       syncDocWrite(FIRESTORE_COLLECTIONS.BLOCKS, block);
     }
 
-    syncDocWrite(FIRESTORE_COLLECTIONS.DAILY_TARGETS, target);
-    return target;
+    syncDocWrite(FIRESTORE_COLLECTIONS.DAILY_TARGETS, finalTarget);
+    return finalTarget;
   },
 
   deleteDailyTarget(targetId: string): boolean {
@@ -1050,7 +1128,6 @@ export const storageService = {
 
   saveWorkAssignment(assignment: WorkAssignment): WorkAssignment {
     const list = this.getWorkAssignments();
-    const idx = list.findIndex((a) => a.id === assignment.id);
     const staffList = this.getCompanyStaff();
 
     // Pastikan ada assignmentNumber
@@ -1059,6 +1136,16 @@ export const storageService = {
       const client = this.getClientById(finalAssignment.clientId);
       finalAssignment.assignmentNumber = this.generateAssignmentNumber(client, finalAssignment.assignedDate, list);
     }
+
+    const asgNo = (finalAssignment.assignmentNumber || '').trim().toLowerCase();
+    const idx = list.findIndex(
+      (a) =>
+        a.id === finalAssignment.id ||
+        (asgNo && (a.assignmentNumber || '').trim().toLowerCase() === asgNo) ||
+        (a.clientId === finalAssignment.clientId && a.assignedDate === finalAssignment.assignedDate && a.siteManagerStaffId === finalAssignment.siteManagerStaffId)
+    );
+    const targetId = idx >= 0 ? list[idx].id : finalAssignment.id;
+    finalAssignment = { ...finalAssignment, id: targetId };
 
     // 1. Hubungkan & sinkronkan Site Manager dengan Daftar Staff (Identitas Perusahaan)
     if (finalAssignment.siteManagerStaffId || finalAssignment.siteManagerName) {
@@ -1128,7 +1215,9 @@ export const storageService = {
     } else {
       list.unshift(finalAssignment);
     }
-    saveToStorage(STORAGE_KEYS.WORK_ASSIGNMENTS, list);
+    const { cleanList: dedupAssignments, removedDocIds: asgRemovedIds } = deduplicateCollectionItems(FIRESTORE_COLLECTIONS.WORK_ASSIGNMENTS, list);
+    asgRemovedIds.forEach((dupId) => syncDocDelete(FIRESTORE_COLLECTIONS.WORK_ASSIGNMENTS, dupId));
+    saveToStorage(STORAGE_KEYS.WORK_ASSIGNMENTS, dedupAssignments);
 
     // 3. Sync to Worker records (Tim Pendukung)
     const workers = this.getWorkers();
@@ -1237,12 +1326,21 @@ export const storageService = {
 
   saveClient(client: Client): Client {
     const list = loadFromStorage<Client[]>(STORAGE_KEYS.CLIENTS, initialClients);
+    const cleanContract = (client.contractNumber || '').trim().toLowerCase();
+    const cleanName = (client.name || '').trim().toLowerCase();
+    const idx = list.findIndex(
+      (c) =>
+        c.id === client.id ||
+        (cleanContract && (c.contractNumber || '').trim().toLowerCase() === cleanContract) ||
+        (cleanName && (c.name || '').trim().toLowerCase() === cleanName)
+    );
+    const targetId = idx >= 0 ? list[idx].id : client.id;
     const payload: Client = {
       ...client,
+      id: targetId,
       userLevel: 'Klien',
     };
 
-    const idx = list.findIndex((c) => c.id === payload.id);
     if (idx >= 0) {
       list[idx] = payload;
     } else {
@@ -1337,7 +1435,9 @@ export const storageService = {
       this.saveManagedUser(userPayload);
     }
 
-    saveToStorage(STORAGE_KEYS.CLIENTS, list);
+    const { cleanList: dedupClients, removedDocIds: clientRemovedIds } = deduplicateCollectionItems(FIRESTORE_COLLECTIONS.CLIENTS, list);
+    clientRemovedIds.forEach((dupId) => syncDocDelete(FIRESTORE_COLLECTIONS.CLIENTS, dupId));
+    saveToStorage(STORAGE_KEYS.CLIENTS, dedupClients);
     syncDocWrite(FIRESTORE_COLLECTIONS.CLIENTS, payload);
 
     // Also auto-create a project if not existing
@@ -2676,10 +2776,12 @@ export const storageService = {
       activeStaffUsernames.add(cleanU);
 
       const staffNameLower = (staff.fullName || '').trim().toLowerCase();
+      const staffEmpLower = (staff.employeeIdNumber || '').trim().toLowerCase();
       const idx = raw.findIndex(
         (u) =>
           (staff.linkedUserId && u.id === staff.linkedUserId) ||
           normalizeUsername(u.username) === cleanU ||
+          (staffEmpLower && u.employeeIdNumber && u.employeeIdNumber.trim().toLowerCase() === staffEmpLower) ||
           (staffNameLower && (u.fullName || '').trim().toLowerCase() === staffNameLower)
       );
 
@@ -2711,7 +2813,7 @@ export const storageService = {
         if (
           normalizeUsername(existing.username) !== cleanU ||
           existing.password !== staff.password ||
-          existing.status !== staff.status ||
+          existing.status !== 'Aktif' ||
           existing.userLevel !== resolvedLevel ||
           existing.fullName !== staff.fullName
         ) {
@@ -2730,7 +2832,7 @@ export const storageService = {
             assignedClientId: staff.assignedClientId || existing.assignedClientId || 'all',
             assignedClientName: staff.assignedClientName || existing.assignedClientName || 'Semua Proyek',
             assignedBlockCodes: staff.assignedBlockCodes || existing.assignedBlockCodes || ['Akses Semua Blok'],
-            status: staff.status || existing.status || 'Aktif',
+            status: 'Aktif', // Guarantee active user status
           };
           usersListChanged = true;
         }
@@ -2750,7 +2852,7 @@ export const storageService = {
           assignedClientId: staff.assignedClientId || 'all',
           assignedClientName: staff.assignedClientName || 'Semua Proyek',
           assignedBlockCodes: staff.assignedBlockCodes || ['Akses Semua Blok'],
-          status: staff.status || 'Aktif',
+          status: 'Aktif', // Guarantee active user status
           createdAt: staff.createdAt || new Date().toISOString(),
           updatedAt: staff.updatedAt || new Date().toISOString(),
           notes: staff.notes || '',
@@ -2767,41 +2869,51 @@ export const storageService = {
         !deletedIds.includes(u.id)
     );
 
-    if (usersListChanged) {
-      saveToStorage(STORAGE_KEYS.MANAGED_USERS, filteredUsers);
+    // Apply strict deduplication engine
+    const { cleanList, removedDocIds } = deduplicateUsersList(filteredUsers);
+    if (removedDocIds.length > 0) {
+      removedDocIds.forEach((dupId) => {
+        syncDocDelete(FIRESTORE_COLLECTIONS.USERS, dupId);
+      });
+      usersListChanged = true;
     }
 
-    // Normalisasi: Direktur / Superadmin & Site Manager
-    return filteredUsers.map((u) => {
+    if (usersListChanged || cleanList.length !== raw.length) {
+      saveToStorage(STORAGE_KEYS.MANAGED_USERS, cleanList);
+    }
+
+    // Normalisasi: Direktur / Superadmin & Site Manager (All accounts Active)
+    return cleanList.map((u) => {
       const jobLower = (u.jobTitle || '').toLowerCase();
-      if (u.userLevel === 'Superadmin' || jobLower.includes('direktur')) {
+      const normU: ManagedUser = {
+        ...u,
+        status: 'Aktif', // Guarantee active status
+        username: normalizeUsername(u.username) || u.username,
+      };
+
+      if (normU.userLevel === 'Superadmin' || jobLower.includes('direktur')) {
         return {
-          ...u,
-          username: normalizeUsername(u.username) || u.username,
+          ...normU,
           assignedClientId: 'all',
           assignedClientName: 'Semua Proyek (Owner)',
           assignedBlockCodes:
-            u.assignedBlockCodes && u.assignedBlockCodes.length > 0 && !u.assignedBlockCodes.includes('Blok AB')
-              ? u.assignedBlockCodes
+            normU.assignedBlockCodes && normU.assignedBlockCodes.length > 0 && !normU.assignedBlockCodes.includes('Blok AB')
+              ? normU.assignedBlockCodes
               : ['Akses Semua Blok (Tanpa Batas)'],
         };
       }
-      if (u.userLevel === 'Site Manager' || u.userLevel === 'Manager' || jobLower.includes('manager')) {
+      if (normU.userLevel === 'Site Manager' || normU.userLevel === 'Manager' || jobLower.includes('manager')) {
         return {
-          ...u,
-          username: normalizeUsername(u.username) || u.username,
-          assignedClientId: u.assignedClientId || 'all',
-          assignedClientName: u.assignedClientName || 'Semua Proyek (Site Manager Operasional)',
+          ...normU,
+          assignedClientId: normU.assignedClientId || 'all',
+          assignedClientName: normU.assignedClientName || 'Semua Proyek (Site Manager Operasional)',
           assignedBlockCodes:
-            u.assignedBlockCodes && u.assignedBlockCodes.length > 0 && !u.assignedBlockCodes.includes('Blok AB')
-              ? u.assignedBlockCodes
+            normU.assignedBlockCodes && normU.assignedBlockCodes.length > 0 && !normU.assignedBlockCodes.includes('Blok AB')
+              ? normU.assignedBlockCodes
               : ['Akses Supervisi Semua Blok'],
         };
       }
-      return {
-        ...u,
-        username: normalizeUsername(u.username) || u.username,
-      };
+      return normU;
     });
   },
 
@@ -2813,11 +2925,23 @@ export const storageService = {
     const trimmed = normalizeUsername(username);
     if (!trimmed) return undefined;
 
-    // 1. Cari dari daftar ManagedUsers (yang sudah digabung dengan CompanyStaff aktif)
-    let existing = this.getManagedUsers().find((u) => normalizeUsername(u.username) === trimmed);
+    // 1. Cari dari daftar ManagedUsers (cocokkan username, NIK/NIP, atau email)
+    const users = this.getManagedUsers();
+    let existing = users.find(
+      (u) =>
+        normalizeUsername(u.username) === trimmed ||
+        (u.employeeIdNumber && u.employeeIdNumber.trim().toLowerCase() === trimmed) ||
+        (u.email && u.email.trim().toLowerCase() === trimmed)
+    );
 
     // 2. Cek langsung ke CompanyStaff jika ada update kredensial terbaru di Submenu 2
-    const staffMatch = this.getCompanyStaff().find((s) => normalizeUsername(s.username) === trimmed);
+    const staffList = this.getCompanyStaff();
+    const staffMatch = staffList.find(
+      (s) =>
+        normalizeUsername(s.username) === trimmed ||
+        (s.employeeIdNumber && s.employeeIdNumber.trim().toLowerCase() === trimmed) ||
+        (s.email && s.email.trim().toLowerCase() === trimmed)
+    );
     if (staffMatch && staffMatch.password) {
       const resolvedLevel: ManagedUser['userLevel'] =
         staffMatch.userLevel ||
@@ -2838,14 +2962,14 @@ export const storageService = {
         email: staffMatch.email || existing?.email || '-',
         jobTitle: staffMatch.jobRole || existing?.jobTitle || 'Staff',
         userLevel: resolvedLevel,
-        username: trimmed,
+        username: normalizeUsername(staffMatch.username) || trimmed,
         password: staffMatch.password,
         signatureUrl: staffMatch.signatureUrl || existing?.signatureUrl,
         employeeIdNumber: staffMatch.employeeIdNumber || existing?.employeeIdNumber,
         assignedClientId: staffMatch.assignedClientId || existing?.assignedClientId || 'all',
         assignedClientName: staffMatch.assignedClientName || existing?.assignedClientName || 'Semua Proyek',
         assignedBlockCodes: staffMatch.assignedBlockCodes || existing?.assignedBlockCodes || ['Akses Semua Blok'],
-        status: staffMatch.status || existing?.status || 'Aktif',
+        status: 'Aktif',
         createdAt: staffMatch.createdAt || existing?.createdAt || new Date().toISOString(),
         notes: staffMatch.notes || existing?.notes || '',
       };
@@ -2855,6 +2979,7 @@ export const storageService = {
     const matchingClients = allClients.filter(
       (c) =>
         (c.username && normalizeUsername(c.username) === trimmed) ||
+        (c.email && c.email.trim().toLowerCase() === trimmed) ||
         (existing &&
           existing.userLevel === 'Klien' &&
           (c.id === existing.assignedClientId ||
@@ -2879,12 +3004,13 @@ export const storageService = {
         );
         return {
           ...existing,
+          status: 'Aktif',
           assignedClientId: clientIds[0] || existing.assignedClientId,
           assignedClientIds: clientIds,
           assignedContractNumbers: contractNumbers,
         };
       }
-      return existing;
+      return { ...existing, status: 'Aktif' };
     }
 
     // Fallback: jika kredensial tersimpan pada data Client (Master Data Proyek -> 1. Daftar Klien)
@@ -2925,13 +3051,24 @@ export const storageService = {
   saveManagedUser(user: ManagedUser): ManagedUser {
     const cleanUser: ManagedUser = {
       ...user,
+      status: 'Aktif', // Guarantee active user status
       username: normalizeUsername(user.username) || user.username.trim(),
     };
     const list = loadFromStorage<ManagedUser[]>(STORAGE_KEYS.MANAGED_USERS, initialManagedUsers).filter(
       (u) => !isObsoleteHendraRecord(u)
     );
+
+    const normUsername = cleanUser.username;
+    const normEmp = (cleanUser.employeeIdNumber || '').trim().toLowerCase();
+    const normName = (cleanUser.fullName || '').trim().toLowerCase();
+
+    // Find existing by id, username, employeeIdNumber, or fullName
     const idx = list.findIndex(
-      (u) => u.id === cleanUser.id || (cleanUser.username && normalizeUsername(u.username) === cleanUser.username)
+      (u) =>
+        u.id === cleanUser.id ||
+        (normUsername && normalizeUsername(u.username) === normUsername) ||
+        (normEmp && u.employeeIdNumber && u.employeeIdNumber.trim().toLowerCase() === normEmp) ||
+        (normName && (u.fullName || '').trim().toLowerCase() === normName)
     );
 
     const jobLower = (cleanUser.jobTitle || '').toLowerCase();
@@ -2942,9 +3079,13 @@ export const storageService = {
     const safeSignatureUrl =
       cleanUser.signatureUrl && cleanUser.signatureUrl.length > 120000 ? undefined : cleanUser.signatureUrl;
 
+    const targetId = idx >= 0 ? list[idx].id : cleanUser.id;
+
     const normalizedUser: ManagedUser = isSuper
       ? {
           ...cleanUser,
+          id: targetId,
+          status: 'Aktif',
           signatureUrl: safeSignatureUrl,
           assignedClientId: 'all',
           assignedClientName: 'Semua Proyek (Owner)',
@@ -2953,6 +3094,8 @@ export const storageService = {
       : isManager
       ? {
           ...cleanUser,
+          id: targetId,
+          status: 'Aktif',
           signatureUrl: safeSignatureUrl,
           assignedClientId: cleanUser.assignedClientId || 'all',
           assignedClientName: cleanUser.assignedClientName || 'Semua Proyek (Site Manager Operasional)',
@@ -2960,6 +3103,8 @@ export const storageService = {
         }
       : {
           ...cleanUser,
+          id: targetId,
+          status: 'Aktif',
           signatureUrl: safeSignatureUrl,
         };
 
@@ -2967,7 +3112,7 @@ export const storageService = {
       list[idx] = {
         ...list[idx],
         ...normalizedUser,
-        id: list[idx].id,
+        id: targetId,
         updatedAt: new Date().toISOString(),
       };
     } else {
@@ -2977,11 +3122,17 @@ export const storageService = {
       });
     }
 
+    // Deduplicate entire list to ensure no duplicate entries remain
+    const { cleanList, removedDocIds } = deduplicateUsersList(list);
+    removedDocIds.forEach((dupId) => {
+      syncDocDelete(FIRESTORE_COLLECTIONS.USERS, dupId);
+    });
+
     const deletedIds = loadFromStorage<string[]>(STORAGE_KEYS.DELETED_USER_IDS, []);
     if (deletedIds.includes(normalizedUser.id)) {
       saveToStorage(STORAGE_KEYS.DELETED_USER_IDS, deletedIds.filter((id) => id !== normalizedUser.id));
     }
-    saveToStorage(STORAGE_KEYS.MANAGED_USERS, list);
+    saveToStorage(STORAGE_KEYS.MANAGED_USERS, cleanList);
     syncDocWrite(FIRESTORE_COLLECTIONS.USERS, normalizedUser);
 
     // Sync any new block codes to client's block list if not Superadmin
@@ -3124,7 +3275,6 @@ export const storageService = {
       rawStaff = initialCompanyStaff.filter((s) => !deletedStaffIds.includes(s.id) && !isObsoleteHendraRecord(s));
       saveToStorage(STORAGE_KEYS.COMPANY_STAFF, rawStaff);
     } else {
-      const beforeLen = rawStaff.length;
       rawStaff = rawStaff.filter((s) => {
         if (isObsoleteHendraRecord(s)) {
           syncDocDelete(FIRESTORE_COLLECTIONS.COMPANY_STAFF, s.id);
@@ -3132,28 +3282,38 @@ export const storageService = {
         }
         return !deletedStaffIds.includes(s.id);
       });
-      if (rawStaff.length !== beforeLen) {
-        saveToStorage(STORAGE_KEYS.COMPANY_STAFF, rawStaff);
-      }
+    }
+
+    // Apply strict deduplication engine on staff
+    const { cleanList, removedDocIds } = deduplicateStaffList(rawStaff);
+    let staffListChanged = false;
+    if (removedDocIds.length > 0) {
+      removedDocIds.forEach((dupId) => {
+        syncDocDelete(FIRESTORE_COLLECTIONS.COMPANY_STAFF, dupId);
+      });
+      staffListChanged = true;
     }
 
     const rawUsers = loadFromStorage<ManagedUser[]>(STORAGE_KEYS.MANAGED_USERS, initialManagedUsers);
     const users = Array.isArray(rawUsers) ? rawUsers.filter((u) => !isObsoleteHendraRecord(u)) : [];
 
-    // Enrich staff with corresponding managed user credentials if not already set
-    return rawStaff.map((staff) => {
+    // Enrich staff with corresponding managed user credentials if not already set & guarantee active status
+    const enrichedStaff = cleanList.map((staff) => {
       const staffUserLower = normalizeUsername(staff.username);
+      const staffEmpLower = (staff.employeeIdNumber || '').trim().toLowerCase();
       const staffNameLower = (staff.fullName || '').trim().toLowerCase();
       const matchedUser = users.find(
         (u) =>
           (staff.linkedUserId && u.id === staff.linkedUserId) ||
           (staffUserLower && normalizeUsername(u.username) === staffUserLower) ||
+          (staffEmpLower && u.employeeIdNumber && u.employeeIdNumber.trim().toLowerCase() === staffEmpLower) ||
           (staffNameLower && u.fullName && u.fullName.trim().toLowerCase() === staffNameLower)
       );
 
       if (matchedUser) {
         return {
           ...staff,
+          status: 'Aktif' as const, // Guarantee active status
           username: normalizeUsername(staff.username || matchedUser.username),
           password: staff.password || matchedUser.password,
           userLevel: staff.userLevel || matchedUser.userLevel,
@@ -3168,9 +3328,16 @@ export const storageService = {
       }
       return {
         ...staff,
+        status: 'Aktif' as const,
         username: staff.username ? normalizeUsername(staff.username) : staff.username,
       };
     });
+
+    if (staffListChanged || cleanList.length !== rawStaff.length) {
+      saveToStorage(STORAGE_KEYS.COMPANY_STAFF, enrichedStaff);
+    }
+
+    return enrichedStaff;
   },
 
   getStaffById(id: string): CompanyStaff | undefined {
@@ -3185,15 +3352,28 @@ export const storageService = {
     }
 
     const staffList = this.getCompanyStaff();
-    const existingIndex = staffList.findIndex((s) => s.id === staff.id);
+    const cleanUser = normalizeUsername(staff.username);
+    const staffEmpLower = (staff.employeeIdNumber || '').trim().toLowerCase();
+    const staffNameLower = (staff.fullName || '').trim().toLowerCase();
+
+    // Check by id, username, employeeIdNumber, or fullName to avoid duplicate staff records
+    const existingIndex = staffList.findIndex(
+      (s) =>
+        s.id === staff.id ||
+        (cleanUser && normalizeUsername(s.username) === cleanUser) ||
+        (staffEmpLower && s.employeeIdNumber && s.employeeIdNumber.trim().toLowerCase() === staffEmpLower) ||
+        (staffNameLower && (s.fullName || '').trim().toLowerCase() === staffNameLower)
+    );
+
     const previousStaff = existingIndex >= 0 ? staffList[existingIndex] : undefined;
-    let updatedList: CompanyStaff[];
-    const cleanUser = normalizeUsername(staff.username || previousStaff?.username);
+    const resolvedStaffId = previousStaff?.id || staff.id;
     const cleanPass = staff.password || previousStaff?.password;
 
     const payload: CompanyStaff = {
       ...previousStaff,
       ...staff,
+      id: resolvedStaffId,
+      status: 'Aktif', // Guarantee active status
       username: cleanUser || staff.username,
       password: cleanPass,
       updatedAt: new Date().toISOString(),
@@ -3249,7 +3429,7 @@ export const storageService = {
         assignedClientId: payload.assignedClientId || 'all',
         assignedClientName: payload.assignedClientName || 'Semua Proyek',
         assignedBlockCodes: payload.assignedBlockCodes || ['Akses Semua Blok'],
-        status: payload.status || 'Aktif',
+        status: 'Aktif',
         notes: payload.notes,
         createdAt: existingUser?.createdAt || payload.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -3258,12 +3438,19 @@ export const storageService = {
       this.saveManagedUser(userPayload);
     }
 
+    let rawList: CompanyStaff[];
     if (existingIndex >= 0) {
-      updatedList = [...staffList];
-      updatedList[existingIndex] = payload;
+      rawList = [...staffList];
+      rawList[existingIndex] = payload;
     } else {
-      updatedList = [payload, ...staffList];
+      rawList = [payload, ...staffList];
     }
+
+    // Deduplicate entire staff list
+    const { cleanList: updatedList, removedDocIds } = deduplicateStaffList(rawList);
+    removedDocIds.forEach((dupId) => {
+      syncDocDelete(FIRESTORE_COLLECTIONS.COMPANY_STAFF, dupId);
+    });
 
     saveToStorage(STORAGE_KEYS.COMPANY_STAFF, updatedList);
 
@@ -3953,6 +4140,75 @@ export const storageService = {
         message: `Gagal memulihkan cadangan: ${err?.message || 'Kesalahan I/O memori'}`,
       };
     }
+  },
+
+  // Full-Database Universal Deduplication Engine (Local & Firestore Cloud)
+  async deduplicateAllDatabase(): Promise<{
+    totalRemoved: number;
+    details: Record<string, number>;
+    cloudPurgedCount: number;
+  }> {
+    let totalRemoved = 0;
+    const details: Record<string, number> = {};
+
+    const collectionsToDeduplicate: Array<{ storageKey: string; firestoreName: string }> = [
+      { storageKey: STORAGE_KEYS.COMPANY_STAFF, firestoreName: FIRESTORE_COLLECTIONS.COMPANY_STAFF },
+      { storageKey: STORAGE_KEYS.MANAGED_USERS, firestoreName: FIRESTORE_COLLECTIONS.USERS },
+      { storageKey: STORAGE_KEYS.CLIENTS, firestoreName: FIRESTORE_COLLECTIONS.CLIENTS },
+      { storageKey: STORAGE_KEYS.BLOCKS, firestoreName: FIRESTORE_COLLECTIONS.BLOCKS },
+      { storageKey: STORAGE_KEYS.EQUIPMENTS, firestoreName: FIRESTORE_COLLECTIONS.EQUIPMENTS },
+      { storageKey: STORAGE_KEYS.WORKERS, firestoreName: FIRESTORE_COLLECTIONS.WORKERS },
+      { storageKey: STORAGE_KEYS.DAILY_TARGETS, firestoreName: FIRESTORE_COLLECTIONS.DAILY_TARGETS },
+      { storageKey: STORAGE_KEYS.WORK_ASSIGNMENTS, firestoreName: FIRESTORE_COLLECTIONS.WORK_ASSIGNMENTS },
+      { storageKey: STORAGE_KEYS.REPORTS, firestoreName: FIRESTORE_COLLECTIONS.REPORTS },
+      { storageKey: STORAGE_KEYS.INVENTORY, firestoreName: FIRESTORE_COLLECTIONS.INVENTORY },
+      { storageKey: STORAGE_KEYS.P2H_CHECKLISTS, firestoreName: FIRESTORE_COLLECTIONS.P2H },
+      { storageKey: STORAGE_KEYS.FUEL_BOWSER, firestoreName: FIRESTORE_COLLECTIONS.BOWSER },
+      { storageKey: STORAGE_KEYS.SOIL_INCIDENTS, firestoreName: FIRESTORE_COLLECTIONS.SOIL },
+    ];
+
+    for (const col of collectionsToDeduplicate) {
+      try {
+        const raw = localStorage.getItem(col.storageKey);
+        if (raw) {
+          const list = JSON.parse(raw);
+          if (Array.isArray(list) && list.length > 0) {
+            const { cleanList, removedDocIds } = deduplicateCollectionItems(col.firestoreName, list);
+            if (removedDocIds.length > 0) {
+              totalRemoved += removedDocIds.length;
+              details[col.storageKey] = removedDocIds.length;
+              removedDocIds.forEach((dupId) => {
+                syncDocDelete(col.firestoreName, dupId);
+              });
+              saveToStorage(col.storageKey, cleanList);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`Deduplicate notice on ${col.storageKey}:`, err);
+      }
+    }
+
+    // Run full cloud Firestore purge
+    let cloudPurgedCount = 0;
+    try {
+      const cloudRes = await purgeAllCloudDuplicates();
+      cloudPurgedCount = cloudRes.purgedCount;
+    } catch (err) {
+      console.warn('Cloud purge notice:', err);
+    }
+
+    // Refresh staff & users to guarantee 100% active status
+    this.getCompanyStaff();
+    this.getManagedUsers();
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('suryaland_company_staff_sync'));
+      window.dispatchEvent(new CustomEvent('suryaland_master_sync'));
+      window.dispatchEvent(new CustomEvent('suryaland_firestore_sync', { detail: { collection: 'all_deduplicated' } }));
+    }
+
+    return { totalRemoved, details, cloudPurgedCount };
   },
 
   // Reset database to initial seed

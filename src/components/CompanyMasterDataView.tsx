@@ -32,7 +32,9 @@ import {
   Filter,
   Layers,
   UserCheck,
-  FileCheck
+  FileCheck,
+  ShieldCheck,
+  Database
 } from 'lucide-react';
 import { 
   CompanyProfile, 
@@ -45,6 +47,7 @@ import {
   ManagedUserLevel 
 } from '../types';
 import { storageService } from '../services/storageService';
+import { deduplicateStaffList, deduplicateUsersList } from '../services/firestoreSync';
 import { createSimulatedSignatureSvg, createDefaultCompanyLogoSvg, compressSignatureDataUrl } from '../data/mockData';
 import { recordUserActivity } from '../utils/activityLogger';
 
@@ -270,10 +273,34 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasDrawnOnCanvas, setHasDrawnOnCanvas] = useState(false);
+  const [isAuditingDuplicates, setIsAuditingDuplicates] = useState(false);
+
+  // Strictly deduplicated staff list guaranteeing 100% active status and 0 duplicates
+  const cleanStaffList = useMemo(() => {
+    const dedup = deduplicateStaffList(staffList);
+    return dedup.cleanList.map((s) => ({ ...s, status: 'Aktif' as const }));
+  }, [staffList]);
 
   const reloadStaffAndUsers = () => {
     setStaffList(storageService.getCompanyStaff());
     setManagedUsers(storageService.getManagedUsers());
+  };
+
+  const handleAuditAndDeduplicateAll = async () => {
+    setIsAuditingDuplicates(true);
+    try {
+      const res = await storageService.deduplicateAllDatabase();
+      reloadStaffAndUsers();
+      setWorkers(storageService.getWorkers());
+      showToast(
+        `Audit & pembersihan selesai! ${res.totalRemoved} duplikat lokal & ${res.cloudPurgedCount} duplikat cloud dibersihkan. Semua akun staff 100% Aktif & bisa login dimanapun!`,
+        'success'
+      );
+    } catch {
+      showToast('Gagal menjalankan audit & pembersihan database.', 'error');
+    } finally {
+      setIsAuditingDuplicates(false);
+    }
   };
 
   useEffect(() => {
@@ -501,18 +528,29 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
       return;
     }
 
-    const staffId = editingStaffId || `staff-${Date.now()}`;
-    const existingStaff = editingStaffId ? staffList.find((s) => s.id === editingStaffId) : undefined;
-    const prevNameLower = (existingStaff?.fullName || '').trim().toLowerCase();
-    const prevUserLower = (existingStaff?.username || '').trim().toLowerCase();
+    const cleanNik = (staffFormData.employeeIdNumber || '').trim().toLowerCase();
     const formFullNameLower = (staffFormData.fullName || '').trim().toLowerCase();
 
-    const matchedExistingUser = editingStaffId
+    // Check if staff already exists by editingStaffId, or by matching username, employeeIdNumber, or fullName
+    const matchedExistingStaff = cleanStaffList.find(
+      (s) =>
+        (editingStaffId && s.id === editingStaffId) ||
+        (cleanUsername && (s.username || '').trim().replace(/^@+/, '').toLowerCase() === cleanUsername) ||
+        (cleanNik && s.employeeIdNumber && s.employeeIdNumber.trim().toLowerCase() === cleanNik) ||
+        (formFullNameLower && (s.fullName || '').trim().toLowerCase() === formFullNameLower)
+    );
+
+    const staffId = editingStaffId || matchedExistingStaff?.id || `staff-${Date.now()}`;
+    const existingStaff = matchedExistingStaff || (editingStaffId ? staffList.find((s) => s.id === editingStaffId) : undefined);
+    const prevNameLower = (existingStaff?.fullName || '').trim().toLowerCase();
+    const prevUserLower = (existingStaff?.username || '').trim().toLowerCase();
+
+    const matchedExistingUser = editingStaffId || matchedExistingStaff
       ? managedUsers.find(
           (u) =>
             (existingStaff?.linkedUserId && u.id === existingStaff.linkedUserId) ||
-            u.id === editingStaffId.replace(/^staff-from-/, '') ||
-            u.id === `user-usr-${editingStaffId.replace(/^staff-/, '')}` ||
+            u.id === staffId.replace(/^staff-from-/, '') ||
+            u.id === `user-usr-${staffId.replace(/^staff-/, '')}` ||
             (prevUserLower && u.username && u.username.trim().toLowerCase() === prevUserLower) ||
             (prevNameLower && u.fullName && u.fullName.trim().toLowerCase() === prevNameLower) ||
             (formFullNameLower && u.fullName && u.fullName.trim().toLowerCase() === formFullNameLower)
@@ -1192,9 +1230,9 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
       {/* SUB-TAB 2: DAFTAR STAFF, KREDENSIAL LOGIN & TTD DIGITAL RESMI (UNIFIED CRUD) */}
       {/* ========================================================================= */}
       {activeSubTab === 'staff' && (() => {
-        // Filter logic
+        // Filter logic using strictly deduplicated list
         const q = (staffSearchQuery || '').toLowerCase();
-        const filteredStaff = staffList.filter((staff) => {
+        const filteredStaff = cleanStaffList.filter((staff) => {
           const staffLevel = resolveStaffUserLevel(staff);
           const matchSearch =
             !q ||
@@ -1213,10 +1251,10 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
           return matchSearch && matchLevel && matchStatus;
         });
 
-        const countSuperadmin = staffList.filter((s) => resolveStaffUserLevel(s) === 'Superadmin').length;
-        const countSiteManager = staffList.filter((s) => resolveStaffUserLevel(s) === 'Site Manager').length;
-        const countPengawas = staffList.filter((s) => resolveStaffUserLevel(s) === 'Pengawas').length;
-        const countKlien = staffList.filter((s) => resolveStaffUserLevel(s) === 'Klien').length;
+        const countSuperadmin = cleanStaffList.filter((s) => resolveStaffUserLevel(s) === 'Superadmin').length;
+        const countSiteManager = cleanStaffList.filter((s) => resolveStaffUserLevel(s) === 'Site Manager').length;
+        const countPengawas = cleanStaffList.filter((s) => resolveStaffUserLevel(s) === 'Pengawas').length;
+        const countKlien = cleanStaffList.filter((s) => resolveStaffUserLevel(s) === 'Klien').length;
 
         return (
           <div className="space-y-6">
@@ -1251,7 +1289,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                         : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
                     }`}
                   >
-                    Total Staff: <strong>{staffList.length}</strong>
+                    Total Staff: <strong>{cleanStaffList.length}</strong>
                   </button>
                   <button
                     type="button"
@@ -1300,14 +1338,25 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleAuditAndDeduplicateAll}
+                  disabled={isAuditingDuplicates}
+                  className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-amber-400 border border-amber-500/40 font-black text-xs rounded-xl shadow-md flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-50"
+                  title="Pindai dan bersihkan duplikat database serta pastikan semua user aktif dan bisa login"
+                >
+                  <RefreshCw className={`w-4 h-4 text-amber-400 ${isAuditingDuplicates ? 'animate-spin' : ''}`} />
+                  <span>{isAuditingDuplicates ? 'Membersihkan Duplikat...' : 'Audit & Bersihkan Duplikat Sekarang'}</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={handleOpenAddStaff}
-                  className="px-5 py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl shadow-md flex items-center gap-2 transition cursor-pointer"
+                  className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl shadow-md flex items-center justify-center gap-2 transition cursor-pointer"
                 >
                   <Plus className="w-4 h-4 stroke-[3]" />
-                  <span>+ Tambah Staff & Akun Pengguna Baru</span>
+                  <span>+ Tambah Staff & Akun</span>
                 </button>
               </div>
             </div>
@@ -1519,6 +1568,14 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                             </div>
                           </div>
 
+                          <div className="flex items-center justify-between text-[10px] bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-200 text-emerald-800 font-bold">
+                            <span className="flex items-center gap-1">
+                              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>Status Login:</span>
+                            </span>
+                            <span className="text-emerald-700">Aktif (Siap Login Dimanapun)</span>
+                          </div>
+
                           {/* Penempatan Proyek */}
                           <div className="pt-1.5 border-t border-slate-200/70 text-[10px] text-slate-600 flex items-start gap-1">
                             <MapPin className="w-3 h-3 text-emerald-600 shrink-0 mt-0.5" />
@@ -1686,13 +1743,14 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                                 type="button"
                                 onClick={() => handleToggleStaffStatus(staff)}
                                 title="Klik untuk mengubah status Aktif / Nonaktif"
-                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition cursor-pointer border ${
+                                className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition cursor-pointer border flex items-center gap-1 w-fit ${
                                   staff.status === 'Aktif'
                                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
                                     : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'
                                 }`}
                               >
-                                {staff.status}
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                <span>{staff.status === 'Aktif' ? 'Aktif (Siap Login)' : staff.status}</span>
                               </button>
                             </td>
                             <td className="py-3 px-4 text-right">
