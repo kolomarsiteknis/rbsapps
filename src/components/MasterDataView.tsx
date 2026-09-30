@@ -56,7 +56,7 @@ import { storageService } from '../services/storageService';
 import { DEFAULT_WORK_ITEMS_CATALOG } from '../data/mockData';
 
 export const MasterDataView: React.FC = () => {
-  const [activeSubTab, setActiveSubTab] = useState<'client' | 'blocks' | 'equipments' | 'assignments'>('client');
+  const [activeSubTab, setActiveSubTab] = useState<'client' | 'blocks' | 'equipments' | 'assignments' | 'targets'>('client');
   
   const [clients, setClients] = useState<Client[]>(() => storageService.getClients());
   const [blocks, setBlocks] = useState<Block[]>(() => storageService.getBlocks());
@@ -2054,6 +2054,19 @@ export const MasterDataView: React.FC = () => {
             <ClipboardList className="w-4 h-4" />
             <span>4. Penugasan Kerja ({workAssignments.length})</span>
           </button>
+
+          {/* 5. TARGET HARIAN */}
+          <button
+            onClick={() => setActiveSubTab('targets')}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl transition cursor-pointer whitespace-nowrap ${
+              activeSubTab === 'targets'
+                ? 'bg-amber-500 text-slate-950 shadow font-black'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            <Target className="w-4 h-4" />
+            <span>5. Target Harian ({dailyTargets.length})</span>
+          </button>
         </div>
       </div>
 
@@ -3077,8 +3090,8 @@ export const MasterDataView: React.FC = () => {
         );
       })()}
 
-      {/* SUB-TAB: TARGET HARIAN (HA) PER HARI PER LOKASI KERJA (CRUD SUPERADMIN / DIREKTUR) - REMOVED */}
-      {false && (() => {
+      {/* SUB-TAB: TARGET HARIAN (HA) PER HARI PER LOKASI KERJA (CRUD SUPERADMIN / DIREKTUR) */}
+      {activeSubTab === 'targets' && (() => {
         const todayDateStr = new Date().toISOString().split('T')[0];
 
         const filteredTargets = dailyTargets.filter((item) => {

@@ -175,13 +175,6 @@ export const Header: React.FC<HeaderProps> = ({
           visible: true,
         },
         {
-          key: 'client-portal' as TabKey,
-          label: 'Portal Akses Klien',
-          subtitle: 'Monitoring Progress & Laporan per SPK Klien',
-          icon: Users,
-          visible: true,
-        },
-        {
           key: 'director-field-monitor' as TabKey,
           label: 'Audit Pengawas',
           subtitle: 'P2H, HM, Solar & K3',
