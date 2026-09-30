@@ -1089,12 +1089,12 @@ export const ManagerApprovalView: React.FC<ManagerApprovalViewProps> = ({
                       {viewingReport.equipmentWorkLogs.map((log) => (
                         <tr key={log.equipmentId} className="hover:bg-slate-50">
                           <td className="p-2 font-bold text-slate-900">{log.equipmentName} ({log.equipmentId})</td>
-                          <td className="p-2 text-center font-mono">{log.hmStart} - {log.hmEnd}</td>
-                          <td className="p-2 text-center font-mono font-bold text-emerald-700">{log.effectiveWorkHours.toFixed(1)} h</td>
-                          <td className="p-2 text-center font-mono text-rose-600">{(log.downtimeWeatherHours + log.downtimeBreakdownHours).toFixed(1)} h</td>
-                          <td className="p-2 text-center font-mono font-bold">{log.fuelAddedLiters} L</td>
+                          <td className="p-2 text-center font-mono">{Number(log.hmStart || 0).toFixed(1)} - {Number(log.hmEnd || 0).toFixed(1)}</td>
+                          <td className="p-2 text-center font-mono font-bold text-emerald-700">{Number(log.effectiveWorkHours || 0).toFixed(1)} h</td>
+                          <td className="p-2 text-center font-mono text-rose-600">{Number((log.downtimeWeatherHours || 0) + (log.downtimeBreakdownHours || 0)).toFixed(1)} h</td>
+                          <td className="p-2 text-center font-mono font-bold">{Number(log.fuelAddedLiters || 0)} L</td>
                           <td className="p-2 text-center font-mono font-bold">
-                            {log.fuelRatio.toFixed(1)}
+                            {Number(log.fuelRatio || 0).toFixed(1)}
                             {log.isFuelAlert && <span className="text-[10px] text-rose-600 ml-1 font-black">!</span>}
                           </td>
                         </tr>

@@ -502,8 +502,20 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
     ]);
   };
 
+  const [wizardDeleteConfirm, setWizardDeleteConfirm] = useState<{
+    title: string;
+    description: string;
+    onConfirm: () => void;
+  } | null>(null);
+
   const removeEquipmentFromLog = (index: number) => {
-    setEquipmentLogs((prev) => prev.filter((_, i) => i !== index));
+    setWizardDeleteConfirm({
+      title: 'Hapus Unit Alat Berat?',
+      description: 'Apakah Anda yakin ingin menghapus unit alat berat ini dari draf laporan harian?',
+      onConfirm: () => {
+        setEquipmentLogs((prev) => prev.filter((_, i) => i !== index));
+      },
+    });
   };
 
   // Quick attend all for active scope and team
@@ -610,7 +622,13 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
   };
 
   const removePhoto = (id: string) => {
-    setPhotos((prev) => prev.filter((p) => p.id !== id));
+    setWizardDeleteConfirm({
+      title: 'Hapus Foto Lampiran?',
+      description: 'Apakah Anda yakin ingin menghapus foto terlampir ini dari draf laporan harian?',
+      onConfirm: () => {
+        setPhotos((prev) => prev.filter((p) => p.id !== id));
+      },
+    });
   };
 
   const addSparePartItem = () => {
@@ -631,7 +649,13 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
   };
 
   const removeSparePartItem = (id: string) => {
-    setSpareParts((prev) => prev.filter((sp) => sp.id !== id));
+    setWizardDeleteConfirm({
+      title: 'Hapus Pemakaian Suku Cadang?',
+      description: 'Apakah Anda yakin ingin menghapus pemakaian spare part / suku cadang ini?',
+      onConfirm: () => {
+        setSpareParts((prev) => prev.filter((sp) => sp.id !== id));
+      },
+    });
   };
 
   // Submit Handler
@@ -2590,7 +2614,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                       <div className="p-2.5 text-xs">
                         <div className="font-bold text-slate-900">{p.caption}</div>
                         <div className="text-[11px] text-slate-500 font-mono mt-0.5 flex justify-between">
-                          <span>GPS: {p.gpsCoordinates.lat.toFixed(5)}, {p.gpsCoordinates.lng.toFixed(5)}</span>
+                          <span>GPS: {p.gpsCoordinates ? `${Number(p.gpsCoordinates.lat || 0).toFixed(5)}, ${Number(p.gpsCoordinates.lng || 0).toFixed(5)}` : '-'}</span>
                           <span>{p.timestamp}</span>
                         </div>
                       </div>
@@ -2756,6 +2780,51 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                 className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-bold cursor-pointer"
               >
                 Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* MODAL: KONFIRMASI HAPUS ELEMENT DRAF */}
+      {wizardDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl border border-rose-100 space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900 leading-tight">
+                  {wizardDeleteConfirm.title}
+                </h3>
+                <p className="text-xs text-rose-600 font-bold mt-0.5">
+                  Konfirmasi Hapus Draf Form Laporan
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              {wizardDeleteConfirm.description}
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setWizardDeleteConfirm(null)}
+                className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 font-bold text-xs transition cursor-pointer"
+              >
+                Batalkan
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  wizardDeleteConfirm.onConfirm();
+                  setWizardDeleteConfirm(null);
+                }}
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs shadow-md transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Ya, Hapus</span>
               </button>
             </div>
           </div>

@@ -65,6 +65,7 @@ export const UserActivityAuditLogView: React.FC<UserActivityAuditLogViewProps> =
   const [selectedDateFilter, setSelectedDateFilter] = useState<string>('');
   const [activeViewMode, setActiveViewMode] = useState<'table' | 'timeline' | 'map'>('table');
   const [selectedDetailLog, setSelectedDetailLog] = useState<UserActivityLog | null>(null);
+  const [isClearLogsModalOpen, setIsClearLogsModalOpen] = useState<boolean>(false);
   const [isCopied, setIsCopied] = useState<boolean>(false);
 
   // Reload logs
@@ -76,11 +77,14 @@ export const UserActivityAuditLogView: React.FC<UserActivityAuditLogViewProps> =
 
   // Clear logs confirmation
   const handleClearLogs = () => {
-    if (window.confirm('PERINGATAN: Apakah Anda yakin ingin mengosongkan seluruh riwayat log aktivitas pengguna? Tindakan ini tidak dapat dibatalkan.')) {
-      storageService.clearUserActivities();
-      setLogs([]);
-      showToast('Seluruh riwayat log aktivitas telah dibersihkan.', 'warning');
-    }
+    setIsClearLogsModalOpen(true);
+  };
+
+  const executeClearLogs = () => {
+    storageService.clearUserActivities();
+    setLogs([]);
+    setIsClearLogsModalOpen(false);
+    showToast('Seluruh riwayat log aktivitas telah dibersihkan.', 'warning');
   };
 
   // Filtered logs
@@ -796,7 +800,9 @@ export const UserActivityAuditLogView: React.FC<UserActivityAuditLogViewProps> =
                   </div>
                   <div className="flex items-center justify-between text-xs font-mono">
                     <span className="text-slate-500">Koordinat:</span>
-                    <strong className="text-sky-700">{l.gpsTag?.lat.toFixed(5)}, {l.gpsTag?.lng.toFixed(5)}</strong>
+                    <strong className="text-sky-700">
+                      {l.gpsTag ? `${Number(l.gpsTag.lat || 0).toFixed(5)}, ${Number(l.gpsTag.lng || 0).toFixed(5)}` : '-'}
+                    </strong>
                   </div>
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-slate-500">Akurasi GPS:</span>
@@ -945,6 +951,48 @@ export const UserActivityAuditLogView: React.FC<UserActivityAuditLogViewProps> =
         </div>
       )}
 
+      {/* MODAL: KONFIRMASI BERSIHKAN SEMUA LOG */}
+      {isClearLogsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl border border-rose-100 space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900 leading-tight">
+                  Bersihkan Riwayat Audit Log?
+                </h3>
+                <p className="text-xs text-rose-600 font-bold mt-0.5">
+                  Pembersihan Riwayat Aktivitas
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              PERINGATAN: Apakah Anda yakin ingin mengosongkan seluruh riwayat log aktivitas dan jejak audit lokasi GPS pengguna? Tindakan ini tidak dapat dibatalkan.
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsClearLogsModalOpen(false)}
+                className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 font-bold text-xs transition cursor-pointer"
+              >
+                Batalkan
+              </button>
+              <button
+                type="button"
+                onClick={executeClearLogs}
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs shadow-md transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Ya, Bersihkan Log</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

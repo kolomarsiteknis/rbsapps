@@ -56,7 +56,7 @@ import { storageService } from '../services/storageService';
 import { DEFAULT_WORK_ITEMS_CATALOG } from '../data/mockData';
 
 export const MasterDataView: React.FC = () => {
-  const [activeSubTab, setActiveSubTab] = useState<'client' | 'blocks' | 'equipments' | 'assignments' | 'dailyTargets'>('client');
+  const [activeSubTab, setActiveSubTab] = useState<'client' | 'blocks' | 'equipments' | 'assignments'>('client');
   
   const [clients, setClients] = useState<Client[]>(() => storageService.getClients());
   const [blocks, setBlocks] = useState<Block[]>(() => storageService.getBlocks());
@@ -105,6 +105,8 @@ export const MasterDataView: React.FC = () => {
   };
   const [showClientPassword, setShowClientPassword] = useState<boolean>(false);
   const [visibleClientCardPasswords, setVisibleClientCardPasswords] = useState<Record<string, boolean>>({});
+  const [clientToDelete, setClientToDelete] = useState<Client | null>(null);
+  const [blockToDelete, setBlockToDelete] = useState<Block | null>(null);
   const [clientForm, setClientForm] = useState<{
     name: string;
     fullCompanyName: string;
@@ -1843,9 +1845,21 @@ export const MasterDataView: React.FC = () => {
   };
 
   // Delete Client
-  const handleDeleteClient = (id: string, _name: string) => {
-    storageService.deleteClient(id);
-    setClients(storageService.getClients());
+  const handleDeleteClient = (id: string, name: string) => {
+    const c = clients.find((client) => client.id === id);
+    if (c) {
+      setClientToDelete(c);
+    } else {
+      setClientToDelete({ id, name } as any);
+    }
+  };
+
+  const executeDeleteClient = () => {
+    if (clientToDelete) {
+      storageService.deleteClient(clientToDelete.id);
+      setClients(storageService.getClients());
+      setClientToDelete(null);
+    }
   };
 
   // Save Block & Work Items (Create or Update)
@@ -1936,9 +1950,21 @@ export const MasterDataView: React.FC = () => {
   };
 
   // Delete Block
-  const handleDeleteBlock = (id: string, _code: string) => {
-    storageService.deleteBlock(id);
-    setBlocks(storageService.getBlocks());
+  const handleDeleteBlock = (id: string, code: string) => {
+    const b = blocks.find((block) => block.id === id);
+    if (b) {
+      setBlockToDelete(b);
+    } else {
+      setBlockToDelete({ id, code } as any);
+    }
+  };
+
+  const executeDeleteBlock = () => {
+    if (blockToDelete) {
+      storageService.deleteBlock(blockToDelete.id);
+      setBlocks(storageService.getBlocks());
+      setBlockToDelete(null);
+    }
   };
 
 
@@ -2027,19 +2053,6 @@ export const MasterDataView: React.FC = () => {
           >
             <ClipboardList className="w-4 h-4" />
             <span>4. Penugasan Kerja ({workAssignments.length})</span>
-          </button>
-
-          {/* 5. TARGET HARIAN */}
-          <button
-            onClick={() => setActiveSubTab('dailyTargets')}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl transition cursor-pointer whitespace-nowrap ${
-              activeSubTab === 'dailyTargets'
-                ? 'bg-amber-500 text-slate-950 shadow font-black'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            <Target className="w-4 h-4" />
-            <span>5. Target Harian ({dailyTargets.length})</span>
           </button>
         </div>
       </div>
@@ -3064,8 +3077,8 @@ export const MasterDataView: React.FC = () => {
         );
       })()}
 
-      {/* SUB-TAB: TARGET HARIAN (HA) PER HARI PER LOKASI KERJA (CRUD SUPERADMIN / DIREKTUR) */}
-      {activeSubTab === 'dailyTargets' && (() => {
+      {/* SUB-TAB: TARGET HARIAN (HA) PER HARI PER LOKASI KERJA (CRUD SUPERADMIN / DIREKTUR) - REMOVED */}
+      {false && (() => {
         const todayDateStr = new Date().toISOString().split('T')[0];
 
         const filteredTargets = dailyTargets.filter((item) => {
@@ -6751,6 +6764,108 @@ export const MasterDataView: React.FC = () => {
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>Ya, Hapus Penugasan</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: KONFIRMASI HAPUS KLIEN */}
+      {clientToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-rose-100 space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="p-3 bg-rose-50 rounded-2xl border border-rose-200">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-black text-slate-900 text-base">Hapus Data Klien?</h3>
+                <span className="text-xs text-rose-600 font-bold">Sub Menu 1: Daftar Klien</span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1.5">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Nama Klien / PT:</span>
+                <strong className="text-slate-900">{clientToDelete.name} ({clientToDelete.fullCompanyName || '-'})</strong>
+              </div>
+              {clientToDelete.contractNumber && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500">No. Kontrak SPK:</span>
+                  <span className="font-mono text-slate-800">{clientToDelete.contractNumber}</span>
+                </div>
+              )}
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Apakah Anda yakin ingin menghapus Klien &ldquo;{clientToDelete.name}&rdquo;? Tindakan ini akan menghapus seluruh data SPK, kontrak, dan lokasi blok yang terhubung. Tindakan ini tidak dapat dibatalkan.
+            </p>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setClientToDelete(null)}
+                className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-xl font-bold cursor-pointer transition"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={executeDeleteClient}
+                className="px-4 py-2 text-xs bg-rose-600 hover:bg-rose-500 text-white font-black rounded-xl shadow cursor-pointer transition flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Ya, Hapus Klien</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: KONFIRMASI HAPUS LOKASI BLOK KERJA */}
+      {blockToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-rose-100 space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="p-3 bg-rose-50 rounded-2xl border border-rose-200">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-black text-slate-900 text-base">Hapus Lokasi Blok Kerja?</h3>
+                <span className="text-xs text-rose-600 font-bold">Sub Menu 2: Lokasi &amp; Pekerjaan</span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1.5">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Kode Blok:</span>
+                <strong className="text-slate-900">{blockToDelete.code}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Target Luas:</span>
+                <span className="font-mono text-slate-800">{blockToDelete.targetAreaHa || 0} Ha</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Apakah Anda yakin ingin menghapus Lokasi Blok Kerja &ldquo;{blockToDelete.code}&rdquo;? Tindakan ini akan menghapus data blok bersangkutan dan tidak dapat dibatalkan.
+            </p>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setBlockToDelete(null)}
+                className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-xl font-bold cursor-pointer transition"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={executeDeleteBlock}
+                className="px-4 py-2 text-xs bg-rose-600 hover:bg-rose-500 text-white font-black rounded-xl shadow cursor-pointer transition flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Ya, Hapus Blok</span>
               </button>
             </div>
           </div>

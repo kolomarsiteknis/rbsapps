@@ -55,7 +55,7 @@ export const WeeklyFuelRatioChart: React.FC<WeeklyFuelRatioChartProps> = ({
   const previousWeek = displayedTrends.length > 1 ? displayedTrends[displayedTrends.length - 2] : null;
 
   const weekOverWeekDelta = previousWeek && latestWeek
-    ? Number((latestWeek.fuelRatioPerHa - previousWeek.fuelRatioPerHa).toFixed(1))
+    ? Number((Number(latestWeek.fuelRatioPerHa || 0) - Number(previousWeek.fuelRatioPerHa || 0)).toFixed(1))
     : 0;
 
   const selectedWeekDetail = trends.find((t) => t.weekId === activeWeekId) || latestWeek;
@@ -64,8 +64,10 @@ export const WeeklyFuelRatioChart: React.FC<WeeklyFuelRatioChartProps> = ({
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       const data: WeeklyFuelTrend = payload[0].payload;
-      const isOver = data.fuelRatioPerHa > data.benchmarkLimit;
-      const diff = Number((data.fuelRatioPerHa - data.benchmarkLimit).toFixed(1));
+      const valRatio = Number(data?.fuelRatioPerHa || 0);
+      const valBench = Number(data?.benchmarkLimit || benchmark);
+      const isOver = valRatio > valBench;
+      const diff = Number((valRatio - valBench).toFixed(1));
 
       return (
         <div className="bg-slate-900/95 backdrop-blur-md text-white border border-slate-700 p-3.5 rounded-2xl shadow-2xl text-xs space-y-2 min-w-[240px]">
@@ -87,13 +89,13 @@ export const WeeklyFuelRatioChart: React.FC<WeeklyFuelRatioChartProps> = ({
             <div className="flex justify-between items-center text-sm">
               <span className="text-slate-300 font-sans font-medium text-xs">Rasio Konsumsi BBM:</span>
               <strong className={`font-black ${isOver ? 'text-rose-400' : 'text-amber-400'}`}>
-                {data.fuelRatioPerHa.toFixed(1)} L/Ha
+                {Number(data?.fuelRatioPerHa || 0).toFixed(1)} L/Ha
               </strong>
             </div>
 
             <div className="flex justify-between items-center text-xs text-slate-300">
               <span className="font-sans">Batas Standar Direktur:</span>
-              <span>{data.benchmarkLimit.toFixed(1)} L/Ha</span>
+              <span>{Number(data?.benchmarkLimit || benchmark).toFixed(1)} L/Ha</span>
             </div>
 
             <div className="flex justify-between items-center text-xs">
@@ -237,7 +239,7 @@ export const WeeklyFuelRatioChart: React.FC<WeeklyFuelRatioChartProps> = ({
                 latestWeek && latestWeek.fuelRatioPerHa > benchmark ? 'text-rose-600' : 'text-emerald-600'
               }`}
             >
-              {latestWeek ? latestWeek.fuelRatioPerHa.toFixed(1) : 0}
+              {latestWeek ? Number(latestWeek.fuelRatioPerHa || 0).toFixed(1) : 0}
             </span>
             <span className="text-xs font-bold text-slate-500">L / Ha</span>
           </div>
@@ -269,7 +271,7 @@ export const WeeklyFuelRatioChart: React.FC<WeeklyFuelRatioChartProps> = ({
             <span className="text-xs font-bold text-slate-500">Liter</span>
           </div>
           <div className="text-[11px] mt-1 text-slate-500">
-            Solar Industri B35 Non-Subsidi
+            Solar Industri B50 Non-Subsidi
           </div>
         </div>
 

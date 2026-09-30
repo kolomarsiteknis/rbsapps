@@ -227,6 +227,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
   const [visiblePasswords, setVisiblePasswords] = useState<{ [staffId: string]: boolean }>({});
   const [copiedStaffId, setCopiedStaffId] = useState<string | null>(null);
   const [staffToDelete, setStaffToDelete] = useState<CompanyStaff | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [workerToDelete, setWorkerToDelete] = useState<Worker | null>(null);
 
   // Unified Single Modal State
@@ -624,12 +625,13 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
   };
 
   const handleDeleteStaffClick = (staff: CompanyStaff) => {
-    // Buka modal konfirmasi hapus staff (tanpa window.confirm yang diblokir di iframe)
+    setDeleteConfirmText('');
     setStaffToDelete(staff);
   };
 
   const executeDeleteStaff = () => {
     if (!staffToDelete) return;
+    if (deleteConfirmText.trim().toUpperCase() !== 'HAPUS') return;
     const target = staffToDelete;
 
     storageService.deleteStaff(target.id, authUser);
@@ -637,6 +639,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
     setStaffList((prev) => prev.filter((s) => s.id !== target.id));
     reloadStaffAndUsers();
     setStaffToDelete(null);
+    setDeleteConfirmText('');
     if (editingStaffId === target.id) {
       setIsStaffModalOpen(false);
       setEditingStaffId(null);
@@ -2670,10 +2673,26 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
               Apakah Anda yakin ingin menghapus data staff ini? Profil identitas, spesimen tanda tangan digital (TTD), serta akun kredensial login (@{staffToDelete.username || staffToDelete.fullName}) akan dihapus permanen.
             </p>
 
+            <div className="space-y-1.5 p-3.5 bg-rose-50/50 rounded-2xl border border-rose-200">
+              <label className="block text-xs font-bold text-slate-800">
+                Ketik <code className="bg-rose-200 text-rose-900 px-1 py-0.5 rounded font-mono font-black">HAPUS</code> untuk mengaktifkan tombol hapus:
+              </label>
+              <input
+                type="text"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                placeholder="Ketik HAPUS di sini..."
+                className="w-full px-3 py-2 text-xs bg-white border border-rose-300 rounded-xl font-bold focus:outline-none focus:ring-2 focus:ring-rose-500 text-rose-900"
+              />
+            </div>
+
             <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
               <button
                 type="button"
-                onClick={() => setStaffToDelete(null)}
+                onClick={() => {
+                  setStaffToDelete(null);
+                  setDeleteConfirmText('');
+                }}
                 className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 font-bold text-xs transition cursor-pointer"
               >
                 Batalkan
@@ -2681,7 +2700,12 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
               <button
                 type="button"
                 onClick={executeDeleteStaff}
-                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs shadow-md transition flex items-center gap-1.5 cursor-pointer"
+                disabled={deleteConfirmText.trim().toUpperCase() !== 'HAPUS'}
+                className={`px-5 py-2.5 rounded-xl font-black text-xs shadow-md transition flex items-center gap-1.5 ${
+                  deleteConfirmText.trim().toUpperCase() === 'HAPUS'
+                    ? 'bg-rose-600 hover:bg-rose-700 text-white cursor-pointer'
+                    : 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-70 shadow-none'
+                }`}
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>Ya, Hapus Data Staff</span>

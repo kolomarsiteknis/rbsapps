@@ -52,6 +52,13 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
   selectedClientId,
   setSelectedClientId,
 }) => {
+  const safeNum = (val: any, decimals = 1): string => {
+    if (val === undefined || val === null || isNaN(Number(val))) {
+      return (0).toFixed(decimals);
+    }
+    return Number(val).toFixed(decimals);
+  };
+
   const [searchTerm, setSearchTerm] = useState('');
   const [filterBlock, setFilterBlock] = useState('ALL');
   const [filterAlertOnly, setFilterAlertOnly] = useState(false);
@@ -59,14 +66,16 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
 
   // Modal View Detail State (Ikon Mata)
   const [viewingReport, setViewingReport] = useState<DailyReport | null>(null);
+  const [reportToDelete, setReportToDelete] = useState<DailyReport | null>(null);
   const [isRejectInputOpen, setIsRejectInputOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
 
-  const isDirector = userRole === 'director' || authUser?.role === 'director';
-  const isManager = userRole === 'manager' || authUser?.role === 'manager';
-  const isSupervisor = userRole === 'supervisor' || authUser?.role === 'supervisor';
+  const isDirector = userRole === 'director' || authUser?.role === 'director' || authUser?.userLevel === 'Superadmin';
+  const isManager = userRole === 'manager' || authUser?.role === 'manager' || authUser?.userLevel === 'Site Manager' || authUser?.userLevel === 'Manager';
+  const isSupervisor = userRole === 'supervisor' || authUser?.role === 'supervisor' || authUser?.userLevel === 'Pengawas';
   const isClient = userRole === 'client' || authUser?.role === 'client' || authUser?.userLevel === 'Klien';
   const canApprove = isDirector || isManager;
+  const canDelete = authUser?.role !== 'manager' && userRole !== 'manager' && !isManager && !isClient && (isDirector || isSupervisor);
 
   const clientAuthorizedSpks = isClient ? storageService.getAuthorizedClientsForUser(authUser) : clients;
   const clientAllowedIds = new Set(clientAuthorizedSpks.map((c) => c.id));
@@ -410,19 +419,19 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                   <div>
                     <div className="text-[10px] text-slate-400 font-medium">Realisasi</div>
                     <div className="text-xs font-bold font-mono text-emerald-700">
-                      {report.physicalProgress.realizedAreaHa.toFixed(2)} Ha
+                      {safeNum(report.physicalProgress?.realizedAreaHa, 2)} Ha
                     </div>
                   </div>
                   <div>
                     <div className="text-[10px] text-slate-400 font-medium">Jam Kerja</div>
                     <div className="text-xs font-bold font-mono text-slate-800">
-                      {totalEffHm.toFixed(1)} HM
+                      {safeNum(totalEffHm)} HM
                     </div>
                   </div>
                   <div>
                     <div className="text-[10px] text-slate-400 font-medium">Downtime</div>
                     <div className="text-xs font-bold font-mono text-rose-600">
-                      {(totalDwWeather + totalDwBreakdown).toFixed(1)}h
+                      {safeNum(totalDwWeather + totalDwBreakdown)}h
                     </div>
                   </div>
                 </div>
@@ -467,18 +476,16 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                     </button>
 
                     {/* 3. HAPUS */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (window.confirm(`Hapus dokumen laporan ${report.reportNumber}?`)) {
-                          onDeleteReport(report.id);
-                        }
-                      }}
-                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all duration-200 cursor-pointer"
-                      title="Hapus Laporan"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {canDelete && (
+                      <button
+                        type="button"
+                        onClick={() => setReportToDelete(report)}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all duration-200 cursor-pointer"
+                        title="Hapus Laporan"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -546,15 +553,15 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                       )}
                     </td>
                     <td className="p-3 text-center font-mono font-bold text-emerald-700">
-                      {report.physicalProgress.realizedAreaHa.toFixed(2)} Ha
+                      {safeNum(report.physicalProgress?.realizedAreaHa, 2)} Ha
                     </td>
                     <td className="p-3 text-center font-mono font-bold">
-                      {totalEffHm.toFixed(1)} HM
+                      {safeNum(totalEffHm)} HM
                     </td>
                     <td className="p-3 text-center font-mono">
-                      <span className="text-blue-700 font-semibold">{totalDwWeather.toFixed(1)}h C</span>
+                      <span className="text-blue-700 font-semibold">{safeNum(totalDwWeather)}h C</span>
                       {' / '}
-                      <span className="text-rose-600 font-bold">{totalDwBreakdown.toFixed(1)}h B</span>
+                      <span className="text-rose-600 font-bold">{safeNum(totalDwBreakdown)}h B</span>
                     </td>
                     <td className="p-3 text-center">
                       {hasAlert ? (
@@ -636,14 +643,11 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                           <Printer className="w-3.5 h-3.5" />
                         </button>
 
-                        {/* 3. HAPUS (Ikon Trash - disembunyikan untuk Klien) */}
-                        {!isClient && (
+                        {/* 3. HAPUS (Ikon Trash - disembunyikan untuk Manager & Klien) */}
+                        {canDelete && (
                           <button
-                            onClick={() => {
-                              if (window.confirm(`Hapus dokumen laporan ${report.reportNumber}?`)) {
-                                onDeleteReport(report.id);
-                              }
-                            }}
+                            type="button"
+                            onClick={() => setReportToDelete(report)}
                             className="p-1.5 hover:bg-rose-100 text-slate-400 hover:text-rose-600 active:scale-95 rounded-lg transition-all duration-200 cursor-pointer"
                             title="3. Hapus Laporan"
                           >
@@ -787,25 +791,25 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                   <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl">
                     <span className="text-[10px] font-bold text-amber-900 block">Target Harian (Ha)</span>
                     <div className="text-lg font-black font-mono text-amber-950">
-                      {viewingReport.physicalProgress.targetAreaHa.toFixed(2)} Ha
+                      {safeNum(viewingReport.physicalProgress?.targetAreaHa, 2)} Ha
                     </div>
                   </div>
                   <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
                     <span className="text-[10px] font-bold text-emerald-900 block">Realisasi Hari Ini (Ha)</span>
                     <div className="text-lg font-black font-mono text-emerald-700">
-                      {viewingReport.physicalProgress.realizedAreaHa.toFixed(2)} Ha
+                      {safeNum(viewingReport.physicalProgress?.realizedAreaHa, 2)} Ha
                     </div>
                   </div>
                   <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl">
                     <span className="text-[10px] font-bold text-blue-900 block">Kumulatif Blok (Ha)</span>
                     <div className="text-lg font-black font-mono text-blue-800">
-                      {viewingReport.physicalProgress.cumulativeAreaHa.toFixed(2)} Ha
+                      {safeNum(viewingReport.physicalProgress?.cumulativeAreaHa, 2)} Ha
                     </div>
                   </div>
                   <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl">
                     <span className="text-[10px] font-bold text-indigo-900 block">Progres Terbuka Blok</span>
                     <div className="text-lg font-black font-mono text-indigo-700">
-                      {viewingReport.physicalProgress.progressPercentage.toFixed(1)}%
+                      {safeNum(viewingReport.physicalProgress?.progressPercentage, 1)}%
                     </div>
                   </div>
                 </div>
@@ -875,20 +879,20 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                         <tr key={i} className="hover:bg-slate-50">
                           <td className="p-2.5 font-bold text-slate-900 font-mono">{eq.equipmentId}</td>
                           <td className="p-2.5 text-slate-700">{(eq as any).operatorName || eq.equipmentName || '-'}</td>
-                          <td className="p-2.5 text-right font-mono">{eq.hmStart.toFixed(1)}</td>
-                          <td className="p-2.5 text-right font-mono">{eq.hmEnd.toFixed(1)}</td>
-                          <td className="p-2.5 text-right font-mono font-bold">{eq.totalHm.toFixed(1)}</td>
-                          <td className="p-2.5 text-center font-mono text-blue-700">{eq.downtimeWeatherHours.toFixed(1)}h</td>
-                          <td className="p-2.5 text-center font-mono text-rose-700 font-bold">{eq.downtimeBreakdownHours.toFixed(1)}h</td>
-                          <td className="p-2.5 text-right font-mono font-black text-emerald-700">{eq.effectiveWorkHours.toFixed(1)} HM</td>
+                          <td className="p-2.5 text-right font-mono">{safeNum(eq.hmStart)}</td>
+                          <td className="p-2.5 text-right font-mono">{safeNum(eq.hmEnd)}</td>
+                          <td className="p-2.5 text-right font-mono font-bold">{safeNum(eq.totalHm)}</td>
+                          <td className="p-2.5 text-center font-mono text-blue-700">{safeNum(eq.downtimeWeatherHours)}h</td>
+                          <td className="p-2.5 text-center font-mono text-rose-700 font-bold">{safeNum(eq.downtimeBreakdownHours)}h</td>
+                          <td className="p-2.5 text-right font-mono font-black text-emerald-700">{safeNum(eq.effectiveWorkHours)} HM</td>
                           <td className="p-2.5 text-right font-mono">{eq.fuelAddedLiters} L</td>
                           <td className="p-2.5 text-center font-mono">
                             {eq.isFuelAlert ? (
                               <span className="px-1.5 py-0.5 bg-rose-100 text-rose-800 rounded font-bold text-[10px]">
-                                {eq.fuelRatio.toFixed(1)} L/HM!
+                                {safeNum(eq.fuelRatio)} L/HM!
                               </span>
                             ) : (
-                              <span className="text-slate-700">{eq.fuelRatio.toFixed(1)} L/HM</span>
+                              <span className="text-slate-700">{safeNum(eq.fuelRatio)} L/HM</span>
                             )}
                           </td>
                         </tr>
@@ -942,7 +946,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                         <div className="p-2 text-[10px] text-slate-600">
                           <strong className="block text-slate-900">{photo.caption}</strong>
                           <span className="font-mono text-slate-400">
-                            {photo.gpsCoordinates?.lat ? `${photo.gpsCoordinates.lat.toFixed(5)}, ${photo.gpsCoordinates.lng.toFixed(5)}` : '-'}
+                            {photo.gpsCoordinates?.lat ? `${safeNum(photo.gpsCoordinates.lat, 5)}, ${safeNum(photo.gpsCoordinates.lng, 5)}` : '-'}
                           </span>
                         </div>
                       </div>
@@ -1122,6 +1126,67 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                   Tutup
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: KONFIRMASI HAPUS DOKUMEN LAPORAN */}
+      {reportToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl border border-rose-100 space-y-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900 leading-tight">
+                  Hapus Laporan Harian?
+                </h3>
+                <p className="text-xs text-rose-600 font-bold mt-0.5">
+                  Konfirmasi Penghapusan Laporan Operasional
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2 text-xs">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 font-medium">Nomor Dokumen:</span>
+                <span className="font-mono font-bold text-slate-900">{reportToDelete.reportNumber}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 font-medium">Tanggal &amp; Blok:</span>
+                <span className="font-bold text-slate-800">{reportToDelete.date} • {reportToDelete.blockCode}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 font-medium">Klien / PT:</span>
+                <span className="font-bold text-slate-900">{reportToDelete.clientName || 'PT. RBS GROUP'}</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Apakah Anda yakin ingin menghapus dokumen laporan harian &ldquo;{reportToDelete.reportNumber}&rdquo; ini? Data yang dihapus tidak dapat dipulihkan kembali.
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setReportToDelete(null)}
+                className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 font-bold text-xs transition cursor-pointer"
+              >
+                Batalkan
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onDeleteReport(reportToDelete.id);
+                  setReportToDelete(null);
+                }}
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs shadow-md transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Ya, Hapus Dokumen</span>
+              </button>
             </div>
           </div>
         </div>

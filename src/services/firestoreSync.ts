@@ -75,6 +75,22 @@ export const LOCAL_STORAGE_KEYS = {
   DAILY_TARGETS: 'suryaland_daily_targets_v1',
 } as const;
 
+export const LAST_SYNC_TIME_KEY = 'suryaland_last_firestore_sync_time_v1';
+
+export function recordLastSuccessfulSync() {
+  if (typeof window === 'undefined') return;
+  const nowStr = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  try {
+    localStorage.setItem(LAST_SYNC_TIME_KEY, nowStr);
+    window.dispatchEvent(new CustomEvent('suryaland_last_sync_update', { detail: { timeStr: nowStr } }));
+  } catch {}
+}
+
+export function getLastSuccessfulSyncTime(): string {
+  if (typeof window === 'undefined') return '-';
+  return localStorage.getItem(LAST_SYNC_TIME_KEY) || '-';
+}
+
 export type SyncStatus = 'connected' | 'offline' | 'syncing';
 
 let currentStatus: SyncStatus = typeof navigator !== 'undefined' && navigator.onLine ? 'connected' : 'offline';
@@ -198,6 +214,7 @@ export async function syncDocWrite<T extends { id: string }>(
     const cleaned = cleanForFirestore(item);
     const docRef = doc(db, collectionName, String(item.id));
     await setDoc(docRef, cleaned, { merge: true });
+    recordLastSuccessfulSync();
   } catch (err: any) {
     if (err?.code === 'permission-denied') {
       handleFirestoreError(err, OperationType.WRITE, `${collectionName}/${item.id}`);
@@ -215,6 +232,7 @@ export async function syncDocDelete(
   try {
     const docRef = doc(db, collectionName, String(id));
     await deleteDoc(docRef);
+    recordLastSuccessfulSync();
   } catch (err: any) {
     if (err?.code === 'permission-denied') {
       handleFirestoreError(err, OperationType.DELETE, `${collectionName}/${id}`);

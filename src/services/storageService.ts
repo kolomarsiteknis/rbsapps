@@ -2130,7 +2130,7 @@ export const storageService = {
       date: receipt.date,
       timestamp: `${receipt.time}:00`,
       category: 'BBM',
-      itemName: 'Solar Industri B35',
+      itemName: 'Solar Industri B50',
       quantity: receipt.totalLitersFilled,
       unit: 'Liter',
       type: 'out',
@@ -2513,7 +2513,7 @@ export const storageService = {
         userEmail: 'ahmad.fauzi@suryaland.co.id',
         actionCategory: 'FUEL_BOWSER',
         actionTitle: 'Penerimaan Solar Bowser Keliling Dicatat',
-        actionDescription: 'Mencatat pengisian solar dari Truk Bowser B 9821 TPA (Supir: Rahmat Santoso). Total: 1.200 Liter, Segel: S-7721, Status BBM: B35 Jernih/Lolos Uji Visual.',
+        actionDescription: 'Mencatat pengisian solar dari Truk Bowser B 9821 TPA (Supir: Rahmat Santoso). Total: 1.200 Liter, Segel: S-7721, Status BBM: B50 Jernih/Lolos Uji Visual.',
         targetEntity: 'B 9821 TPA (1.200 L)',
         clientId: 'client-2',
         clientName: 'PT. B',
@@ -2752,8 +2752,8 @@ export const storageService = {
       saveToStorage(STORAGE_KEYS.MANAGED_USERS, raw);
     } else {
       raw = raw.filter((u) => {
-        if (isObsoleteHendraRecord(u)) {
-          syncDocDelete(FIRESTORE_COLLECTIONS.USERS, u.id);
+        if (!u || isObsoleteHendraRecord(u) || deletedIds.includes(u.id)) {
+          if (u && u.id) syncDocDelete(FIRESTORE_COLLECTIONS.USERS, u.id);
           return false;
         }
         return true;
@@ -2791,15 +2791,15 @@ export const storageService = {
         `user-usr-${(staff.id || '').replace(/^staff-/, '')}`;
       activeStaffUserIds.add(resolvedUserId);
 
+      const staffJobLower = (staff.jobRole || '').toLowerCase();
       const resolvedLevel: ManagedUser['userLevel'] =
-        staff.userLevel ||
-        (staff.staffLevel === 'Direktur'
+        staff.userLevel === 'Superadmin' || staff.staffLevel === 'Direktur' || staff.staffLevel === 'Superadmin' || staffJobLower.includes('direktur') || staffJobLower.includes('owner') || staffJobLower.includes('superadmin')
           ? 'Superadmin'
-          : staff.staffLevel === 'Site Manager'
+          : staff.userLevel === 'Site Manager' || staff.staffLevel === 'Site Manager' || staff.staffLevel === 'Manager' || staffJobLower.includes('manager')
           ? 'Site Manager'
-          : staff.staffLevel === 'Klien'
+          : staff.userLevel === 'Klien' || staff.staffLevel === 'Klien' || staffJobLower.includes('klien')
           ? 'Klien'
-          : 'Pengawas');
+          : 'Pengawas';
 
       const safeSig =
         staff.signatureUrl && staff.signatureUrl.length > 120000
@@ -2943,15 +2943,15 @@ export const storageService = {
         (s.email && s.email.trim().toLowerCase() === trimmed)
     );
     if (staffMatch && staffMatch.password) {
+      const staffMatchJobLower = (staffMatch.jobRole || '').toLowerCase();
       const resolvedLevel: ManagedUser['userLevel'] =
-        staffMatch.userLevel ||
-        (staffMatch.staffLevel === 'Direktur'
+        staffMatch.userLevel === 'Superadmin' || staffMatch.staffLevel === 'Direktur' || staffMatch.staffLevel === 'Superadmin' || staffMatchJobLower.includes('direktur') || staffMatchJobLower.includes('owner') || staffMatchJobLower.includes('superadmin')
           ? 'Superadmin'
-          : staffMatch.staffLevel === 'Site Manager'
+          : staffMatch.userLevel === 'Site Manager' || staffMatch.staffLevel === 'Site Manager' || staffMatch.staffLevel === 'Manager' || staffMatchJobLower.includes('manager')
           ? 'Site Manager'
-          : staffMatch.staffLevel === 'Klien'
+          : staffMatch.userLevel === 'Klien' || staffMatch.staffLevel === 'Klien' || staffMatchJobLower.includes('klien')
           ? 'Klien'
-          : 'Pengawas');
+          : 'Pengawas';
 
       existing = {
         ...(existing || {}),
@@ -3403,15 +3403,15 @@ export const storageService = {
         `user-usr-${payload.id.replace(/^staff-/, '')}`;
       payload.linkedUserId = userId;
 
+      const payloadJobLower = (payload.jobRole || '').toLowerCase();
       const resolvedLevel: ManagedUser['userLevel'] =
-        payload.userLevel ||
-        (payload.staffLevel === 'Direktur'
+        payload.userLevel === 'Superadmin' || payload.staffLevel === 'Direktur' || payload.staffLevel === 'Superadmin' || payloadJobLower.includes('direktur') || payloadJobLower.includes('owner') || payloadJobLower.includes('superadmin')
           ? 'Superadmin'
-          : payload.staffLevel === 'Site Manager'
+          : payload.userLevel === 'Site Manager' || payload.staffLevel === 'Site Manager' || payload.staffLevel === 'Manager' || payloadJobLower.includes('manager')
           ? 'Site Manager'
-          : payload.staffLevel === 'Klien'
+          : payload.userLevel === 'Klien' || payload.staffLevel === 'Klien' || payloadJobLower.includes('klien')
           ? 'Klien'
-          : 'Pengawas');
+          : 'Pengawas';
 
       const userPayload: ManagedUser = {
         id: userId,
@@ -3665,7 +3665,7 @@ export const storageService = {
       { key: STORAGE_KEYS.WORK_ASSIGNMENTS, label: 'Master Penugasan Kerja Lapangan', category: 'master' },
       { key: STORAGE_KEYS.DAILY_TARGETS, label: 'Master Target Ritme Harian', category: 'master' },
       { key: STORAGE_KEYS.WORKERS, label: 'Master Personil Tim Pendukung', category: 'master' },
-      { key: STORAGE_KEYS.INVENTORY, label: 'Inventaris Logistik & Solar B35', category: 'operational' },
+      { key: STORAGE_KEYS.INVENTORY, label: 'Inventaris Logistik & Solar B50', category: 'operational' },
       { key: STORAGE_KEYS.LOGISTICS_TRANSACTIONS, label: 'Transaksi Masuk/Keluar Logistik', category: 'operational' },
       { key: STORAGE_KEYS.P2H_CHECKLISTS, label: 'P2H Pra-Operasi Harian Alat', category: 'operational' },
       { key: STORAGE_KEYS.FUEL_BOWSER, label: 'Penerimaan Solar Bowser Keliling', category: 'operational' },

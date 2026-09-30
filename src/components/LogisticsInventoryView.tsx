@@ -113,7 +113,7 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
   const [inflowForm, setInflowForm] = useState({
     date: new Date().toISOString().slice(0, 10),
     category: 'BBM' as LogisticsCategory,
-    itemName: 'Solar Industri B35',
+    itemName: 'Solar Industri B50',
     quantity: 5000,
     unit: 'Liter',
     clientId: effectiveClientId !== 'ALL' ? effectiveClientId : (clients[0]?.id || 'client-1'),
@@ -128,7 +128,7 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
   const [outflowForm, setOutflowForm] = useState({
     date: new Date().toISOString().slice(0, 10),
     category: 'BBM' as LogisticsCategory,
-    itemName: 'Solar Industri B35',
+    itemName: 'Solar Industri B50',
     quantity: 100,
     unit: 'Liter',
     clientId: effectiveClientId !== 'ALL' ? effectiveClientId : (clients[0]?.id || 'client-1'),
@@ -148,7 +148,7 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
   const getCatalogItems = (category: LogisticsCategory) => {
     switch (category) {
       case 'BBM':
-        return [{ name: 'Solar Industri B35', unit: 'Liter' }];
+        return [{ name: 'Solar Industri B50', unit: 'Liter' }];
       case 'Oli':
         return [
           { name: 'Oli Mesin Meditran SX 15W-40', unit: 'Liter' },
@@ -166,7 +166,7 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
           { name: 'Cutting Edge Bulldozer D65', unit: 'Pcs' },
         ];
       default:
-        return [{ name: 'Solar Industri B35', unit: 'Liter' }];
+        return [{ name: 'Solar Industri B50', unit: 'Liter' }];
     }
   };
 
@@ -620,7 +620,7 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-bold text-amber-900 uppercase flex items-center gap-1">
                     <Fuel className="w-3.5 h-3.5 text-amber-600" />
-                    Stok Tangki Solar B35
+                    Stok Tangki Solar B50
                   </span>
                   <span className="text-[10px] font-mono font-bold bg-amber-200/70 text-amber-900 px-1.5 py-0.5 rounded">
                     Aktif Basecamp
@@ -1081,7 +1081,7 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
                   list="catalog-inflow-options"
                   value={inflowForm.itemName}
                   onChange={(e) => setInflowForm({ ...inflowForm, itemName: e.target.value })}
-                  placeholder="Contoh: Solar Industri B35"
+                  placeholder="Contoh: Solar Industri B50"
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg font-bold text-sm"
                 />
                 <datalist id="catalog-inflow-options">
@@ -1325,7 +1325,7 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
                   list="catalog-outflow-options"
                   value={outflowForm.itemName}
                   onChange={(e) => setOutflowForm({ ...outflowForm, itemName: e.target.value })}
-                  placeholder="Contoh: Solar Industri B35"
+                  placeholder="Contoh: Solar Industri B50"
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg font-bold text-sm"
                 />
                 <datalist id="catalog-outflow-options">

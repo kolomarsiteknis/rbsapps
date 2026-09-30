@@ -48,16 +48,25 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
     );
   }
 
+  const safeNum = (val: any, decimals = 1): string => {
+    if (val === undefined || val === null || isNaN(Number(val))) {
+      return (0).toFixed(decimals);
+    }
+    return Number(val).toFixed(decimals);
+  };
+
   const handlePrint = () => {
+    // Focus current window/frame before printing to ensure native print dialog opens correctly in iframe previews
+    window.focus();
     window.print();
   };
 
   const handleDownloadTxt = () => {
     const textReport = `====================================================================================================
-                                      ${companyProfile.officialName || 'PT. RBS GROUP'}
+                                       ${companyProfile.officialName || 'PT. RBS GROUP'}
                            ${companyProfile.headOfficeAddress} | Telp: ${companyProfile.phone}
 ====================================================================================================
-                                LAPORAN HARIAN OPERASIONAL LAND CLEARING
+                                Laporon Harian Operasional Land Clearing
                                       No. Dokumen: ${report.reportNumber}
 ====================================================================================================
 
@@ -73,39 +82,39 @@ I. HASIL KERJA HARIAN (CAPAIAN FISIK)
 ----------------------------------------------------------------------------------------------------
   Item Pekerjaan          Target Harian       Realisasi Hari Ini      Total Kumulatif    Status Progres
   ----------------------  ------------------  ----------------------  -----------------  --------------
-  Land Clearing (Rabas,   ${report.physicalProgress.targetAreaHa.toFixed(2)} Ha             ${report.physicalProgress.realizedAreaHa.toFixed(2)} Ha                 ${report.physicalProgress.cumulativeAreaHa.toFixed(2)} Ha           ${report.physicalProgress.progressPercentage.toFixed(2)} %
+  Land Clearing (Rabas,   ${safeNum(report.physicalProgress?.targetAreaHa, 2)} Ha             ${safeNum(report.physicalProgress?.realizedAreaHa, 2)} Ha                 ${safeNum(report.physicalProgress?.cumulativeAreaHa, 2)} Ha           ${safeNum(report.physicalProgress?.progressPercentage, 2)} %
   Cincang & Rumpuk)
 ----------------------------------------------------------------------------------------------------
-  Catatan Pengawas: ${report.physicalProgress.notes || '-'}
+  Catatan Pengawas: ${report.physicalProgress?.notes || '-'}
 
 ----------------------------------------------------------------------------------------------------
 II. OPERASIONAL ALAT BERAT & PENCATATAN DOWNTIME (JAM MATI)
 ----------------------------------------------------------------------------------------------------
   Kode Alat  Jenis & Tipe     HM Awal  HM Akhir  Total HM  Downtime   Downtime   Jam Kerja  Keterangan
-                              Mesin    Mesin     Buka      Cuaca      Breakdown  Efektif    Downtime
+                                 Mesin    Mesin     Buka      Cuaca      Breakdown  Efektif    Downtime
   ---------  ---------------  -------  --------  --------  ---------  ---------  ---------  -----------------
-${report.equipmentWorkLogs
+${(report.equipmentWorkLogs || [])
   .map(
     (l) =>
-      `  ${l.equipmentId.padEnd(10)} ${l.type.padEnd(16)} ${l.hmStart.toFixed(1).padStart(7)}  ${l.hmEnd.toFixed(1).padStart(8)}  ${l.totalHm.toFixed(1).padStart(6)} HM ${l.downtimeWeatherHours.toFixed(1).padStart(8)} Jam  ${l.downtimeBreakdownHours.toFixed(1).padStart(8)} Jam  ${l.effectiveWorkHours.toFixed(1).padStart(7)} HM  ${l.downtimeWeatherNote || l.downtimeBreakdownNote || '-'}`
+      `  ${l.equipmentId.padEnd(10)} ${l.type.padEnd(16)} ${safeNum(l.hmStart).padStart(7)}  ${safeNum(l.hmEnd).padStart(8)}  ${safeNum(l.totalHm).padStart(6)} HM ${safeNum(l.downtimeWeatherHours).padStart(8)} Jam  ${safeNum(l.downtimeBreakdownHours).padStart(8)} Jam  ${safeNum(l.effectiveWorkHours).padStart(7)} HM  ${l.downtimeWeatherNote || l.downtimeBreakdownNote || '-'}`
   )
   .join('\n')}
   --------------------------------------------------------------------------------------------------
-  TOTAL DURATION / JAM                                     ${report.equipmentWorkLogs.reduce((acc, l) => acc + l.downtimeWeatherHours, 0).toFixed(1)} Jam    ${report.equipmentWorkLogs.reduce((acc, l) => acc + l.downtimeBreakdownHours, 0).toFixed(1)} Jam    ${report.equipmentWorkLogs.reduce((acc, l) => acc + l.effectiveWorkHours, 0).toFixed(1)} HM
+  TOTAL DURATION / JAM                                     ${safeNum((report.equipmentWorkLogs || []).reduce((acc, l) => acc + l.downtimeWeatherHours, 0))} Jam    ${safeNum((report.equipmentWorkLogs || []).reduce((acc, l) => acc + l.downtimeBreakdownHours, 0))} Jam    ${safeNum((report.equipmentWorkLogs || []).reduce((acc, l) => acc + l.effectiveWorkHours, 0))} HM
 
 ----------------------------------------------------------------------------------------------------
 III. LOGISTIK, KONSUMSI BBM (SOLAR), & OLI/GREASE
 ----------------------------------------------------------------------------------------------------
   Kode Alat  Pengisian BBM   Jam Efektif   Rasio BBM/HM   Batas Std   Status Efisiensi   Pemakaian Oli/Part
   ---------  --------------  ------------  -------------  ----------  -----------------  ------------------
-${report.equipmentWorkLogs
+${(report.equipmentWorkLogs || [])
   .map(
     (l) =>
-      `  ${l.equipmentId.padEnd(10)} ${(l.fuelAddedLiters + ' L').padEnd(15)} ${(l.effectiveWorkHours.toFixed(1) + ' HM').padEnd(13)} ${(l.fuelRatio.toFixed(1) + ' L/HM').padEnd(14)} ${(l.fuelStandardLimit.toFixed(1) + ' L/HM').padEnd(11)} ${(l.isFuelAlert ? 'ALERT (> Std)' : 'NORMAL').padEnd(18)} ${l.downtimeBreakdownNote || 'Grease: 1.5 Kg'}`
+      `  ${l.equipmentId.padEnd(10)} ${(l.fuelAddedLiters + ' L').padEnd(15)} ${(safeNum(l.effectiveWorkHours) + ' HM').padEnd(13)} ${(safeNum(l.fuelRatio) + ' L/HM').padEnd(14)} ${(safeNum(l.fuelStandardLimit) + ' L/HM').padEnd(11)} ${(l.isFuelAlert ? 'ALERT (> Std)' : 'NORMAL').padEnd(18)} ${l.downtimeBreakdownNote || 'Grease: 1.5 Kg'}`
   )
   .join('\n')}
   --------------------------------------------------------------------------------------------------
-  * Catatan BBM: Stok Awal Tangki: ${report.logistics.fuelTankInitialLiters} L | Masuk: ${report.logistics.fuelTankInflowLiters} L | Terpakai: ${report.logistics.fuelTankUsedLiters} L | Sisa Stok: ${report.logistics.fuelTankRemainingLiters} L
+  * Catatan BBM: Stok Awal Tangki: ${report.logistics?.fuelTankInitialLiters || 0} L | Masuk: ${report.logistics?.fuelTankInflowLiters || 0} L | Terpakai: ${report.logistics?.fuelTankUsedLiters || 0} L | Sisa Stok: ${report.logistics?.fuelTankRemainingLiters || 0} L
 
 ====================================================================================================
                                         LEMBAR PENGESAHAN
@@ -114,7 +123,7 @@ ${report.equipmentWorkLogs
       Dibuat Oleh,                      Diperiksa Oleh,                    Disetujui Oleh,
     Pengawas Lapangan                  Site Manager                           Direktur
 
-   ( ${report.signatures.supervisor.name} )                  ( ${report.signatures.siteManager?.name || 'Agus Wardhana'} )               ( ${report.signatures.director?.name || 'Ir. Hendra Wijaya, M.Si'} )
+   ( ${report.signatures?.supervisor?.name || ''} )                  ( ${report.signatures?.siteManager?.name || 'Agus Wardhana'} )               ( ${report.signatures?.director?.name || 'Ir. Hendra Wijaya, M.Si'} )
 `;
     const blob = new Blob([textReport], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -125,12 +134,12 @@ ${report.equipmentWorkLogs
     URL.revokeObjectURL(url);
   };
 
-  const totalDowntimeWeather = report.equipmentWorkLogs.reduce((a, b) => a + b.downtimeWeatherHours, 0);
-  const totalDowntimeBreakdown = report.equipmentWorkLogs.reduce((a, b) => a + b.downtimeBreakdownHours, 0);
-  const totalEffectiveHours = report.equipmentWorkLogs.reduce((a, b) => a + b.effectiveWorkHours, 0);
+  const totalDowntimeWeather = (report.equipmentWorkLogs || []).reduce((a, b) => a + (b.downtimeWeatherHours || 0), 0);
+  const totalDowntimeBreakdown = (report.equipmentWorkLogs || []).reduce((a, b) => a + (b.downtimeBreakdownHours || 0), 0);
+  const totalEffectiveHours = (report.equipmentWorkLogs || []).reduce((a, b) => a + (b.effectiveWorkHours || 0), 0);
 
   return (
-    <div className={`${isStandaloneView ? 'py-6 px-2 sm:px-6' : 'fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm overflow-y-auto p-2 sm:p-6 flex justify-center'}`}>
+    <div className={`${isStandaloneView ? 'py-6 px-2 sm:px-6' : 'fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm overflow-y-auto p-2 sm:p-6 flex justify-center items-start'}`}>
       <div className="bg-white w-full max-w-4xl text-slate-900 rounded-xl shadow-2xl overflow-hidden print:shadow-none print:m-0 print:p-0 print:w-full print:max-w-none">
         
         {/* Controls Bar (Hidden during Print) */}
@@ -295,7 +304,7 @@ ${report.equipmentWorkLogs
                 </tr>
               </thead>
               <tbody>
-                {report.physicalProgress.itemProgress && report.physicalProgress.itemProgress.length > 0 ? (
+                {report.physicalProgress?.itemProgress && report.physicalProgress.itemProgress.length > 0 ? (
                   report.physicalProgress.itemProgress.map((item, idx) => (
                     <tr key={idx} className={idx % 2 === 1 ? 'bg-slate-50/50' : ''}>
                       <td className="border border-slate-300 px-2 py-1.5 font-medium">
@@ -309,7 +318,7 @@ ${report.equipmentWorkLogs
                         {item.realizedDailyVolume} {item.unit}
                       </td>
                       <td className="border border-slate-300 px-2 py-1.5 text-center font-mono font-bold">
-                        {report.physicalProgress.cumulativeAreaHa.toFixed(2)} Ha
+                        {safeNum(report.physicalProgress?.cumulativeAreaHa, 2)} Ha
                       </td>
                       <td className="border border-slate-300 px-2 py-1.5 text-center font-bold text-amber-700">
                         {item.achievementPercentage} %
@@ -322,22 +331,22 @@ ${report.equipmentWorkLogs
                       Land Clearing (Rabas, Cincang, Rumpuk Mekanis)
                     </td>
                     <td className="border border-slate-300 px-2 py-1.5 text-center font-mono">
-                      {report.physicalProgress.targetAreaHa.toFixed(2)} Ha
+                      {safeNum(report.physicalProgress?.targetAreaHa, 2)} Ha
                     </td>
                     <td className="border border-slate-300 px-2 py-1.5 text-center font-mono font-bold text-emerald-800">
-                      {report.physicalProgress.realizedAreaHa.toFixed(2)} Ha
+                      {safeNum(report.physicalProgress?.realizedAreaHa, 2)} Ha
                     </td>
                     <td className="border border-slate-300 px-2 py-1.5 text-center font-mono font-bold">
-                      {report.physicalProgress.cumulativeAreaHa.toFixed(2)} Ha
+                      {safeNum(report.physicalProgress?.cumulativeAreaHa, 2)} Ha
                     </td>
                     <td className="border border-slate-300 px-2 py-1.5 text-center font-bold text-amber-700">
-                      {report.physicalProgress.progressPercentage.toFixed(2)} %
+                      {safeNum(report.physicalProgress?.progressPercentage, 2)} %
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
-            {report.physicalProgress.notes && (
+            {report.physicalProgress?.notes && (
               <div className="text-[10px] text-slate-700 italic mt-1 bg-amber-50 border border-amber-200 px-2 py-1 rounded">
                 <strong>Catatan Pengawas:</strong> {report.physicalProgress.notes}
               </div>
@@ -371,19 +380,19 @@ ${report.equipmentWorkLogs
                       {log.equipmentId}
                     </td>
                     <td className="border border-slate-300 px-1.5 py-1">{log.type}</td>
-                    <td className="border border-slate-300 px-1.5 py-1 text-center font-mono">{log.hmStart.toFixed(1)}</td>
-                    <td className="border border-slate-300 px-1.5 py-1 text-center font-mono">{log.hmEnd.toFixed(1)}</td>
+                    <td className="border border-slate-300 px-1.5 py-1 text-center font-mono">{safeNum(log.hmStart)}</td>
+                    <td className="border border-slate-300 px-1.5 py-1 text-center font-mono">{safeNum(log.hmEnd)}</td>
                     <td className="border border-slate-300 px-1.5 py-1 text-center font-mono font-bold bg-slate-100/50">
-                      {log.totalHm.toFixed(1)} HM
+                      {safeNum(log.totalHm)} HM
                     </td>
                     <td className="border border-slate-300 px-1.5 py-1 text-center font-mono text-blue-700">
-                      {log.downtimeWeatherHours > 0 ? `${log.downtimeWeatherHours.toFixed(1)} Jam` : '0.0 Jam'}
+                      {log.downtimeWeatherHours > 0 ? `${safeNum(log.downtimeWeatherHours)} Jam` : '0.0 Jam'}
                     </td>
                     <td className="border border-slate-300 px-1.5 py-1 text-center font-mono font-bold text-rose-700">
-                      {log.downtimeBreakdownHours > 0 ? `${log.downtimeBreakdownHours.toFixed(1)} Jam` : '0.0 Jam'}
+                      {log.downtimeBreakdownHours > 0 ? `${safeNum(log.downtimeBreakdownHours)} Jam` : '0.0 Jam'}
                     </td>
                     <td className="border border-slate-300 px-1.5 py-1 text-center font-mono font-bold text-emerald-800 bg-emerald-50/50">
-                      {log.effectiveWorkHours.toFixed(1)} HM
+                      {safeNum(log.effectiveWorkHours)} HM
                     </td>
                     <td className="border border-slate-300 px-1.5 py-1 text-slate-700 text-[10px]">
                       {log.downtimeBreakdownNote ? (
@@ -399,16 +408,16 @@ ${report.equipmentWorkLogs
                     TOTAL DURASI / JAM :
                   </td>
                   <td className="border border-slate-300 px-1.5 py-1 text-center font-mono text-blue-900">
-                    {totalDowntimeWeather.toFixed(1)} Jam
+                    {safeNum(totalDowntimeWeather)} Jam
                   </td>
                   <td className="border border-slate-300 px-1.5 py-1 text-center font-mono text-rose-900">
-                    {totalDowntimeBreakdown.toFixed(1)} Jam
+                    {safeNum(totalDowntimeBreakdown)} Jam
                   </td>
                   <td className="border border-slate-300 px-1.5 py-1 text-center font-mono text-emerald-900">
-                    {totalEffectiveHours.toFixed(1)} HM
+                    {safeNum(totalEffectiveHours)} HM
                   </td>
                   <td className="border border-slate-300 px-1.5 py-1 text-[10px] text-slate-600">
-                    Rasio Efektif: {totalEffectiveHours > 0 ? ((totalEffectiveHours / (totalEffectiveHours + totalDowntimeWeather + totalDowntimeBreakdown)) * 100).toFixed(1) : 0}%
+                    Rasio Efektif: {totalEffectiveHours > 0 ? safeNum((totalEffectiveHours / (totalEffectiveHours + totalDowntimeWeather + totalDowntimeBreakdown)) * 100) : 0}%
                   </td>
                 </tr>
               </tbody>
@@ -443,13 +452,13 @@ ${report.equipmentWorkLogs
                       {log.fuelAddedLiters} Liter
                     </td>
                     <td className="border border-slate-300 px-1.5 py-1 text-center font-mono">
-                      {log.effectiveWorkHours.toFixed(1)} HM
+                      {safeNum(log.effectiveWorkHours)} HM
                     </td>
                     <td className="border border-slate-300 px-1.5 py-1 text-center font-mono font-bold">
-                      {log.fuelRatio.toFixed(1)} L/HM
+                      {safeNum(log.fuelRatio)} L/HM
                     </td>
                     <td className="border border-slate-300 px-1.5 py-1 text-center font-mono text-slate-600">
-                      {log.fuelStandardLimit.toFixed(1)} L/HM
+                      {safeNum(log.fuelStandardLimit)} L/HM
                     </td>
                     <td className="border border-slate-300 px-1.5 py-1 text-center">
                       {log.isFuelAlert ? (
@@ -473,16 +482,16 @@ ${report.equipmentWorkLogs
             </table>
             <div className="bg-slate-100 border border-slate-300 text-[10px] sm:text-[11px] px-3 py-1.5 mt-1 rounded flex flex-wrap justify-between text-slate-700 font-mono">
               <span>
-                <strong>Tangki Lapangan:</strong> Stok Awal: <strong>{report.logistics.fuelTankInitialLiters} L</strong>
+                <strong>Tangki Lapangan:</strong> Stok Awal: <strong>{report.logistics?.fuelTankInitialLiters ?? 0} L</strong>
               </span>
               <span>
-                Masuk (Inflow): <strong>{report.logistics.fuelTankInflowLiters} L</strong>
+                Masuk (Inflow): <strong>{report.logistics?.fuelTankInflowLiters ?? 0} L</strong>
               </span>
               <span>
-                Terpakai Hari Ini: <strong className="text-amber-800">{report.logistics.fuelTankUsedLiters} L</strong>
+                Terpakai Hari Ini: <strong className="text-amber-800">{report.logistics?.fuelTankUsedLiters ?? 0} L</strong>
               </span>
               <span>
-                Sisa Stok Tangki: <strong className="text-emerald-800">{report.logistics.fuelTankRemainingLiters} L</strong>
+                Sisa Stok Tangki: <strong className="text-emerald-800">{report.logistics?.fuelTankRemainingLiters ?? 0} L</strong>
               </span>
             </div>
           </div>
@@ -545,7 +554,7 @@ ${report.equipmentWorkLogs
                   <div className="p-2 text-[10px]">
                     <div className="font-bold text-slate-900 uppercase">{photo.caption}</div>
                     <div className="text-slate-500 font-mono flex items-center justify-between mt-0.5">
-                      <span>GPS: {photo.gpsCoordinates.lat.toFixed(5)}, {photo.gpsCoordinates.lng.toFixed(5)}</span>
+                      <span>GPS: {photo.gpsCoordinates ? `${safeNum(photo.gpsCoordinates.lat, 5)}, ${safeNum(photo.gpsCoordinates.lng, 5)}` : '-'}</span>
                       <span>{photo.timestamp}</span>
                     </div>
                   </div>

@@ -286,7 +286,7 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
         { label: 'ID Dokumen', value: item.id },
         { label: 'Unit Alat Berat', value: `${item.equipmentId} (${item.equipmentName})`, isBold: true },
         { label: 'Lokasi & Klien', value: `${item.blockCode} • ${item.clientName}` },
-        { label: 'HM Awal Unit', value: `${item.hmStart.toFixed(1)} HM` },
+        { label: 'HM Awal Unit', value: `${Number(item.hmStart || 0).toFixed(1)} HM` },
         { label: 'Status Kelayakan', value: item.overallStatus, isBold: true },
         { label: 'Waktu Inspeksi', value: `${item.date} ${item.time} WIB` },
       ],
@@ -311,14 +311,14 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
   const [showBowserModal, setShowBowserModal] = useState<boolean>(false);
 
   const [bowserTruckId, setBowserTruckId] = useState<string>('BM 8421 AU (Tangki 5.000 L)');
-  const [bowserSealNumber, setBowserSealNumber] = useState<string>(`SGL-B35-${Math.floor(Math.random() * 90000 + 10000)}`);
+  const [bowserSealNumber, setBowserSealNumber] = useState<string>(`SGL-B50-${Math.floor(Math.random() * 90000 + 10000)}`);
   const [bowserDocNumber, setBowserDocNumber] = useState<string>(`SJ-BBM/SL/${new Date().toISOString().slice(0, 10).replace(/-/g, '/')}-01`);
   const [bowserEqId, setBowserEqId] = useState<string>(() => equipments[0]?.id || 'EX-01');
   const [bowserHmAtRefuel, setBowserHmAtRefuel] = useState<number>(2845.0);
   const [bowserBlockCode, setBowserBlockCode] = useState<string>(() => clientBlocks[0]?.code || 'Blok AB');
   const [bowserFlowmeterStart, setBowserFlowmeterStart] = useState<number>(42240);
   const [bowserFlowmeterEnd, setBowserFlowmeterEnd] = useState<number>(42380);
-  const [bowserFuelQuality, setBowserFuelQuality] = useState<'Jernih (B35 Standar)' | 'Keruh / Ada Air' | 'Kotor'>('Jernih (B35 Standar)');
+  const [bowserFuelQuality, setBowserFuelQuality] = useState<'Solar B50' | 'Keruh / Ada Air' | 'Kotor'>('Solar B50');
   const [bowserDriverName, setBowserDriverName] = useState<string>('Bambang Irawan');
   const [bowserNotes, setBowserNotes] = useState<string>('Pengisian solar rintis blok lahan. Segel utuh, flowmeter normal.');
 
@@ -407,7 +407,7 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
       summaryDetails: [
         { label: 'No. Bukti / ID', value: b.id },
         { label: 'Unit Pengisian', value: `${b.equipmentId} (${b.equipmentName})`, isBold: true },
-        { label: 'Volume BBM Terisi', value: `+${b.totalLitersFilled.toLocaleString()} Liter (Solar B35)`, isBold: true },
+        { label: 'Volume BBM Terisi', value: `+${b.totalLitersFilled.toLocaleString()} Liter (Solar B50)`, isBold: true },
         { label: 'Truk & No. Segel', value: `${b.bowserTruckId} (Segel: ${b.sealNumber})` },
         { label: 'Flowmeter Tangki', value: `${b.flowmeterStart.toLocaleString()} → ${b.flowmeterEnd.toLocaleString()}` },
         { label: 'Lokasi & Klien', value: `${b.blockCode} • ${b.clientName}` },
@@ -835,7 +835,7 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
 
                     <div className="flex items-center gap-3 shrink-0 self-start lg:self-center">
                       <div className="text-right text-[11px] text-slate-500 font-mono">
-                        <div>HM Awal: <strong>{item.hmStart.toFixed(1)}</strong></div>
+                        <div>HM Awal: <strong>{Number(item.hmStart || 0).toFixed(1)}</strong></div>
                         <div>Inspeksi: {item.time} WIB ({item.operatorName})</div>
                       </div>
 
@@ -887,7 +887,7 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
 
             <button
               onClick={() => {
-                setBowserSealNumber(`SGL-B35-${Math.floor(Math.random() * 90000 + 10000)}`);
+                setBowserSealNumber(`SGL-B50-${Math.floor(Math.random() * 90000 + 10000)}`);
                 setShowBowserModal(true);
               }}
               className="flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs shadow-md transition cursor-pointer shrink-0"
@@ -1458,13 +1458,13 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Kualitas Solar B35:</label>
+                <label className="block font-bold text-slate-700 mb-1">Kualitas Solar:</label>
                 <select
                   value={bowserFuelQuality}
                   onChange={(e) => setBowserFuelQuality(e.target.value as any)}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg font-bold"
                 >
-                  <option value="Jernih (B35 Standar)">Jernih (B35 Standar)</option>
+                  <option value="Solar B50">Solar B50</option>
                   <option value="Keruh / Ada Air">Keruh / Ada Air</option>
                   <option value="Kotor">Kotor</option>
                 </select>

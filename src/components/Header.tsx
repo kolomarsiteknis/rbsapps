@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { UserRole, Client, AuthUser, CompanyProfile } from '../types';
 import { ConnectionHealthCheck } from './ConnectionHealthCheck';
+import { getLastSuccessfulSyncTime } from '../services/firestoreSync';
 
 export type TabKey = 
   | 'dashboard' 
@@ -376,44 +377,7 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             </div>
 
-            {/* CENTER: Clean Current Section Context Indicator (No cluttered buttons) */}
-            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-800/60 border border-slate-700/60">
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-              <span className="text-xs font-bold text-slate-200">
-                {navItems.find((item) => item.key === activeTab)?.label || (activeTab === 'company-profile' ? 'Identitas Perusahaan' : 'Aplikasi')}
-              </span>
-              {isClient ? (
-                <div className="flex items-center gap-1.5 border-l border-slate-700 pl-2">
-                  <span className="text-[11px] font-bold text-teal-400 flex items-center gap-1">
-                    <Lock className="w-3 h-3 text-teal-400 shrink-0" />
-                    {authUser?.assignedClientName || activeClientObj?.name || 'Klien SPK'}
-                  </span>
-                  <span className="text-[10px] bg-teal-500/20 text-teal-300 font-mono px-1.5 py-0.5 rounded border border-teal-500/30">
-                    Read-Only SPK
-                  </span>
-                </div>
-              ) : isSupervisor ? (
-                <div className="flex items-center gap-1.5 border-l border-slate-700 pl-2">
-                  <span className="text-[11px] font-bold text-amber-400 flex items-center gap-1">
-                    <Lock className="w-3 h-3 text-amber-400 shrink-0" />
-                    {authUser?.assignedClientName || activeClientObj?.name || 'PT. A'}
-                  </span>
-                  <span className="text-[10px] bg-amber-500/20 text-amber-300 font-mono px-1.5 py-0.5 rounded border border-amber-500/30">
-                    {authUser?.assignedBlockCodes && authUser.assignedBlockCodes.length > 0
-                      ? authUser.assignedBlockCodes.join(', ')
-                      : 'Blok AB'}
-                  </span>
-                </div>
-              ) : selectedClientId !== 'ALL' && activeClientObj ? (
-                <span className="text-[11px] font-semibold text-amber-400 border-l border-slate-700 pl-2">
-                  {activeClientObj.name}
-                </span>
-              ) : (
-                <span className="text-[11px] text-slate-400 border-l border-slate-700 pl-2">
-                  Semua Klien (Owner)
-                </span>
-              )}
-            </div>
+
 
             {/* RIGHT: Quick Status & User Profile Trigger */}
             <div className="flex items-center gap-1.5 sm:gap-2">
@@ -446,6 +410,8 @@ export const Header: React.FC<HeaderProps> = ({
                   </span>
                 )}
               </button>
+
+
 
               {/* User Profile & Direct Action Button */}
               {authUser && (

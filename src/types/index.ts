@@ -510,7 +510,7 @@ export interface FuelBowserReceipt {
   flowmeterStart: number;
   flowmeterEnd: number;
   totalLitersFilled: number; // calculated: flowmeterEnd - flowmeterStart
-  fuelQualityCheck: 'Jernih (B35 Standar)' | 'Keruh / Ada Air' | 'Kotor';
+  fuelQualityCheck: 'Solar B50' | 'Keruh / Ada Air' | 'Kotor';
   operatorName: string;
   bowserDriverName: string;
   supervisorName: string;

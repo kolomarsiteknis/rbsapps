@@ -526,7 +526,7 @@ export const LogisticsPrintModal: React.FC<LogisticsPrintModalProps> = ({
               {/* Solar Tile */}
               <div className="p-2.5 bg-white rounded-lg border border-amber-200">
                 <div className="flex items-center justify-between text-amber-900 font-bold text-[11px] uppercase">
-                  <span>BBM Solar B35</span>
+                  <span>BBM Solar B50</span>
                   <Fuel className="w-3.5 h-3.5 text-amber-600" />
                 </div>
                 <div className="text-base font-black text-slate-900 mt-1 font-mono">

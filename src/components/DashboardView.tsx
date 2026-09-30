@@ -106,9 +106,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const inventory = storageService.getInventory();
   const logisticsTx = storageService.getLogisticsTransactions(selectedClientId);
 
-  // 1. BBM (Solar B35)
+  // 1. BBM (Solar B50)
   const fuelItem = inventory.find((i) => i.category === 'BBM') || { 
-    id: 'inv-1', code: 'BBM-SOL', name: 'Solar Industri B35', category: 'BBM' as const, stockQuantity: 4734, unit: 'Liter', minThreshold: 1000 
+    id: 'inv-1', code: 'BBM-SOL', name: 'Solar Industri B50', category: 'BBM' as const, stockQuantity: 4734, unit: 'Liter', minThreshold: 1000 
   };
   const tankCapacityLiters = 10000;
   const fuelTankPercent = Math.min(100, Number(((fuelItem.stockQuantity / tankCapacityLiters) * 100).toFixed(1)));
@@ -1809,7 +1809,7 @@ _Pesan ini dikirim resmi melalui Sistem RBS APPS — Executive Monitoring & Aler
         {/* 3 KARTU STATUS VISUAL UTAMA */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           
-          {/* KARTU 1: BBM SOLAR INDUSTRI B35 */}
+          {/* KARTU 1: BBM SOLAR INDUSTRI B50 */}
           <div className="bg-gradient-to-br from-amber-50/60 via-white to-amber-50/20 border-2 border-amber-300/80 rounded-2xl p-4.5 flex flex-col justify-between space-y-3.5 shadow-xs hover:border-amber-400 transition">
             <div>
               <div className="flex items-center justify-between">
@@ -1821,7 +1821,7 @@ _Pesan ini dikirim resmi melalui Sistem RBS APPS — Executive Monitoring & Aler
                     <span className="text-[11px] font-black uppercase text-amber-950 block tracking-wide">
                       Bahan Bakar Minyak
                     </span>
-                    <h4 className="text-xs font-bold text-slate-700">Solar Industri B35</h4>
+                    <h4 className="text-xs font-bold text-slate-700">Solar Industri B50</h4>
                   </div>
                 </div>
 

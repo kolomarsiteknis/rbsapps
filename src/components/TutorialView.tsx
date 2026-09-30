@@ -265,7 +265,7 @@ export const TutorialView: React.FC<TutorialViewProps> = ({ onNavigateTab }) => 
       title: '6. Logistik & BBM',
       badge: 'Menu 6',
       icon: Fuel,
-      description: 'Pusat inventaris Solar Industri B35, pelumas oli (mesin, hidrolik, transmisi), grease, dan spare part alat berat.',
+      description: 'Pusat inventaris Solar Industri B50, pelumas oli (mesin, hidrolik, transmisi), grease, dan spare part alat berat.',
       targetRole: 'Superadmin, Manager & Pengawas',
       steps: [
         {

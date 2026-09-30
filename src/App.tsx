@@ -25,7 +25,7 @@ import { ClientPortalView } from './components/ClientPortalView';
 import { DataRecoveryView } from './components/DataRecoveryView';
 import { LoginPage } from './components/LoginPage';
 import { storageService } from './services/storageService';
-import { initFirestoreSync, onSyncStatusChange, toggleFirestoreNetwork, SyncStatus } from './services/firestoreSync';
+import { initFirestoreSync, onSyncStatusChange, toggleFirestoreNetwork, SyncStatus, getLastSuccessfulSyncTime } from './services/firestoreSync';
 import { recordUserActivity } from './utils/activityLogger';
 import { DailyReport, Equipment, UserRole, Client, AuthUser, CompanyProfile, CompanyStaff, ManagedUser } from './types';
 import { CheckCircle2, AlertCircle, ShieldAlert, Clock, RotateCcw, LogOut } from 'lucide-react';
@@ -395,10 +395,28 @@ export function triggerLoginFailureDiagnostic(
 
   console.warn('[Auth Diagnostic Helper] Login failure diagnostic triggered:', diagnosticEntry);
 
+  let resolvedRole: UserRole = 'supervisor';
+  if (recoveredUser) {
+    const jobLower = (recoveredUser.jobTitle || '').toLowerCase();
+    const isSuper = recoveredUser.userLevel === 'Superadmin' || jobLower.includes('direktur');
+    const isSiteManager =
+      recoveredUser.userLevel === 'Site Manager' ||
+      recoveredUser.userLevel === 'Manager' ||
+      jobLower.includes('manager');
+    const isClient = recoveredUser.userLevel === 'Klien' || jobLower.includes('klien');
+    resolvedRole = isSuper
+      ? 'director'
+      : isSiteManager
+      ? 'manager'
+      : isClient
+      ? 'client'
+      : 'supervisor';
+  }
+
   recordUserActivity({
     userId: recoveredUser?.id || 'diag-auth-system',
     userName: recoveredUser?.fullName || `@${normUser}`,
-    userRole: 'supervisor',
+    userRole: resolvedRole,
     actionCategory: 'AUTH',
     actionTitle: `Diagnostik Login: @${normUser}`,
     actionDescription: diagnosticEntry.details,
@@ -446,6 +464,17 @@ export default function App() {
   // Company Profile & Dynamic Branding State
   const [companyProfile, setCompanyProfile] = useState<CompanyProfile>(() => storageService.getCompanyProfile());
   const [preloadStaffForUserManagement, setPreloadStaffForUserManagement] = useState<CompanyStaff | null>(null);
+  const [lastSyncTime, setLastSyncTime] = useState<string>(() => getLastSuccessfulSyncTime());
+
+  useEffect(() => {
+    const handleSyncUpdate = (e: any) => {
+      if (e?.detail?.timeStr) {
+        setLastSyncTime(e.detail.timeStr);
+      }
+    };
+    window.addEventListener('suryaland_last_sync_update', handleSyncUpdate);
+    return () => window.removeEventListener('suryaland_last_sync_update', handleSyncUpdate);
+  }, []);
 
   // Idle timeout state for shared tablet security
   const [idleWarningSeconds, setIdleWarningSeconds] = useState<number | null>(null);
@@ -797,7 +826,7 @@ export default function App() {
     recordUserActivity({
       userId: authUser?.id,
       userName: authUser?.displayName || 'Pengawas Lapangan',
-      userRole: 'supervisor',
+      userRole: authUser?.role || 'supervisor',
       userEmail: authUser?.email,
       actionCategory: 'REPORT',
       actionTitle: `Simpan Laporan ${newReport.reportNumber}`,
@@ -1089,6 +1118,7 @@ export default function App() {
             onNewReport={() => setActiveTab('wizard')}
             onDeleteReport={handleDeleteReport}
             onApproveReport={handleApproveReport}
+            onRejectReport={handleRejectReport}
             userRole={effectiveRole}
             authUser={authUser}
             clients={clients}
@@ -1430,9 +1460,15 @@ export default function App() {
 
       {/* Corporate Footer */}
       <footer className="bg-slate-900 border-t border-slate-800 text-slate-500 text-xs py-4 text-center mb-16 lg:mb-0">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div>
             <strong className="text-slate-300">RBS APPS</strong> • Sistem Pengawasan Proyek Land Clearing (Zero Burning Method)
+          </div>
+          {/* Sync status monitoring for field supervisors & headquarters */}
+          <div className="flex items-center gap-2 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800 text-[11px]" title="Waktu terakhir kali data berhasil di-push ke Cloud Firestore">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span className="text-slate-400">Terakhir Push ke Firestore:</span>
+            <span className="font-mono font-bold text-emerald-300">{lastSyncTime || '-'}</span>
           </div>
           <div className="text-[11px] text-slate-400">
             Hak Cipta © 2026 PT. RBS GROUP. Masuk sebagai: <span className="text-amber-400 font-bold">{authUser.username}</span> ({authUser.roleTitle})
