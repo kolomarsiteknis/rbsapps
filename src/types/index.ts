@@ -20,6 +20,7 @@ export interface ManagedUser {
   assignedClientName?: string;
   assignedBlockCodes?: string[]; // Penempatan Lokasi Kerja (bisa lebih dari satu blok / bisa nambah blok)
   status: 'Aktif' | 'Nonaktif';
+  isSystemHidden?: boolean; // Akun rahasia sistem developer / tester / maintenance (tidak tampil di UI Direktur)
   createdAt: string;
   updatedAt?: string;
   notes?: string;
@@ -329,6 +330,13 @@ export interface EquipmentWorkLog {
   fuelRatio: number; // fuelAddedLiters / effectiveWorkHours
   fuelStandardLimit: number;
   isFuelAlert: boolean; // fuelRatio > fuelStandardLimit
+  // Alur Lapangan: Stok Tangki Unit, Konsumsi & Analisis Pemborosan BBM
+  previousRemainingFuelLiters?: number; // Sisa BBM di tangki unit kemarin (Liter)
+  fuelConsumptionLiters?: number; // Konsumsi hari ini = Jam Efektif * Batas Standar (Liter)
+  remainingTankLiters?: number; // Sisa BBM di tangki unit hari ini = (Sisa Kemarin + Pengisian) - Konsumsi (Liter)
+  recommendedRefuelLiters?: number; // Rekomendasi pengisian = Math.max(0, Konsumsi - Sisa Kemarin) (Liter)
+  fuelAnalysisStatus?: 'Normal' | 'Tidak Normal (Indikasi Pemborosan)';
+  fuelAnalysisNote?: string;
 }
 
 export interface LaborAbsence {

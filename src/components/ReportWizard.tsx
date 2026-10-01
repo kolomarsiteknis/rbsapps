@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   CheckCircle2, 
   ChevronRight, 
@@ -69,6 +69,18 @@ const STEPS = [
   { id: 5, title: 'Logistik & BBM', icon: Fuel, desc: 'Solar, Oli & Part' },
   { id: 6, title: 'Foto & Submit', icon: Camera, desc: 'Watermark GPS' },
 ];
+
+export const formatIndoDate = (dateStr: string): string => {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  if (parts.length === 3 && parts[0].length === 4) {
+    const day = parseInt(parts[2], 10);
+    const month = parseInt(parts[1], 10);
+    const year = parts[0];
+    return `${day}-${month}-${year}`;
+  }
+  return dateStr;
+};
 
 export const ReportWizard: React.FC<ReportWizardProps> = ({
   onReportSaved,
@@ -196,29 +208,88 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
     });
   }, [selectedClientId, selectedBlockId, currentStep]);
 
-  // Step 3: Equipment Work Logs
+  // Helper to fetch previous remaining fuel in unit tank from earlier daily reports
+  const getPreviousRemainingFuelForEquipment = useCallback(
+    (equipmentId: string, targetDate: string, clientId?: string): number => {
+      try {
+        const allReports = storageService.getReports(clientId);
+        const earlierReports = allReports
+          .filter((r) => r.date < targetDate && (!clientId || r.clientId === clientId))
+          .sort((a, b) => b.date.localeCompare(a.date));
+
+        for (const r of earlierReports) {
+          const match = r.equipmentWorkLogs?.find((l) => l.equipmentId === equipmentId);
+          if (match) {
+            if (typeof match.remainingTankLiters === 'number' && !isNaN(match.remainingTankLiters)) {
+              return match.remainingTankLiters;
+            }
+            const prev = match.previousRemainingFuelLiters || 0;
+            const added = match.fuelAddedLiters || 0;
+            const cons = match.fuelConsumptionLiters || ((match.effectiveWorkHours || 0) * (match.fuelStandardLimit || 18));
+            return Math.max(0, Number((prev + added - cons).toFixed(1)));
+          }
+        }
+      } catch {}
+      return 0;
+    },
+    []
+  );
+
+  const getPreviousCumulativeVolumeForWorkItem = useCallback(
+    (itemName: string, targetDate: string, blockId: string, clientId?: string): number => {
+      try {
+        const allReports = storageService.getReports(clientId);
+        const earlierReports = allReports.filter(
+          (r) => r.blockId === blockId && r.date < targetDate && (r.status === 'Disetujui Direktur' || r.status === 'Disetujui Manager')
+        );
+        let total = 0;
+        earlierReports.forEach((r) => {
+          const match = r.physicalProgress?.itemProgress?.find((it: any) => it.itemName === itemName);
+          if (match) {
+            total += Number(match.realizedDailyVolume) || 0;
+          }
+        });
+        return total;
+      } catch {}
+      return 0;
+    },
+    []
+  );
+
+  // Step 3 & 5: Equipment Work Logs & Fuel Analytics
   const [equipmentLogs, setEquipmentLogs] = useState<EquipmentWorkLog[]>(() => {
     const savedEquips = storageService.getEquipments();
-    return savedEquips.map((eq) => ({
-      equipmentId: eq.id,
-      equipmentName: eq.name,
-      type: eq.type,
-      hmStart: eq.currentHm || 0,
-      hmEnd: eq.currentHm || 0,
-      totalHm: 0,
-      downtimeWeatherHours: 0,
-      downtimeWeatherNote: '',
-      downtimeBreakdownHours: 0,
-      downtimeBreakdownNote: '',
-      downtimeOtherHours: 0,
-      downtimeOtherNote: '',
-      effectiveWorkHours: 0,
-      fuelAddedLiters: 0,
-      fuelHmAtRefuel: eq.currentHm || 0,
-      fuelRatio: 0,
-      fuelStandardLimit: eq.standardFuelRatio || 18.0,
-      isFuelAlert: false,
-    }));
+    const initDate = new Date().toISOString().split('T')[0];
+    return savedEquips.map((eq) => {
+      const prevTank = getPreviousRemainingFuelForEquipment(eq.id, initDate, effectiveClientId);
+      const stdLimit = eq.standardFuelRatio || 18.0;
+      return {
+        equipmentId: eq.id,
+        equipmentName: eq.name,
+        type: eq.type,
+        hmStart: eq.currentHm || 0,
+        hmEnd: eq.currentHm || 0,
+        totalHm: 0,
+        downtimeWeatherHours: 0,
+        downtimeWeatherNote: '',
+        downtimeBreakdownHours: 0,
+        downtimeBreakdownNote: '',
+        downtimeOtherHours: 0,
+        downtimeOtherNote: '',
+        effectiveWorkHours: 0,
+        fuelAddedLiters: 0,
+        fuelHmAtRefuel: eq.currentHm || 0,
+        fuelRatio: 0,
+        fuelStandardLimit: stdLimit,
+        isFuelAlert: false,
+        previousRemainingFuelLiters: prevTank,
+        fuelConsumptionLiters: 0,
+        remainingTankLiters: prevTank,
+        recommendedRefuelLiters: 0,
+        fuelAnalysisStatus: 'Normal',
+        fuelAnalysisNote: 'Normal: Pengisian sesuai kebutuhan jam kerja efektif.',
+      };
+    });
   });
 
   // Step 4: Capaian Hasil Kerja Berdasarkan Target Harian Direktur (Master Data Proyek -> Submenu Target Harian)
@@ -237,9 +308,11 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
   const [targetAreaHa, setTargetAreaHa] = useState<number>(4.0);
   const [realizedAreaHa, setRealizedAreaHa] = useState<number>(0);
   const [progressNotes, setProgressNotes] = useState<string>('');
+  const [itemRawInputs, setItemRawInputs] = useState<Record<string, string>>({});
 
   // Sinkronisasi data dari SPK terpilih, Blok terpilih, dan Target Harian yang ditetapkan Direktur
   useEffect(() => {
+    setItemRawInputs({});
     // 1. Ambil target harian dari Direktur untuk Blok & SPK pada tanggal laporan
     const targetForDate = storageService.getDailyTargetForDate(selectedBlockId, date);
     const targetForBlock = targetForDate || storageService.getDailyTargets(selectedClientId, selectedBlockId)[0];
@@ -284,6 +357,48 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
     setWorkItemEntries(initialItems);
   }, [selectedClientId, selectedBlockId, date, allBlocks]);
 
+  // Live synchronization of previous remaining fuel for equipments based on date & client
+  useEffect(() => {
+    setEquipmentLogs((prev) =>
+      prev.map((log) => {
+        const prevFuel = getPreviousRemainingFuelForEquipment(log.equipmentId, date, selectedClientId);
+        const eqMaster = equipments.find((e) => e.id === log.equipmentId);
+        const stdLimit = log.fuelStandardLimit || eqMaster?.standardFuelRatio || 18.0;
+        const effHours = Number(log.effectiveWorkHours) || 0;
+        const cons = Number((effHours * stdLimit).toFixed(1));
+        const rec = Math.max(0, Number((cons - prevFuel).toFixed(1)));
+        const added = Number(log.fuelAddedLiters) || 0;
+        const rem = Number((prevFuel + added - cons).toFixed(1));
+        const ratio = effHours > 0 && added > 0 ? Number((added / effHours).toFixed(2)) : 0;
+
+        // Real-time validation for fuel waste / abnormal refuels:
+        // 1. Refuel exceeds ideal recommendation (cons - prevFuel)
+        // 2. Refuel done when unit has 0 effective work hours
+        // 3. Refuel ratio per HM exceeds standard limit
+        const isWasteful = added > rec && (prevFuel > 0 || cons > 0);
+        const isZeroHmRefuel = effHours === 0 && added > 0;
+        const isHighRatio = effHours > 0 && ratio > stdLimit;
+        const isAlert = isWasteful || isZeroHmRefuel || isHighRatio;
+
+        const formattedDate = formatIndoDate(date);
+        return {
+          ...log,
+          previousRemainingFuelLiters: prevFuel,
+          fuelStandardLimit: stdLimit,
+          fuelConsumptionLiters: cons,
+          recommendedRefuelLiters: rec,
+          remainingTankLiters: rem,
+          fuelRatio: ratio,
+          isFuelAlert: isAlert,
+          fuelAnalysisStatus: isAlert ? 'Tidak Normal (Indikasi Pemborosan)' : 'Normal',
+          fuelAnalysisNote: isAlert
+            ? `terjadi indikasi pemborosan seharusnya di tgl ${formattedDate} pengisiannya bukan ${added} liter tapi sekitar ${rec}liter saja karena masih ada akumulasi total sisa BBM ditangki sejumlah ${prevFuel} liter \t\tStatus Analisis = tidak normal`
+            : `Normal: Pengisian ${added} Liter sesuai kebutuhan jam kerja efektif. Status Analisis = normal`,
+        };
+      })
+    );
+  }, [date, selectedClientId, getPreviousRemainingFuelForEquipment, equipments]);
+
   const handleItemRealizationChange = (itemId: string, val: number) => {
     setWorkItemEntries((prev) => {
       const next = prev.map((item) => (item.id === itemId ? { ...item, realizedDailyVolume: val } : item));
@@ -308,12 +423,16 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
   };
 
   // Step 5: Logistics & Parts
-  const [tankInitial, setTankInitial] = useState<number>(4734);
+  const [tankInitial, setTankInitial] = useState<number>(() => {
+    const inv = storageService.getInventory();
+    const bbm = inv.find((i) => i.category === 'BBM');
+    return bbm ? bbm.stockQuantity : 0;
+  });
   const [tankInflow, setTankInflow] = useState<number>(0);
   const [oilEngine, setOilEngine] = useState<number>(0);
   const [oilHydraulic, setOilHydraulic] = useState<number>(0);
   const [oilTransmission, setOilTransmission] = useState<number>(0);
-  const [greaseKg, setGreaseKg] = useState<number>(2.5);
+  const [greaseKg, setGreaseKg] = useState<number>(0);
   const [spareParts, setSpareParts] = useState<SparePartUsage[]>([]);
   const [newPartName, setNewPartName] = useState<string>('');
   const [newPartQty, setNewPartQty] = useState<number>(1);
@@ -338,6 +457,18 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
   const selectedClient = clients.find((c) => c.id === selectedClientId) || clients[0];
   const activeBlock = allBlocks.find((b) => b.id === selectedBlockId) || clientBlocks[0] || allBlocks[0];
   const cumulativeAreaCalc = (activeBlock ? activeBlock.clearedAreaHa : 48.8) + (realizedAreaHa || 0);
+
+  const averagePercentage = workItemEntries.length > 0
+    ? Number((workItemEntries.reduce((acc, item) => {
+        const targetVol = item.targetDailyVolume || 0;
+        const realVol = item.realizedDailyVolume || 0;
+        const pct = targetVol > 0 ? (realVol / targetVol) * 100 : 0;
+        return acc + pct;
+      }, 0) / workItemEntries.length).toFixed(1))
+    : 0;
+
+  const primaryHaItem = workItemEntries.find((it) => it.unit.toUpperCase() === 'HA');
+  const primaryHaName = primaryHaItem ? primaryHaItem.name : "Lahan Utama";
 
   // Personil yang ditugaskan di lokasi kerja ini (berdasarkan Klien & Blok yang dipilih di Langkah 1)
   const locationWorkers = laborList.filter((item) => {
@@ -445,28 +576,65 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
       const next = [...prev];
       const row = { ...next[index], ...updates };
 
-      // Calculate Total HM Buka
+      // 1. Calculate Total HM Buka
       const hmStart = Number(row.hmStart) || 0;
       const hmEnd = Number(row.hmEnd) || 0;
       row.totalHm = Math.max(0, Number((hmEnd - hmStart).toFixed(1)));
 
-      // Calculate Effective Hours
+      // 2. Calculate Effective Hours (Jam Efektif - Submenu 3)
       const dwWeather = Number(row.downtimeWeatherHours) || 0;
       const dwBreak = Number(row.downtimeBreakdownHours) || 0;
       const dwOther = Number(row.downtimeOtherHours) || 0;
       const totalDowntime = dwWeather + dwBreak + dwOther;
       row.effectiveWorkHours = Math.max(0, Number((row.totalHm - totalDowntime).toFixed(1)));
 
-      // Calculate Fuel Ratio
-      const fuel = Number(row.fuelAddedLiters) || 0;
-      if (row.effectiveWorkHours > 0 && fuel > 0) {
-        row.fuelRatio = Number((fuel / row.effectiveWorkHours).toFixed(2));
+      // 3. Batas Standar (L/HM) dari Master Data Proyek
+      const eqMaster = equipments.find((e) => e.id === row.equipmentId);
+      if (eqMaster?.standardFuelRatio && updates.fuelStandardLimit === undefined && !row.fuelStandardLimit) {
+        row.fuelStandardLimit = eqMaster.standardFuelRatio;
+      }
+      const stdLimit = Number(row.fuelStandardLimit) || 18.0;
+
+      // 4. Konsumsi Hari ini (Liter) = Jam Efektif * Batas Standar
+      row.fuelConsumptionLiters = Number((row.effectiveWorkHours * stdLimit).toFixed(1));
+
+      // 5. Sisa BBM di tangki kemarin (Sisa Awal Tangki)
+      const prevTank = Number(row.previousRemainingFuelLiters) || 0;
+
+      // 6. Pengisian Hari ini (Liter)
+      const fuelAdded = Number(row.fuelAddedLiters) || 0;
+
+      // 7. Rekomendasi pengisian seharusnya = Math.max(0, Konsumsi - Sisa Kemarin)
+      row.recommendedRefuelLiters = Math.max(0, Number((row.fuelConsumptionLiters - prevTank).toFixed(1)));
+
+      // 8. Sisa BBM di tangki unit hari ini = Sisa Kemarin + Pengisian - Konsumsi
+      row.remainingTankLiters = Number((prevTank + fuelAdded - row.fuelConsumptionLiters).toFixed(1));
+
+      // 9. Calculate Fuel Ratio (L/HM)
+      if (row.effectiveWorkHours > 0 && fuelAdded > 0) {
+        row.fuelRatio = Number((fuelAdded / row.effectiveWorkHours).toFixed(2));
       } else {
         row.fuelRatio = 0;
       }
 
-      // Check Alert
-      row.isFuelAlert = row.fuelRatio > row.fuelStandardLimit;
+      // 10. Status Analisis Real-Time
+      // Indikasi pemborosan apabila:
+      // a. Pengisian (fuelAdded) melebihi rekomendasi kebutuhan riil (Konsumsi - Sisa Kemarin)
+      // b. Pengisian dilakukan saat jam kerja efektif 0 HM
+      // c. Rasio pengisian per HM melebihi batas standar efisiensi proyek
+      const isWasteful = fuelAdded > row.recommendedRefuelLiters && (prevTank > 0 || row.fuelConsumptionLiters > 0);
+      const isZeroHmRefuel = row.effectiveWorkHours === 0 && fuelAdded > 0;
+      const isHighRatio = row.effectiveWorkHours > 0 && row.fuelRatio > stdLimit;
+      const isAlert = isWasteful || isZeroHmRefuel || isHighRatio;
+
+      row.isFuelAlert = isAlert;
+      row.fuelAnalysisStatus = isAlert ? 'Tidak Normal (Indikasi Pemborosan)' : 'Normal';
+      const formattedDate = formatIndoDate(date);
+      if (isAlert) {
+        row.fuelAnalysisNote = `terjadi indikasi pemborosan seharusnya di tgl ${formattedDate} pengisiannya bukan ${fuelAdded} liter tapi sekitar ${row.recommendedRefuelLiters}liter saja karena masih ada akumulasi total sisa BBM ditangki sejumlah ${prevTank} liter \t\tStatus Analisis = tidak normal`;
+      } else {
+        row.fuelAnalysisNote = `Normal: Pengisian ${fuelAdded} Liter sesuai kebutuhan jam kerja efektif (${row.effectiveWorkHours} Jam × ${stdLimit} L/HM = ${row.fuelConsumptionLiters} L). Sisa BBM di tangki ${row.remainingTankLiters} Liter. Status Analisis = normal`;
+      }
 
       next[index] = row;
       return next;
@@ -476,6 +644,12 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
   const addEquipmentToLog = (eqId: string) => {
     const eq = equipments.find((e) => e.id === eqId);
     if (!eq || equipmentLogs.some((l) => l.equipmentId === eqId)) return;
+    const prevTank = getPreviousRemainingFuelForEquipment(eq.id, date, selectedClientId);
+    const stdLimit = eq.standardFuelRatio || 18.0;
+    const defaultEff = 8.0;
+    const cons = Number((defaultEff * stdLimit).toFixed(1));
+    const rec = Math.max(0, Number((cons - prevTank).toFixed(1)));
+    const initialAdd = rec > 0 ? rec : 100;
 
     setEquipmentLogs((prev) => [
       ...prev,
@@ -492,12 +666,18 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
         downtimeBreakdownNote: '',
         downtimeOtherHours: 0,
         downtimeOtherNote: '',
-        effectiveWorkHours: 8.0,
-        fuelAddedLiters: 120,
+        effectiveWorkHours: defaultEff,
+        fuelAddedLiters: initialAdd,
         fuelHmAtRefuel: eq.currentHm + 8.0,
-        fuelRatio: 15.0,
-        fuelStandardLimit: eq.standardFuelRatio,
+        fuelRatio: Number((initialAdd / defaultEff).toFixed(2)),
+        fuelStandardLimit: stdLimit,
         isFuelAlert: false,
+        previousRemainingFuelLiters: prevTank,
+        fuelConsumptionLiters: cons,
+        recommendedRefuelLiters: rec,
+        remainingTankLiters: Number((prevTank + initialAdd - cons).toFixed(1)),
+        fuelAnalysisStatus: 'Normal',
+        fuelAnalysisNote: 'Normal: Pengisian sesuai kebutuhan jam kerja efektif.',
       },
     ]);
   };
@@ -779,6 +959,35 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
               >
                 <ChevronRight className="w-4 h-4" />
                 <span>Buka Menu Rekapitulasi Laporan</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (clients.length === 0) {
+    return (
+      <div className="max-w-xl mx-auto py-12 px-4 sm:px-6">
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 text-center space-y-4 shadow-sm">
+          <div className="w-12 h-12 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center mx-auto">
+            <AlertTriangle className="w-6 h-6 animate-pulse" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base font-bold text-slate-900">Belum Ada Proyek Aktif Terdaftar</h3>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Formulir Laporan Harian Pengawas memerlukan minimal satu SPK Klien / Blok Kerja terdaftar dalam sistem. Silakan hubungi Direktur atau Administrator untuk menambahkan data SPK baru di menu Master Data.
+            </p>
+          </div>
+          <div className="pt-2 flex justify-center gap-3">
+            {onCancel && (
+              <button
+                type="button"
+                onClick={onCancel}
+                className="px-4 py-2 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition cursor-pointer"
+              >
+                Kembali ke Halaman Utama
               </button>
             )}
           </div>
@@ -1991,12 +2200,12 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                 </div>
 
                 <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center bg-slate-800/80 px-4 py-2.5 rounded-xl border border-slate-700 shrink-0">
-                  <span className="text-[10px] uppercase font-bold text-amber-400">Target Luas Harian Direktur</span>
+                  <span className="text-[10px] uppercase font-bold text-amber-400">Persentase Pencapaian</span>
                   <div className="text-2xl font-black font-mono text-white">
-                    {targetAreaHa.toFixed(1)} <span className="text-xs font-bold text-amber-400">Ha/Hari</span>
+                    {averagePercentage.toFixed(1)} <span className="text-xs font-bold text-amber-400">%</span>
                   </div>
                   <span className="text-[10px] text-slate-400">
-                    {directorTarget ? `Jadwal Tgl: ${directorTarget.date}` : "Standar Ritme Blok"}
+                    Rata-rata Capaian Kerja
                   </span>
                 </div>
               </div>
@@ -2113,10 +2322,14 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                           <div className="relative">
                             <input
                               type="number"
-                              step="0.05"
+                              step="any"
                               min="0"
-                              value={item.realizedDailyVolume || ""}
-                              onChange={(e) => handleItemRealizationChange(item.id, parseFloat(e.target.value) || 0)}
+                              value={itemRawInputs[item.id] !== undefined ? itemRawInputs[item.id] : (item.realizedDailyVolume || "")}
+                              onChange={(e) => {
+                                const rawVal = e.target.value;
+                                setItemRawInputs((prev) => ({ ...prev, [item.id]: rawVal }));
+                                handleItemRealizationChange(item.id, parseFloat(rawVal) || 0);
+                              }}
                               placeholder="0.00"
                               className="w-full px-3 py-1.5 bg-white border border-emerald-500 rounded-lg text-base font-mono font-black text-emerald-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                             />
@@ -2179,68 +2392,59 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 pt-1">
-                  <div className="bg-white p-3 rounded-xl border border-emerald-200">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase block">Total Luas Dikerjakan</span>
-                    <div className="text-2xl font-black font-mono text-emerald-800">
-                      {realizedAreaHa.toFixed(2)} <span className="text-xs font-bold">Ha</span>
+                <div className="pt-1">
+                  <div className="bg-white p-4 rounded-xl border border-emerald-200 flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 uppercase block">Rasio Ketercapaian Rata-Rata</span>
+                      <div className="text-3xl font-black font-mono text-emerald-800 mt-1">
+                        {averagePercentage.toFixed(1)}%
+                      </div>
                     </div>
-                    <span className="text-[10px] text-slate-400">Target: {targetAreaHa.toFixed(1)} Ha</span>
-                  </div>
-
-                  <div className="bg-white p-3 rounded-xl border border-emerald-200">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase block">Rasio Ketercapaian</span>
-                    <div className="text-2xl font-black font-mono text-slate-900">
-                      {targetAreaHa > 0 ? ((realizedAreaHa / targetAreaHa) * 100).toFixed(1) : 0}%
-                    </div>
-                    <span className={`text-[10px] font-bold ${realizedAreaHa >= targetAreaHa ? "text-emerald-600" : "text-amber-600"}`}>
-                      {realizedAreaHa >= targetAreaHa ? "✓ Target Direktur Terpenuhi" : "Perlu Peningkatan Ritme"}
+                    <span className={`px-3 py-1.5 rounded-lg text-xs font-black ${averagePercentage >= 100 ? "bg-emerald-100 text-emerald-800 border border-emerald-300" : "bg-amber-100 text-amber-800 border border-amber-300"}`}>
+                      {averagePercentage >= 100 ? "✓ Semua Target Item Terpenuhi" : "Perlu Peningkatan Ritme"}
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Card 2: Akumulasi Kumulatif Blok */}
+              {/* Card 2: Akumulasi Progres per Item Kerja */}
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-black uppercase text-slate-900">
-                    Akumulasi Progres Blok: {activeBlock?.code || "Blok Utama"}
+                    Akumulasi Progres per Item Kerja: {activeBlock?.code || "Blok Utama"}
                   </span>
-                  <span className="text-xs bg-slate-200 text-slate-800 font-bold px-2 py-0.5 rounded">
-                    Total: {activeBlock?.targetAreaHa || 100} Ha
+                  <span className="text-[10px] bg-slate-200 text-slate-800 font-bold px-2 py-0.5 rounded">
+                    Berdasarkan Karakter Lahan
                   </span>
                 </div>
 
-                <div className="space-y-1.5 text-xs text-slate-600 pt-1">
-                  <div className="flex justify-between">
-                    <span>Luas Kumulatif Sebelumnya:</span>
-                    <strong className="font-mono text-slate-800">{activeBlock?.clearedAreaHa || 0} Ha</strong>
-                  </div>
-                  <div className="flex justify-between text-emerald-800 font-bold">
-                    <span>Tambahan Realisasi Hari Ini:</span>
-                    <strong className="font-mono">+{realizedAreaHa.toFixed(2)} Ha</strong>
-                  </div>
-                  <div className="flex justify-between text-slate-900 font-black border-t border-slate-200 pt-1.5">
-                    <span>Total Kumulatif Baru:</span>
-                    <span className="font-mono text-emerald-700">
-                      {cumulativeAreaCalc.toFixed(2)} Ha / {activeBlock?.targetAreaHa || 100} Ha
-                    </span>
-                  </div>
+                <div className="space-y-3 pt-1">
+                  {workItemEntries.map((item) => {
+                    const prevVal = getPreviousCumulativeVolumeForWorkItem(item.name, date, selectedBlockId, selectedClientId);
+                    const todayVal = item.realizedDailyVolume || 0;
+                    const totalCum = prevVal + todayVal;
+                    const totalTarget = item.totalVolume || (item.targetDailyVolume * 25);
+                    const pctCum = totalTarget > 0 ? Number(((totalCum / totalTarget) * 100).toFixed(1)) : 100;
 
-                  <div className="mt-2 space-y-1">
-                    <div className="flex justify-between text-[11px] font-bold text-slate-600">
-                      <span>Progres Keseluruhan Blok</span>
-                      <span className="font-mono text-emerald-700">
-                        {(((cumulativeAreaCalc / (activeBlock?.targetAreaHa || 100)) * 100)).toFixed(1)}%
-                      </span>
-                    </div>
-                    <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
-                      <div
-                        className="bg-emerald-600 h-2.5 rounded-full transition-all duration-300"
-                        style={{ width: `${Math.min(100, Math.max(0, (cumulativeAreaCalc / (activeBlock?.targetAreaHa || 100)) * 100))}%` }}
-                      />
-                    </div>
-                  </div>
+                    return (
+                      <div key={item.id} className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1.5">
+                        <div className="flex justify-between items-center text-xs">
+                          <strong className="text-slate-800 font-black text-[11px] truncate block max-w-[180px]" title={item.name}>
+                            {item.name}
+                          </strong>
+                          <span className="font-mono text-slate-500 text-[10px]">
+                            {totalCum.toFixed(1)} / {totalTarget.toFixed(0)} {item.unit} ({pctCum}%)
+                          </span>
+                        </div>
+                        <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden border border-slate-200">
+                          <div
+                            className="bg-emerald-600 h-1.5 rounded-full transition-all duration-300"
+                            style={{ width: `${Math.min(100, pctCum)}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -2322,63 +2526,210 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                 </div>
               </div>
 
-              {/* Pengisian BBM Per Alat Table with Live Ratio & Alerts */}
+              {/* Pengisian BBM Per Alat Table with Live Ratio & Field Fuel Flow Analytics */}
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse border border-amber-200 text-xs bg-white rounded-lg overflow-hidden">
                   <thead>
-                    <tr className="bg-amber-100/70 text-amber-950 font-bold">
-                      <th className="p-2 text-left border-b border-amber-200">Kode Alat</th>
-                      <th className="p-2 text-center border-b border-amber-200">Jam Efektif</th>
-                      <th className="p-2 text-center border-b border-amber-200">Pengisian (Liter)</th>
-                      <th className="p-2 text-center border-b border-amber-200">Rasio Konsumsi</th>
-                      <th className="p-2 text-center border-b border-amber-200">Batas Standar</th>
-                      <th className="p-2 text-center border-b border-amber-200">Status Analisis</th>
+                    <tr className="bg-amber-100/80 text-amber-950 font-bold border-b border-amber-300">
+                      <th className="p-2.5 text-left border-r border-amber-200">Kode Alat</th>
+                      <th className="p-2.5 text-center border-r border-amber-200">
+                        Jam Efektif
+                        <span className="block text-[9px] text-amber-800 font-normal">(Submenu 3 Alat)</span>
+                      </th>
+                      <th className="p-2.5 text-center border-r border-amber-200 bg-amber-200/50">
+                        Sisa BBM Kemarin (Liter)
+                        <span className="block text-[9px] text-amber-900 font-normal">(Hari Sebelumnya)</span>
+                      </th>
+                      <th className="p-2.5 text-center border-r border-amber-200">
+                        Pengisian/Hari ini (Liter)
+                        <span className="block text-[9px] text-amber-800 font-normal">(Input Pengawas)</span>
+                      </th>
+                      <th className="p-2.5 text-center border-r border-amber-200">
+                        Konsumsi/Hari ini (Liter)
+                        <span className="block text-[9px] text-amber-800 font-normal">(Jam Efektif × Batas Std)</span>
+                      </th>
+                      <th className="p-2.5 text-center border-r border-amber-200">
+                        Batas Standar (telah ditentukan)
+                        <span className="block text-[9px] text-amber-800 font-normal">(Master Data Proyek)</span>
+                      </th>
+                      <th className="p-2.5 text-center border-r border-amber-200">
+                        Sisa BBM ditangki
+                        <span className="block text-[9px] text-amber-800 font-normal">(Kemarin + Isi - Konsumsi)</span>
+                      </th>
+                      <th className="p-2.5 text-center">Status Analisis</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {equipmentLogs.map((log, idx) => (
-                      <tr key={log.equipmentId} className={log.isFuelAlert ? 'bg-rose-50/70' : ''}>
-                        <td className="p-2 font-bold font-mono text-slate-900 border-b border-slate-100">
-                          {log.equipmentId} ({log.type})
-                        </td>
-                        <td className="p-2 text-center font-mono border-b border-slate-100">
-                          {log.effectiveWorkHours.toFixed(1)} HM
-                        </td>
-                        <td className="p-2 text-center border-b border-slate-100">
-                          <input
-                            type="number"
-                            step="1"
-                            value={log.fuelAddedLiters}
-                            onChange={(e) =>
-                              updateEquipmentRow(idx, { fuelAddedLiters: parseFloat(e.target.value) || 0 })
-                            }
-                            className="w-24 px-2 py-1 border border-slate-300 rounded text-center font-mono font-bold"
-                          />
-                        </td>
-                        <td className="p-2 text-center font-mono font-bold border-b border-slate-100">
-                          {log.fuelRatio.toFixed(1)} L/HM
-                        </td>
-                        <td className="p-2 text-center font-mono text-slate-500 border-b border-slate-100">
-                          {log.fuelStandardLimit.toFixed(1)} L/HM
-                        </td>
-                        <td className="p-2 text-center border-b border-slate-100">
-                          {log.isFuelAlert ? (
-                            <span className="inline-flex items-center gap-1 font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded text-[10px] border border-rose-300">
-                              <AlertTriangle className="w-3 h-3 text-rose-600" />
-                              ALERT (&gt; Std)
+                    {equipmentLogs.map((log, idx) => {
+                      const isAbnormal = log.isFuelAlert || log.fuelAnalysisStatus?.toLowerCase().includes('tidak normal');
+                      const prevTank = Number(log.previousRemainingFuelLiters) || 0;
+                      const stdLimit = Number(log.fuelStandardLimit) || 18;
+                      const effHours = Number(log.effectiveWorkHours) || 0;
+                      const cons = log.fuelConsumptionLiters !== undefined 
+                        ? log.fuelConsumptionLiters 
+                        : Number((effHours * stdLimit).toFixed(1));
+                      const rec = log.recommendedRefuelLiters !== undefined 
+                        ? log.recommendedRefuelLiters 
+                        : Math.max(0, Number((cons - prevTank).toFixed(1)));
+                      const rem = log.remainingTankLiters !== undefined 
+                        ? log.remainingTankLiters 
+                        : Number((prevTank + (Number(log.fuelAddedLiters) || 0) - cons).toFixed(1));
+
+                      return (
+                        <tr 
+                          key={log.equipmentId} 
+                          className={isAbnormal ? 'bg-rose-50/80 hover:bg-rose-100/60 transition-colors' : 'hover:bg-slate-50 transition-colors'}
+                        >
+                          {/* 1. Kode Alat */}
+                          <td className="p-2.5 font-bold font-mono text-slate-900 border-b border-r border-slate-200">
+                            <div className="font-black text-amber-950 text-sm">{log.equipmentId}</div>
+                            <div className="text-[10px] text-slate-500 font-sans font-normal">{log.type}</div>
+                          </td>
+
+                          {/* 2. Jam Efektif (ambil dari Submenu 3) */}
+                          <td className="p-2.5 text-center font-mono font-black text-slate-900 border-b border-r border-slate-200">
+                            <span className="inline-block px-2.5 py-1 bg-emerald-100/90 text-emerald-950 rounded-md font-mono font-bold text-xs border border-emerald-200">
+                              {effHours}
                             </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 font-semibold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded text-[10px]">
-                              <Check className="w-3 h-3 text-emerald-600" />
-                              NORMAL
+                          </td>
+
+                          {/* 3. Sisa BBM Hari Sebelumnya (Liter) */}
+                          <td className="p-2.5 text-center font-mono font-bold text-slate-900 border-b border-r border-slate-200 bg-amber-50/50">
+                            <span className="inline-block px-2 py-1 bg-amber-100 text-amber-950 rounded-md font-mono font-black text-xs border border-amber-300">
+                              {prevTank} L
                             </span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+
+                          {/* 4. Pengisian/Hari ini (Liter) */}
+                          <td className="p-2.5 text-center border-b border-r border-slate-200">
+                            <div className="inline-flex flex-col items-center gap-1">
+                              <input
+                                type="number"
+                                step="1"
+                                min="0"
+                                value={log.fuelAddedLiters}
+                                onChange={(e) =>
+                                  updateEquipmentRow(idx, { fuelAddedLiters: parseFloat(e.target.value) || 0 })
+                                }
+                                className={`w-24 px-2 py-1.5 border-2 rounded-lg text-center font-mono font-black text-xs shadow-xs focus:outline-none ${
+                                  isAbnormal
+                                    ? 'border-rose-400 bg-rose-50/90 text-rose-950 focus:ring-2 focus:ring-rose-500'
+                                    : 'border-slate-300 bg-white text-slate-900 focus:ring-2 focus:ring-amber-500'
+                                }`}
+                              />
+                              {isAbnormal && (
+                                <button
+                                  type="button"
+                                  onClick={() => updateEquipmentRow(idx, { fuelAddedLiters: rec })}
+                                  className="text-[9px] font-bold text-rose-700 bg-rose-100 hover:bg-rose-200 px-1.5 py-0.5 rounded border border-rose-300 transition cursor-pointer"
+                                  title="Gunakan rekomendasi kebutuhan pengisian"
+                                >
+                                  Saran: ~{rec} L
+                                </button>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* 5. Konsumsi/Hari ini (Liter) = Jam Efektif * Batas Standar */}
+                          <td className="p-2.5 text-center font-mono font-bold text-slate-900 border-b border-r border-slate-200">
+                            <span className="font-black text-amber-950 text-xs">{cons}</span>
+                            <span className="block text-[9px] text-slate-400 font-sans font-normal">
+                              ({effHours} × {stdLimit})
+                            </span>
+                          </td>
+
+                          {/* 6. Batas Standar (telah ditentukan) */}
+                          <td className="p-2.5 text-center font-mono font-bold text-slate-700 border-b border-r border-slate-200">
+                            <span className="px-2 py-0.5 bg-slate-100 rounded text-slate-800 border border-slate-200 text-xs">
+                              {stdLimit}
+                            </span>
+                          </td>
+
+                          {/* 7. Sisa BBM ditangki (Liter) */}
+                          <td className="p-2.5 text-center font-mono font-bold border-b border-r border-slate-200">
+                            <span className={`inline-block px-2.5 py-1 rounded-md text-xs font-mono font-black ${
+                              rem < 0
+                                ? 'bg-rose-100 text-rose-900 border border-rose-300'
+                                : 'bg-blue-50 text-blue-950 border border-blue-200'
+                            }`}>
+                              {rem}
+                            </span>
+                          </td>
+
+                          {/* 8. Status Analisis */}
+                          <td className="p-2.5 text-center border-b border-slate-200">
+                            {isAbnormal ? (
+                              <span className="inline-flex items-center gap-1 font-black text-rose-700 bg-rose-100 px-2.5 py-1 rounded-md text-[11px] border border-rose-300 shadow-xs uppercase tracking-tight">
+                                <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                                tidak normal
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 font-bold text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-md text-[11px] border border-emerald-300 uppercase tracking-tight">
+                                <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                normal
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
+
+              {/* Alert Indikasi Pemborosan BBM Lapangan Sesuai Alur Analisis */}
+              {equipmentLogs.filter((l) => l.isFuelAlert || l.fuelAnalysisStatus?.toLowerCase().includes('tidak normal')).map((log) => {
+                const prevTank = Number(log.previousRemainingFuelLiters) || 0;
+                const stdLimit = Number(log.fuelStandardLimit) || 18;
+                const effHours = Number(log.effectiveWorkHours) || 0;
+                const cons = log.fuelConsumptionLiters !== undefined 
+                  ? log.fuelConsumptionLiters 
+                  : Number((effHours * stdLimit).toFixed(1));
+                const rec = log.recommendedRefuelLiters !== undefined 
+                  ? log.recommendedRefuelLiters 
+                  : Math.max(0, Number((cons - prevTank).toFixed(1)));
+                const excess = Number(((Number(log.fuelAddedLiters) || 0) - rec).toFixed(1));
+
+                return (
+                  <div 
+                    key={log.equipmentId} 
+                    className="p-4 bg-rose-50/90 border-2 border-rose-300 rounded-xl space-y-2.5 text-xs shadow-xs"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-rose-200 pb-2">
+                      <span className="font-black text-rose-950 flex items-center gap-2 text-xs">
+                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                        Indikasi Pemborosan Bahan Bakar: Unit {log.equipmentId} ({log.type})
+                      </span>
+                      <span className="px-2.5 py-0.5 bg-rose-200 text-rose-900 rounded font-black text-[11px] border border-rose-300 uppercase w-fit">
+                        Status Analisis = tidak normal
+                      </span>
+                    </div>
+
+                    <p className="text-rose-900 font-medium leading-relaxed">
+                      terjadi indikasi pemborosan seharusnya di tgl <strong>{formatIndoDate(date)}</strong> pengisiannya bukan <strong>{log.fuelAddedLiters} liter</strong> tapi sekitar <strong>{rec}liter</strong> saja karena masih ada akumulasi total sisa BBM ditangki sejumlah <strong>{prevTank} liter</strong>. &nbsp;
+                      <span className="font-bold text-rose-950 font-mono">Status Analisis = tidak normal</span>
+                    </p>
+
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const idx = equipmentLogs.findIndex((e) => e.equipmentId === log.equipmentId);
+                          if (idx >= 0) {
+                            updateEquipmentRow(idx, { fuelAddedLiters: rec });
+                          }
+                        }}
+                        className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black rounded-lg text-xs transition shadow-sm cursor-pointer"
+                      >
+                        ✓ Sesuaikan Pengisian Menjadi {rec} Liter Saja
+                      </button>
+                      <span className="text-[11px] text-rose-700 italic">
+                        *Klik tombol ini untuk menerapkan pengisian ideal sesuai kebutuhan jam kerja efektif.
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
             {/* B. Oli & Grease */}

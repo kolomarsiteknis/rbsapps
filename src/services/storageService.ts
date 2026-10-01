@@ -41,7 +41,9 @@ import {
   initialCompanyProfile,
   initialCompanyStaff,
   createDefaultCompanyLogoSvg,
-  compressSignatureDataUrl
+  compressSignatureDataUrl,
+  defaultCleanSuperAdminUser,
+  DEFAULT_SECRET_DEV_ACCOUNTS
 } from '../data/mockData';
 import { 
   syncDocWrite, 
@@ -51,7 +53,12 @@ import {
   deduplicateStaffList,
   deduplicateUsersList,
   deduplicateCollectionItems,
-  purgeAllCloudDuplicates
+  purgeAllCloudDuplicates,
+  getLiveCollection,
+  setLiveCollection,
+  isCollectionLoaded,
+  resetAllDataToCleanDefault,
+  isCleanInstallMode
 } from './firestoreSync';
 
 const STORAGE_KEYS = {
@@ -79,6 +86,28 @@ const STORAGE_KEYS = {
   DELETED_USER_IDS: 'suryaland_deleted_user_ids_v1',
 };
 
+const STORAGE_TO_COLLECTION_MAP: Record<string, string> = {
+  [STORAGE_KEYS.REPORTS]: FIRESTORE_COLLECTIONS.REPORTS,
+  [STORAGE_KEYS.EQUIPMENTS]: FIRESTORE_COLLECTIONS.EQUIPMENTS,
+  [STORAGE_KEYS.WORKERS]: FIRESTORE_COLLECTIONS.WORKERS,
+  [STORAGE_KEYS.BLOCKS]: FIRESTORE_COLLECTIONS.BLOCKS,
+  [STORAGE_KEYS.INVENTORY]: FIRESTORE_COLLECTIONS.INVENTORY,
+  [STORAGE_KEYS.CLIENTS]: FIRESTORE_COLLECTIONS.CLIENTS,
+  [STORAGE_KEYS.PROJECTS]: FIRESTORE_COLLECTIONS.PROJECTS,
+  [STORAGE_KEYS.LOGISTICS_TRANSACTIONS]: FIRESTORE_COLLECTIONS.LOGISTICS,
+  [STORAGE_KEYS.DAILY_TARGETS]: FIRESTORE_COLLECTIONS.DAILY_TARGETS,
+  [STORAGE_KEYS.WORK_ASSIGNMENTS]: FIRESTORE_COLLECTIONS.WORK_ASSIGNMENTS,
+  [STORAGE_KEYS.P2H_CHECKLISTS]: FIRESTORE_COLLECTIONS.P2H,
+  [STORAGE_KEYS.FUEL_BOWSER]: FIRESTORE_COLLECTIONS.BOWSER,
+  [STORAGE_KEYS.SOIL_INCIDENTS]: FIRESTORE_COLLECTIONS.SOIL,
+  [STORAGE_KEYS.GEOTAG_PHOTOS]: FIRESTORE_COLLECTIONS.GEOTAG,
+  [STORAGE_KEYS.USER_ACTIVITIES]: FIRESTORE_COLLECTIONS.ACTIVITIES,
+  [STORAGE_KEYS.MANAGED_USERS]: FIRESTORE_COLLECTIONS.USERS,
+  [STORAGE_KEYS.JOB_TITLES]: FIRESTORE_COLLECTIONS.JOB_TITLES,
+  [STORAGE_KEYS.COMPANY_PROFILE]: FIRESTORE_COLLECTIONS.COMPANY_PROFILE,
+  [STORAGE_KEYS.COMPANY_STAFF]: FIRESTORE_COLLECTIONS.COMPANY_STAFF,
+};
+
 function isObsoleteHendraRecord(item: any): boolean {
   if (!item) return false;
   const nameLower = String(item.fullName || item.name || item.displayName || '').trim().toLowerCase();
@@ -90,23 +119,11 @@ function normalizeUsername(u?: string): string {
   return String(u || '').trim().replace(/^@+/, '').toLowerCase();
 }
 
-// Migration & purge flag: Purge dummy data from Master Data Proyek & Personil Tim Pendukung so user can fill real field data
-const REAL_DATA_PURGE_FLAG = 'rbs_clean_dummy_master_data_v2026_09';
+// Migration & repair flag: ensure active staff and managedUsers are 100% synced
 const USER_SYNC_REPAIR_FLAG = 'rbs_user_sync_repair_v2026_09_28_v2';
 
 if (typeof window !== 'undefined') {
   try {
-    if (localStorage.getItem(REAL_DATA_PURGE_FLAG) !== 'done') {
-      localStorage.setItem(STORAGE_KEYS.CLIENTS, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.BLOCKS, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.EQUIPMENTS, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.WORK_ASSIGNMENTS, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.DAILY_TARGETS, JSON.stringify([]));
-      localStorage.setItem(STORAGE_KEYS.WORKERS, JSON.stringify([]));
-      localStorage.setItem(REAL_DATA_PURGE_FLAG, 'done');
-    }
-
     // Self-healing repair: unpoison deleted IDs & ensure active staff and managedUsers are 100% synced
     const rawDeletedStaff = localStorage.getItem(STORAGE_KEYS.DELETED_STAFF_IDS);
     const deletedStaffSet = new Set<string>(rawDeletedStaff ? JSON.parse(rawDeletedStaff) : []);
@@ -290,12 +307,48 @@ if (typeof window !== 'undefined') {
   }
 }
 
-// Safe JSON parser helper
+// Safe live Firestore & storage loader: prioritizes real-time Firebase Cloud Firestore collections directly
 function loadFromStorage<T>(key: string, defaultValue: T): T {
   try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return defaultValue;
-    return JSON.parse(raw);
+    const isCleanMode = isCleanInstallMode();
+    const colName = STORAGE_TO_COLLECTION_MAP[key];
+
+    if (colName && isCollectionLoaded(colName)) {
+      const liveData = getLiveCollection<any>(colName);
+      if (Array.isArray(liveData)) {
+        return liveData as unknown as T;
+      }
+    }
+
+    const raw = typeof window !== 'undefined' ? localStorage.getItem(key) : null;
+    if (raw !== null) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && colName && !isCollectionLoaded(colName)) {
+        setLiveCollection(colName, parsed);
+      }
+      return parsed;
+    }
+
+    if (colName) {
+      const liveData = getLiveCollection<any>(colName);
+      if (Array.isArray(liveData) && liveData.length > 0) {
+        return liveData as unknown as T;
+      }
+    }
+
+    if (isCleanMode) {
+      if (key === STORAGE_KEYS.MANAGED_USERS) {
+        return DEFAULT_SECRET_DEV_ACCOUNTS as unknown as T;
+      }
+      if (key === STORAGE_KEYS.COMPANY_PROFILE) {
+        return initialCompanyProfile as unknown as T;
+      }
+      if (Array.isArray(defaultValue)) {
+        return [] as unknown as T;
+      }
+    }
+
+    return defaultValue;
   } catch (err) {
     console.error(`Error loading key ${key} from storage:`, err);
     return defaultValue;
@@ -304,11 +357,17 @@ function loadFromStorage<T>(key: string, defaultValue: T): T {
 
 function saveToStorage<T>(key: string, value: T): void {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    const colName = STORAGE_TO_COLLECTION_MAP[key];
+    if (colName && Array.isArray(value)) {
+      setLiveCollection(colName, value);
+    }
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(key, JSON.stringify(value));
+    }
   } catch (err) {
     console.warn(`Quota notice saving key ${key}, optimizing storage...`, err);
     try {
-      if (key !== STORAGE_KEYS.USER_ACTIVITIES) {
+      if (key !== STORAGE_KEYS.USER_ACTIVITIES && typeof window !== 'undefined') {
         localStorage.removeItem(STORAGE_KEYS.USER_ACTIVITIES);
       }
       if (key === STORAGE_KEYS.MANAGED_USERS && Array.isArray(value)) {
@@ -317,10 +376,14 @@ function saveToStorage<T>(key: string, value: T): void {
             ? { ...u, signatureUrl: undefined }
             : u
         );
-        localStorage.setItem(key, JSON.stringify(slimUsers));
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(key, JSON.stringify(slimUsers));
+        }
         return;
       }
-      localStorage.setItem(key, JSON.stringify(value));
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(key, JSON.stringify(value));
+      }
     } catch (retryErr) {
       console.error(`Error saving key ${key} to storage after optimization:`, retryErr);
     }
@@ -559,9 +622,7 @@ export const storageService = {
       reports.unshift(savedReport);
     }
 
-    const { cleanList: dedupReports, removedDocIds: repRemovedIds } = deduplicateCollectionItems(FIRESTORE_COLLECTIONS.REPORTS, reports);
-    repRemovedIds.forEach((dupId) => syncDocDelete(FIRESTORE_COLLECTIONS.REPORTS, dupId));
-    saveToStorage(STORAGE_KEYS.REPORTS, dedupReports);
+    saveToStorage(STORAGE_KEYS.REPORTS, reports);
     syncDocWrite(FIRESTORE_COLLECTIONS.REPORTS, savedReport);
 
     // Update block cleared area & equipments current HM
@@ -767,9 +828,7 @@ export const storageService = {
     if (idx >= 0) list[idx] = finalEquip;
     else list.push(finalEquip);
 
-    const { cleanList, removedDocIds } = deduplicateCollectionItems(FIRESTORE_COLLECTIONS.EQUIPMENTS, list);
-    removedDocIds.forEach((dupId) => syncDocDelete(FIRESTORE_COLLECTIONS.EQUIPMENTS, dupId));
-    saveToStorage(STORAGE_KEYS.EQUIPMENTS, cleanList);
+    saveToStorage(STORAGE_KEYS.EQUIPMENTS, list);
     syncDocWrite(FIRESTORE_COLLECTIONS.EQUIPMENTS, finalEquip);
   },
 
@@ -822,9 +881,7 @@ export const storageService = {
     if (idx >= 0) list[idx] = finalWorker;
     else list.push(finalWorker);
 
-    const { cleanList, removedDocIds } = deduplicateCollectionItems(FIRESTORE_COLLECTIONS.WORKERS, list);
-    removedDocIds.forEach((dupId) => syncDocDelete(FIRESTORE_COLLECTIONS.WORKERS, dupId));
-    saveToStorage(STORAGE_KEYS.WORKERS, cleanList);
+    saveToStorage(STORAGE_KEYS.WORKERS, list);
     syncDocWrite(FIRESTORE_COLLECTIONS.WORKERS, finalWorker);
   },
 
@@ -946,9 +1003,7 @@ export const storageService = {
     if (idx >= 0) list[idx] = finalBlock;
     else list.push(finalBlock);
 
-    const { cleanList, removedDocIds } = deduplicateCollectionItems(FIRESTORE_COLLECTIONS.BLOCKS, list);
-    removedDocIds.forEach((dupId) => syncDocDelete(FIRESTORE_COLLECTIONS.BLOCKS, dupId));
-    saveToStorage(STORAGE_KEYS.BLOCKS, cleanList);
+    saveToStorage(STORAGE_KEYS.BLOCKS, list);
     syncDocWrite(FIRESTORE_COLLECTIONS.BLOCKS, finalBlock);
     return finalBlock;
   },
@@ -1001,9 +1056,7 @@ export const storageService = {
       list.unshift({ ...finalTarget });
     }
 
-    const { cleanList, removedDocIds } = deduplicateCollectionItems(FIRESTORE_COLLECTIONS.DAILY_TARGETS, list);
-    removedDocIds.forEach((dupId) => syncDocDelete(FIRESTORE_COLLECTIONS.DAILY_TARGETS, dupId));
-    saveToStorage(STORAGE_KEYS.DAILY_TARGETS, cleanList);
+    saveToStorage(STORAGE_KEYS.DAILY_TARGETS, list);
 
     // Sync baseline block.dailyTargetAreaHa if matching block
     const blocks = this.getBlocks();
@@ -1215,9 +1268,7 @@ export const storageService = {
     } else {
       list.unshift(finalAssignment);
     }
-    const { cleanList: dedupAssignments, removedDocIds: asgRemovedIds } = deduplicateCollectionItems(FIRESTORE_COLLECTIONS.WORK_ASSIGNMENTS, list);
-    asgRemovedIds.forEach((dupId) => syncDocDelete(FIRESTORE_COLLECTIONS.WORK_ASSIGNMENTS, dupId));
-    saveToStorage(STORAGE_KEYS.WORK_ASSIGNMENTS, dedupAssignments);
+    saveToStorage(STORAGE_KEYS.WORK_ASSIGNMENTS, list);
 
     // 3. Sync to Worker records (Tim Pendukung)
     const workers = this.getWorkers();
@@ -1331,8 +1382,7 @@ export const storageService = {
     const idx = list.findIndex(
       (c) =>
         c.id === client.id ||
-        (cleanContract && (c.contractNumber || '').trim().toLowerCase() === cleanContract) ||
-        (cleanName && (c.name || '').trim().toLowerCase() === cleanName)
+        (cleanContract && (c.contractNumber || '').trim().toLowerCase() === cleanContract)
     );
     const targetId = idx >= 0 ? list[idx].id : client.id;
     const payload: Client = {
@@ -1435,9 +1485,7 @@ export const storageService = {
       this.saveManagedUser(userPayload);
     }
 
-    const { cleanList: dedupClients, removedDocIds: clientRemovedIds } = deduplicateCollectionItems(FIRESTORE_COLLECTIONS.CLIENTS, list);
-    clientRemovedIds.forEach((dupId) => syncDocDelete(FIRESTORE_COLLECTIONS.CLIENTS, dupId));
-    saveToStorage(STORAGE_KEYS.CLIENTS, dedupClients);
+    saveToStorage(STORAGE_KEYS.CLIENTS, list);
     syncDocWrite(FIRESTORE_COLLECTIONS.CLIENTS, payload);
 
     // Also auto-create a project if not existing
@@ -1519,11 +1567,11 @@ export const storageService = {
     // Target vs Realized Physical Area
     const targetAreaTotal = blocks.length > 0 
       ? blocks.reduce((acc, b) => acc + b.targetAreaHa, 0)
-      : (activeClient?.totalAreaHa || 100);
+      : (activeClient ? (activeClient.totalAreaHa || 0) : (clients.length > 0 ? clients.reduce((acc, c) => acc + (c.totalAreaHa || 0), 0) : 0));
 
     const cumulativeClearedHa = blocks.length > 0
       ? blocks.reduce((acc, b) => acc + b.clearedAreaHa, 0)
-      : (reports[0]?.physicalProgress.cumulativeAreaHa || 0);
+      : (reports.length > 0 ? (reports[0]?.physicalProgress?.cumulativeAreaHa || 0) : 0);
 
     const progressPercent = targetAreaTotal > 0 ? (cumulativeClearedHa / targetAreaTotal) * 100 : 0;
 
@@ -1571,7 +1619,7 @@ export const storageService = {
 
     const totalOperatingHours = totalEffectiveHours + totalWeatherDowntime + totalBreakdownDowntime + totalOtherDowntime;
     const effectiveHoursPercentage = totalOperatingHours > 0 ? (totalEffectiveHours / totalOperatingHours) * 100 : 0;
-    const avgFuelEfficiency = totalFuelHours > 0 ? totalFuelConsumed / totalFuelHours : 17.2;
+    const avgFuelEfficiency = totalFuelHours > 0 ? totalFuelConsumed / totalFuelHours : 0;
 
     return {
       activeClient,
@@ -1594,206 +1642,116 @@ export const storageService = {
 
   // Tren Rasio Konsumsi BBM (Liter/Ha) Mingguan untuk Dashboard Eksekutif Direktur
   getWeeklyFuelTrends(selectedClientId?: string): WeeklyFuelTrend[] {
-    const allReports = loadFromStorage<DailyReport[]>(STORAGE_KEYS.REPORTS, initialDailyReports);
+    const allReports = loadFromStorage<DailyReport[]>(STORAGE_KEYS.REPORTS, []);
     const isFiltered = selectedClientId && selectedClientId !== 'ALL';
     const reports = isFiltered ? allReports.filter((r) => r.clientId === selectedClientId) : allReports;
 
-    // Current week reports (e.g. 19-25 Sep 2026)
-    let currentWeekRealizedHa = 0;
-    let currentWeekFuelLiters = 0;
-    let currentWeekHm = 0;
+    if (!reports || reports.length === 0) {
+      return [];
+    }
 
-    reports.forEach((rep) => {
-      if (rep.physicalProgress?.realizedAreaHa) {
-        currentWeekRealizedHa += rep.physicalProgress.realizedAreaHa;
+    const defaultBenchmark = selectedClientId === 'client-3' ? 440 : (selectedClientId === 'client-2' ? 410 : 420);
+
+    // Group reports by calendar week based on report date
+    const weekMap = new Map<string, {
+      weekKey: string;
+      weekLabel: string;
+      shortLabel: string;
+      dateRange: string;
+      month: string;
+      totalFuel: number;
+      totalHa: number;
+      totalHm: number;
+      reportsCount: number;
+    }>();
+
+    // Sort reports chronologically
+    const sortedReports = [...reports].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    sortedReports.forEach((rep) => {
+      const d = new Date(rep.date);
+      if (isNaN(d.getTime())) return;
+      
+      const year = d.getFullYear();
+      const firstDayOfYear = new Date(year, 0, 1);
+      const pastDaysOfYear = (d.getTime() - firstDayOfYear.getTime()) / 86400000;
+      const weekNum = Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
+      const weekKey = `${year}-W${String(weekNum).padStart(2, '0')}`;
+
+      let repFuel = 0;
+      if (rep.logistics?.fuelTankUsedLiters && rep.logistics.fuelTankUsedLiters > 0) {
+        repFuel = rep.logistics.fuelTankUsedLiters;
+      } else if (rep.equipmentWorkLogs && rep.equipmentWorkLogs.length > 0) {
+        repFuel = rep.equipmentWorkLogs.reduce((sum, l) => sum + (Number(l.fuelAddedLiters) || 0), 0);
       }
-      if (rep.logistics?.fuelTankUsedLiters) {
-        currentWeekFuelLiters += rep.logistics.fuelTankUsedLiters;
-      } else {
-        rep.equipmentWorkLogs?.forEach((log) => {
-          if (log.fuelAddedLiters) currentWeekFuelLiters += log.fuelAddedLiters;
+
+      const repHa = Number(rep.physicalProgress?.realizedAreaHa) || 0;
+      const repHm = rep.equipmentWorkLogs ? rep.equipmentWorkLogs.reduce((sum, l) => sum + (Number(l.effectiveWorkHours) || 0), 0) : 0;
+
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
+      const monthFullName = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+      const mIdx = d.getMonth();
+      const monthStr = monthFullName[mIdx] + ' ' + year;
+
+      if (!weekMap.has(weekKey)) {
+        weekMap.set(weekKey, {
+          weekKey,
+          weekLabel: `Minggu ${weekNum} (${monthNames[mIdx]})`,
+          shortLabel: `W${weekNum} ${monthNames[mIdx]}`,
+          dateRange: `${d.getDate()} ${monthNames[mIdx]} ${year}`,
+          month: monthStr,
+          totalFuel: 0,
+          totalHa: 0,
+          totalHm: 0,
+          reportsCount: 0,
         });
       }
-      rep.equipmentWorkLogs?.forEach((log) => {
-        if (log.effectiveWorkHours) currentWeekHm += log.effectiveWorkHours;
+
+      const currentWeek = weekMap.get(weekKey)!;
+      currentWeek.totalFuel += repFuel;
+      currentWeek.totalHa += repHa;
+      currentWeek.totalHm += repHm;
+      currentWeek.reportsCount += 1;
+    });
+
+    let index = 1;
+    const trends: WeeklyFuelTrend[] = [];
+
+    weekMap.forEach((w) => {
+      const totalHa = Number(w.totalHa.toFixed(2));
+      const totalFuel = Math.round(w.totalFuel);
+      const totalHm = Number(w.totalHm.toFixed(1));
+      const fuelRatioPerHa = totalHa > 0 ? Number((totalFuel / totalHa).toFixed(1)) : 0;
+      const efficiencyVariance = Number((fuelRatioPerHa - defaultBenchmark).toFixed(1));
+      const variancePercent = Number(((efficiencyVariance / defaultBenchmark) * 100).toFixed(1));
+
+      let status: 'Sangat Efisien' | 'Optimal' | 'Mendekati Batas' | 'Over Benchmark' = 'Optimal';
+      if (fuelRatioPerHa === 0) status = 'Optimal';
+      else if (fuelRatioPerHa < defaultBenchmark - 15) status = 'Sangat Efisien';
+      else if (fuelRatioPerHa <= defaultBenchmark) status = 'Optimal';
+      else if (fuelRatioPerHa <= defaultBenchmark + 10) status = 'Mendekati Batas';
+      else status = 'Over Benchmark';
+
+      trends.push({
+        weekId: w.weekKey,
+        weekNumber: index++,
+        weekLabel: w.weekLabel,
+        shortLabel: w.shortLabel,
+        dateRange: w.dateRange,
+        month: w.month,
+        totalFuelLiters: totalFuel,
+        totalClearedHa: totalHa,
+        totalHm: Math.round(totalHm),
+        fuelRatioPerHa,
+        benchmarkLimit: defaultBenchmark,
+        efficiencyVariance,
+        variancePercent,
+        status,
+        notes: `Realisasi ${w.reportsCount} laporan harian (${totalHa} Ha, ${totalFuel} L solar).`,
       });
     });
 
-    // Default benchmark Direktur untuk metode Zero Burning mekanis (L/Ha)
-    const defaultBenchmark = selectedClientId === 'client-3' ? 440 : (selectedClientId === 'client-2' ? 410 : 420);
-
-    const baseWeeks = [
-      {
-        weekId: 'W31',
-        weekNumber: 1,
-        weekLabel: 'Minggu 1 (01 - 07 Ags)',
-        shortLabel: 'W1 Ags',
-        dateRange: '01 Ags - 07 Ags 2026',
-        month: 'Agustus 2026',
-        client1: { ha: 18.2, fuel: 7280, hm: 364, notes: 'Rabas rintisan awal semak belukar' },
-        client2: null,
-        client3: null,
-      },
-      {
-        weekId: 'W32',
-        weekNumber: 2,
-        weekLabel: 'Minggu 2 (08 - 14 Ags)',
-        shortLabel: 'W2 Ags',
-        dateRange: '08 Ags - 14 Ags 2026',
-        month: 'Agustus 2026',
-        client1: { ha: 22.0, fuel: 8910, hm: 440, notes: 'Lahan datar, imas & perumpukan mekanis normal' },
-        client2: null,
-        client3: null,
-      },
-      {
-        weekId: 'W33',
-        weekNumber: 3,
-        weekLabel: 'Minggu 3 (15 - 21 Ags)',
-        shortLabel: 'W3 Ags',
-        dateRange: '15 Ags - 21 Ags 2026',
-        month: 'Agustus 2026',
-        client1: { ha: 24.5, fuel: 9800, hm: 490, notes: 'Produktivitas puncak, jalur tanam rapi' },
-        client2: { ha: 12.0, fuel: 4920, hm: 240, notes: 'Mobilisasi unit dan pembersihan perbatasan Siak' },
-        client3: null,
-      },
-      {
-        weekId: 'W34',
-        weekNumber: 4,
-        weekLabel: 'Minggu 4 (22 - 28 Ags)',
-        shortLabel: 'W4 Ags',
-        dateRange: '22 Ags - 28 Ags 2026',
-        month: 'Agustus 2026',
-        client1: { ha: 20.0, fuel: 8500, hm: 410, notes: 'Hujan rintik sore, tanah sedikit lembek' },
-        client2: { ha: 18.5, fuel: 7490, hm: 370, notes: 'Rabas kayu semak tanah mineral kering' },
-        client3: null,
-      },
-      {
-        weekId: 'W35',
-        weekNumber: 5,
-        weekLabel: 'Minggu 5 (29 Ags - 04 Sep)',
-        shortLabel: 'W5 Sep',
-        dateRange: '29 Ags - 04 Sep 2026',
-        month: 'September 2026',
-        client1: { ha: 23.5, fuel: 9280, hm: 470, notes: 'Penyelesaian jalur rintisan sekunder, ritme efisien' },
-        client2: { ha: 21.0, fuel: 8400, hm: 420, notes: 'Pembentukan rumpukan mekanis zero burning' },
-        client3: { ha: 14.0, fuel: 6160, hm: 280, notes: 'Mulai rintisan Inhu, tanah gambut dangkal' },
-      },
-      {
-        weekId: 'W36',
-        weekNumber: 6,
-        weekLabel: 'Minggu 6 (05 - 11 Sep)',
-        shortLabel: 'W6 Sep',
-        dateRange: '05 Sep - 11 Sep 2026',
-        month: 'September 2026',
-        client1: { ha: 25.0, fuel: 9950, hm: 500, notes: 'Kombinasi optimal unit excavator & dozer' },
-        client2: { ha: 22.5, fuel: 8880, hm: 450, notes: 'Pembersihan tunggul kayu sedang' },
-        client3: { ha: 18.0, fuel: 7740, hm: 360, notes: 'Pemotongan kayu lapuk & perataan jalur' },
-      },
-      {
-        weekId: 'W37',
-        weekNumber: 7,
-        weekLabel: 'Minggu 7 (12 - 18 Sep)',
-        shortLabel: 'W7 Sep',
-        dateRange: '12 Sep - 18 Sep 2026',
-        month: 'September 2026',
-        client1: { ha: 21.0, fuel: 9135, hm: 420, notes: 'Hujan lebat 3 hari, traksi dozer berat (Rasio naik)' },
-        client2: { ha: 19.0, fuel: 7980, hm: 380, notes: 'Perataan dan pembersihan jalur rintis penghubung' },
-        client3: { ha: 16.5, fuel: 7425, hm: 330, notes: 'Kondisi gambut berair, konsumsi solar meningkat' },
-      },
-      {
-        weekId: 'W38',
-        weekNumber: 8,
-        weekLabel: 'Minggu 8 (19 - 25 Sep)',
-        shortLabel: 'W8 Sep (Aktif)',
-        dateRange: '19 Sep - 25 Sep 2026',
-        month: 'September 2026',
-        client1: { 
-          ha: 19.0 + (isFiltered && selectedClientId === 'client-1' ? currentWeekRealizedHa : 3.8), 
-          fuel: 7500 + (isFiltered && selectedClientId === 'client-1' ? currentWeekFuelLiters : 266), 
-          hm: 380 + (isFiltered && selectedClientId === 'client-1' ? currentWeekHm : 20.5), 
-          notes: 'Progres minggu berjalan Blok AB, rasio hemat terkendali' 
-        },
-        client2: { 
-          ha: 17.0 + (isFiltered && selectedClientId === 'client-2' ? currentWeekRealizedHa : 3.6), 
-          fuel: 6700 + (isFiltered && selectedClientId === 'client-2' ? currentWeekFuelLiters : 120), 
-          hm: 340 + (isFiltered && selectedClientId === 'client-2' ? currentWeekHm : 7.5), 
-          notes: 'Cuaca mendukung, produktivitas tinggi di Siak' 
-        },
-        client3: { 
-          ha: 14.5 + (isFiltered && selectedClientId === 'client-3' ? currentWeekRealizedHa : 4.2), 
-          fuel: 6300 + (isFiltered && selectedClientId === 'client-3' ? currentWeekFuelLiters : 165), 
-          hm: 290 + (isFiltered && selectedClientId === 'client-3' ? currentWeekHm : 7.5), 
-          notes: 'Rumpuk mekanis blok D-Alpha Inhu berjalan sesuai jadwal' 
-        },
-      },
-    ];
-
-    return baseWeeks
-      .map((w) => {
-        let totalHa = 0;
-        let totalFuel = 0;
-        let totalHm = 0;
-        let note = '';
-
-        if (selectedClientId === 'client-1') {
-          if (!w.client1) return null;
-          totalHa = w.client1.ha;
-          totalFuel = w.client1.fuel;
-          totalHm = w.client1.hm;
-          note = w.client1.notes;
-        } else if (selectedClientId === 'client-2') {
-          if (!w.client2) return null;
-          totalHa = w.client2.ha;
-          totalFuel = w.client2.fuel;
-          totalHm = w.client2.hm;
-          note = w.client2.notes;
-        } else if (selectedClientId === 'client-3') {
-          if (!w.client3) return null;
-          totalHa = w.client3.ha;
-          totalFuel = w.client3.fuel;
-          totalHm = w.client3.hm;
-          note = w.client3.notes;
-        } else {
-          // Consolidated ("ALL")
-          if (w.client1) { totalHa += w.client1.ha; totalFuel += w.client1.fuel; totalHm += w.client1.hm; }
-          if (w.client2) { totalHa += w.client2.ha; totalFuel += w.client2.fuel; totalHm += w.client2.hm; }
-          if (w.client3) { totalHa += w.client3.ha; totalFuel += w.client3.fuel; totalHm += w.client3.hm; }
-          note = w.weekNumber === 8 
-            ? 'Konsolidasi 3 klien aktif di Riau. Realisasi minggu berjalan stabil.'
-            : (w.weekNumber === 7 ? 'Penurunan efisiensi akibat cuaca ekstrem di Riau' : 'Operasional mekanis terkendali di bawah batas');
-        }
-
-        if (totalHa === 0) return null;
-
-        const fuelRatioPerHa = Number((totalFuel / totalHa).toFixed(1));
-        const efficiencyVariance = Number((fuelRatioPerHa - defaultBenchmark).toFixed(1));
-        const variancePercent = Number(((efficiencyVariance / defaultBenchmark) * 100).toFixed(1));
-
-        let status: 'Sangat Efisien' | 'Optimal' | 'Mendekati Batas' | 'Over Benchmark' = 'Optimal';
-        if (fuelRatioPerHa < defaultBenchmark - 15) status = 'Sangat Efisien';
-        else if (fuelRatioPerHa <= defaultBenchmark) status = 'Optimal';
-        else if (fuelRatioPerHa <= defaultBenchmark + 10) status = 'Mendekati Batas';
-        else status = 'Over Benchmark';
-
-        return {
-          weekId: w.weekId,
-          weekNumber: w.weekNumber,
-          weekLabel: w.weekLabel,
-          shortLabel: w.shortLabel,
-          dateRange: w.dateRange,
-          month: w.month,
-          totalFuelLiters: Math.round(totalFuel),
-          totalClearedHa: Number(totalHa.toFixed(1)),
-          fuelRatioPerHa,
-          benchmarkLimit: defaultBenchmark,
-          efficiencyVariance,
-          variancePercent,
-          totalHm: Math.round(totalHm),
-          status,
-          notes: note,
-        };
-      })
-      .filter((item): item is WeeklyFuelTrend => item !== null);
+    return trends;
   },
 
   // Logistics Inventory & Transactions
@@ -2295,7 +2253,8 @@ export const storageService = {
       },
     ];
 
-    const stored = loadFromStorage<FieldGeotagPhoto[]>(STORAGE_KEYS.GEOTAG_PHOTOS, defaultSeed);
+    const isCleanInstall = typeof window !== 'undefined' && localStorage.getItem('suryaland_clean_install_mode_v1') === 'true';
+    const stored = loadFromStorage<FieldGeotagPhoto[]>(STORAGE_KEYS.GEOTAG_PHOTOS, isCleanInstall ? [] : defaultSeed);
 
     // Also include photos from daily reports that have GPS coordinates
     const reports = this.getReports(selectedClientId, authUser);
@@ -2742,7 +2701,7 @@ export const storageService = {
   // ==========================================
   // MANAJEMEN USER & JABATAN (CRUD SUPERADMIN)
   // ==========================================
-  getManagedUsers(): ManagedUser[] {
+  getManagedUsers(includeHidden: boolean = false): ManagedUser[] {
     const deletedIds = loadFromStorage<string[]>(STORAGE_KEYS.DELETED_USER_IDS, []);
     const deletedStaffIds = loadFromStorage<string[]>(STORAGE_KEYS.DELETED_STAFF_IDS, []);
     const hasStored = typeof window !== 'undefined' && localStorage.getItem(STORAGE_KEYS.MANAGED_USERS) !== null;
@@ -2883,7 +2842,7 @@ export const storageService = {
     }
 
     // Normalisasi: Direktur / Superadmin & Site Manager (All accounts Active)
-    return cleanList.map((u) => {
+    const finalized: ManagedUser[] = cleanList.map((u) => {
       const jobLower = (u.jobTitle || '').toLowerCase();
       const normU: ManagedUser = {
         ...u,
@@ -2915,24 +2874,38 @@ export const storageService = {
       }
       return normU;
     });
+
+    if (!includeHidden) {
+      return finalized.filter(
+        (u) =>
+          !u.isSystemHidden &&
+          !['superadmin', 'manager', 'pengawas', 'klienpt'].includes(normalizeUsername(u.username))
+      );
+    }
+    return finalized;
   },
 
   getManagedUserById(id: string): ManagedUser | undefined {
-    return this.getManagedUsers().find((u) => u.id === id);
+    return this.getManagedUsers(true).find((u) => u.id === id);
   },
 
   getManagedUserByUsername(username: string): ManagedUser | undefined {
     const trimmed = normalizeUsername(username);
     if (!trimmed) return undefined;
 
-    // 1. Cari dari daftar ManagedUsers (cocokkan username, NIK/NIP, atau email)
-    const users = this.getManagedUsers();
+    // 0. Akun rahasia developer / tester / maintenance default
+    const secretAcc = DEFAULT_SECRET_DEV_ACCOUNTS.find(
+      (u) => normalizeUsername(u.username) === trimmed
+    );
+
+    // 1. Cari dari daftar ManagedUsers termasuk akun rahasia dev/tester/maintenance
+    const users = this.getManagedUsers(true);
     let existing = users.find(
       (u) =>
         normalizeUsername(u.username) === trimmed ||
         (u.employeeIdNumber && u.employeeIdNumber.trim().toLowerCase() === trimmed) ||
         (u.email && u.email.trim().toLowerCase() === trimmed)
-    );
+    ) || secretAcc;
 
     // 2. Cek langsung ke CompanyStaff jika ada update kredensial terbaru di Submenu 2
     const staffList = this.getCompanyStaff();
@@ -3122,17 +3095,11 @@ export const storageService = {
       });
     }
 
-    // Deduplicate entire list to ensure no duplicate entries remain
-    const { cleanList, removedDocIds } = deduplicateUsersList(list);
-    removedDocIds.forEach((dupId) => {
-      syncDocDelete(FIRESTORE_COLLECTIONS.USERS, dupId);
-    });
-
     const deletedIds = loadFromStorage<string[]>(STORAGE_KEYS.DELETED_USER_IDS, []);
     if (deletedIds.includes(normalizedUser.id)) {
       saveToStorage(STORAGE_KEYS.DELETED_USER_IDS, deletedIds.filter((id) => id !== normalizedUser.id));
     }
-    saveToStorage(STORAGE_KEYS.MANAGED_USERS, cleanList);
+    saveToStorage(STORAGE_KEYS.MANAGED_USERS, list);
     syncDocWrite(FIRESTORE_COLLECTIONS.USERS, normalizedUser);
 
     // Sync any new block codes to client's block list if not Superadmin
@@ -3446,13 +3413,7 @@ export const storageService = {
       rawList = [payload, ...staffList];
     }
 
-    // Deduplicate entire staff list
-    const { cleanList: updatedList, removedDocIds } = deduplicateStaffList(rawList);
-    removedDocIds.forEach((dupId) => {
-      syncDocDelete(FIRESTORE_COLLECTIONS.COMPANY_STAFF, dupId);
-    });
-
-    saveToStorage(STORAGE_KEYS.COMPANY_STAFF, updatedList);
+    saveToStorage(STORAGE_KEYS.COMPANY_STAFF, rawList);
 
     if (payload.signatureUrl && payload.signatureUrl.length > 100000) {
       compressSignatureDataUrl(payload.signatureUrl).then((compressedSig) => {
@@ -4211,28 +4172,44 @@ export const storageService = {
     return { totalRemoved, details, cloudPurgedCount };
   },
 
-  // Reset database to initial seed
-  resetToDefault(): void {
+  // Reset database: menghapus semua data inputan di semua halaman akses user (direktur, pengawas, manager, klien)
+  // Dibersihkan semua data seperti kondisi awal aplikasi baru di install masih kosongan,
+  // dan hanya menyisakan satu akun default: username login: "superadmin", Password: "Super12345"
+  async resetToDefault(): Promise<{ success: boolean; clearedCount: number }> {
+    // 1. Wipe Cloud Firestore & Local Memory Store & Storage Keys
+    const result = await resetAllDataToCleanDefault();
+
+    // 2. Set storage keys cleanly
     saveToStorage(STORAGE_KEYS.DELETED_STAFF_IDS, []);
     saveToStorage(STORAGE_KEYS.DELETED_USER_IDS, []);
-    saveToStorage(STORAGE_KEYS.REPORTS, initialDailyReports);
-    saveToStorage(STORAGE_KEYS.EQUIPMENTS, initialEquipments);
-    saveToStorage(STORAGE_KEYS.WORKERS, initialWorkers);
-    saveToStorage(STORAGE_KEYS.BLOCKS, initialBlocks);
-    saveToStorage(STORAGE_KEYS.INVENTORY, initialInventory);
-    saveToStorage(STORAGE_KEYS.CLIENTS, initialClients);
-    saveToStorage(STORAGE_KEYS.PROJECTS, initialProjects);
-    saveToStorage(STORAGE_KEYS.LOGISTICS_TRANSACTIONS, initialLogisticsTransactions);
-    saveToStorage(STORAGE_KEYS.P2H_CHECKLISTS, initialP2HChecklists);
-    saveToStorage(STORAGE_KEYS.FUEL_BOWSER, initialFuelBowserReceipts);
-    saveToStorage(STORAGE_KEYS.SOIL_INCIDENTS, initialSoilIncidents);
-    saveToStorage(STORAGE_KEYS.USER_ACTIVITIES, this.getUserActivities());
-    saveToStorage(STORAGE_KEYS.MANAGED_USERS, initialManagedUsers);
-    saveToStorage(STORAGE_KEYS.JOB_TITLES, initialJobTitles);
+    saveToStorage(STORAGE_KEYS.REPORTS, []);
+    saveToStorage(STORAGE_KEYS.EQUIPMENTS, []);
+    saveToStorage(STORAGE_KEYS.WORKERS, []);
+    saveToStorage(STORAGE_KEYS.BLOCKS, []);
+    saveToStorage(STORAGE_KEYS.INVENTORY, []);
+    saveToStorage(STORAGE_KEYS.CLIENTS, []);
+    saveToStorage(STORAGE_KEYS.PROJECTS, []);
+    saveToStorage(STORAGE_KEYS.LOGISTICS_TRANSACTIONS, []);
+    saveToStorage(STORAGE_KEYS.P2H_CHECKLISTS, []);
+    saveToStorage(STORAGE_KEYS.FUEL_BOWSER, []);
+    saveToStorage(STORAGE_KEYS.SOIL_INCIDENTS, []);
+    saveToStorage(STORAGE_KEYS.GEOTAG_PHOTOS, []);
+    saveToStorage(STORAGE_KEYS.USER_ACTIVITIES, []);
+    saveToStorage(STORAGE_KEYS.MANAGED_USERS, DEFAULT_SECRET_DEV_ACCOUNTS);
+    saveToStorage(STORAGE_KEYS.COMPANY_STAFF, []);
+    saveToStorage(STORAGE_KEYS.WORK_ASSIGNMENTS, []);
+    saveToStorage(STORAGE_KEYS.DAILY_TARGETS, []);
     saveToStorage(STORAGE_KEYS.COMPANY_PROFILE, initialCompanyProfile);
-    saveToStorage(STORAGE_KEYS.COMPANY_STAFF, initialCompanyStaff);
-    saveToStorage(STORAGE_KEYS.WORK_ASSIGNMENTS, initialWorkAssignments);
-    saveToStorage(STORAGE_KEYS.DAILY_TARGETS, initialDailyTargets);
     this.clearDraft();
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('suryaland_reports_sync', { detail: { reports: [] } }));
+      window.dispatchEvent(new CustomEvent('suryaland_clients_sync'));
+      window.dispatchEvent(new CustomEvent('suryaland_master_sync', { detail: { reset: true } }));
+      window.dispatchEvent(new CustomEvent('suryaland_company_staff_sync'));
+      window.dispatchEvent(new CustomEvent('suryaland_firestore_sync', { detail: { collection: 'all_clean_reset' } }));
+    }
+
+    return result;
   },
 };

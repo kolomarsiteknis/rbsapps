@@ -28,7 +28,12 @@ import {
   initialSoilIncidents,
   initialJobTitles,
   initialManagedUsers,
-  initialCompanyStaff
+  initialCompanyStaff,
+  initialWorkAssignments,
+  initialDailyTargets,
+  initialCompanyProfile,
+  defaultCleanSuperAdminUser,
+  DEFAULT_SECRET_DEV_ACCOUNTS
 } from '../data/mockData';
 
 export const FIRESTORE_COLLECTIONS = {
@@ -75,7 +80,55 @@ export const LOCAL_STORAGE_KEYS = {
   DAILY_TARGETS: 'suryaland_daily_targets_v1',
 } as const;
 
+export const CLEAN_INSTALL_FLAG_KEY = 'suryaland_clean_install_mode_v1';
 export const LAST_SYNC_TIME_KEY = 'suryaland_last_firestore_sync_time_v1';
+
+const cleanInstallModeActive = typeof window !== 'undefined' && localStorage.getItem(CLEAN_INSTALL_FLAG_KEY) === 'true';
+
+// Live in-memory store representing real-time Firebase Cloud Firestore collections
+const firestoreMemoryStore: Record<string, any[]> = {
+  [FIRESTORE_COLLECTIONS.REPORTS]: cleanInstallModeActive ? [] : [...initialDailyReports],
+  [FIRESTORE_COLLECTIONS.EQUIPMENTS]: cleanInstallModeActive ? [] : [...initialEquipments],
+  [FIRESTORE_COLLECTIONS.WORKERS]: cleanInstallModeActive ? [] : [...initialWorkers],
+  [FIRESTORE_COLLECTIONS.BLOCKS]: cleanInstallModeActive ? [] : [...initialBlocks],
+  [FIRESTORE_COLLECTIONS.CLIENTS]: cleanInstallModeActive ? [] : [...initialClients],
+  [FIRESTORE_COLLECTIONS.PROJECTS]: cleanInstallModeActive ? [] : [...initialProjects],
+  [FIRESTORE_COLLECTIONS.INVENTORY]: cleanInstallModeActive ? [] : [...initialInventory],
+  [FIRESTORE_COLLECTIONS.LOGISTICS]: cleanInstallModeActive ? [] : [...initialLogisticsTransactions],
+  [FIRESTORE_COLLECTIONS.P2H]: cleanInstallModeActive ? [] : [...initialP2HChecklists],
+  [FIRESTORE_COLLECTIONS.BOWSER]: cleanInstallModeActive ? [] : [...initialFuelBowserReceipts],
+  [FIRESTORE_COLLECTIONS.SOIL]: cleanInstallModeActive ? [] : [...initialSoilIncidents],
+  [FIRESTORE_COLLECTIONS.GEOTAG]: [],
+  [FIRESTORE_COLLECTIONS.USERS]: cleanInstallModeActive ? [...DEFAULT_SECRET_DEV_ACCOUNTS] : [...initialManagedUsers],
+  [FIRESTORE_COLLECTIONS.JOB_TITLES]: initialJobTitles.map((t, idx) => ({ id: `job-${idx + 1}`, title: t })),
+  [FIRESTORE_COLLECTIONS.ACTIVITIES]: [],
+  [FIRESTORE_COLLECTIONS.COMPANY_STAFF]: cleanInstallModeActive ? [] : [...initialCompanyStaff],
+  [FIRESTORE_COLLECTIONS.WORK_ASSIGNMENTS]: [],
+  [FIRESTORE_COLLECTIONS.DAILY_TARGETS]: [],
+};
+let firestoreCompanyProfile: any = null;
+const loadedCollections = new Set<string>();
+
+export function getLiveCollection<T>(colName: string): T[] {
+  return (firestoreMemoryStore[colName] || []) as T[];
+}
+
+export function setLiveCollection<T>(colName: string, items: T[]): void {
+  firestoreMemoryStore[colName] = items;
+  loadedCollections.add(colName);
+}
+
+export function getLiveCompanyProfile(): any {
+  return firestoreCompanyProfile;
+}
+
+export function setLiveCompanyProfile(profile: any): void {
+  firestoreCompanyProfile = profile;
+}
+
+export function isCollectionLoaded(colName: string): boolean {
+  return loadedCollections.has(colName);
+}
 
 export function recordLastSuccessfulSync() {
   if (typeof window === 'undefined') return;
@@ -204,7 +257,7 @@ export async function ensureFirestoreConnected(): Promise<boolean> {
 // Track if initial sync setup has run
 let isInitialized = false;
 
-// Write or update a document in Firestore (with offline queuing)
+// Write or update a document directly in Firebase Firestore
 export async function syncDocWrite<T extends { id: string }>(
   collectionName: string, 
   item: T
@@ -214,16 +267,28 @@ export async function syncDocWrite<T extends { id: string }>(
     const cleaned = cleanForFirestore(item);
     const docRef = doc(db, collectionName, String(item.id));
     await setDoc(docRef, cleaned, { merge: true });
+
+    // Update live memory store immediately
+    const currentList = firestoreMemoryStore[collectionName] || [];
+    const idx = currentList.findIndex((i: any) => i && i.id === item.id);
+    if (idx >= 0) {
+      currentList[idx] = { ...currentList[idx], ...cleaned };
+    } else {
+      currentList.unshift(cleaned);
+    }
+    firestoreMemoryStore[collectionName] = currentList;
+    loadedCollections.add(collectionName);
+
     recordLastSuccessfulSync();
   } catch (err: any) {
     if (err?.code === 'permission-denied') {
       handleFirestoreError(err, OperationType.WRITE, `${collectionName}/${item.id}`);
     }
-    console.warn(`[Firestore Offline Queue] Warning writing to ${collectionName}/${item.id}:`, err);
+    console.warn(`[Firestore Database Write Warning] ${collectionName}/${item.id}:`, err);
   }
 }
 
-// Delete a document from Firestore
+// Delete a document directly from Firebase Firestore
 export async function syncDocDelete(
   collectionName: string, 
   id: string
@@ -232,12 +297,18 @@ export async function syncDocDelete(
   try {
     const docRef = doc(db, collectionName, String(id));
     await deleteDoc(docRef);
+
+    // Update live memory store immediately
+    const currentList = firestoreMemoryStore[collectionName] || [];
+    firestoreMemoryStore[collectionName] = currentList.filter((i: any) => i && i.id !== id);
+    loadedCollections.add(collectionName);
+
     recordLastSuccessfulSync();
   } catch (err: any) {
     if (err?.code === 'permission-denied') {
       handleFirestoreError(err, OperationType.DELETE, `${collectionName}/${id}`);
     }
-    console.warn(`[Firestore Offline Queue] Warning deleting from ${collectionName}/${id}:`, err);
+    console.warn(`[Firestore Database Delete Warning] ${collectionName}/${id}:`, err);
   }
 }
 
@@ -592,6 +663,102 @@ export async function purgeAllCloudDuplicates(): Promise<{ purgedCount: number; 
   return { purgedCount: totalPurged, details };
 }
 
+export function isCleanInstallMode(): boolean {
+  if (typeof window === 'undefined') return false;
+  return localStorage.getItem(CLEAN_INSTALL_FLAG_KEY) === 'true';
+}
+
+// Reset all data across all user access pages to fresh clean install state
+export async function resetAllDataToCleanDefault(): Promise<{ success: boolean; clearedCount: number }> {
+  let clearedCount = 0;
+
+  // 1. Mark clean install mode flag in local storage
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(CLEAN_INSTALL_FLAG_KEY, 'true');
+  }
+
+  // 2. Wipe all collections in Firestore
+  if (isFirebaseReady && db) {
+    const collectionsToClear = [
+      FIRESTORE_COLLECTIONS.REPORTS,
+      FIRESTORE_COLLECTIONS.EQUIPMENTS,
+      FIRESTORE_COLLECTIONS.WORKERS,
+      FIRESTORE_COLLECTIONS.BLOCKS,
+      FIRESTORE_COLLECTIONS.CLIENTS,
+      FIRESTORE_COLLECTIONS.PROJECTS,
+      FIRESTORE_COLLECTIONS.INVENTORY,
+      FIRESTORE_COLLECTIONS.LOGISTICS,
+      FIRESTORE_COLLECTIONS.P2H,
+      FIRESTORE_COLLECTIONS.BOWSER,
+      FIRESTORE_COLLECTIONS.SOIL,
+      FIRESTORE_COLLECTIONS.GEOTAG,
+      FIRESTORE_COLLECTIONS.COMPANY_STAFF,
+      FIRESTORE_COLLECTIONS.WORK_ASSIGNMENTS,
+      FIRESTORE_COLLECTIONS.DAILY_TARGETS,
+      FIRESTORE_COLLECTIONS.ACTIVITIES,
+    ];
+
+    for (const colName of collectionsToClear) {
+      try {
+        const colRef = collection(db, colName);
+        const snap = await getDocs(colRef);
+        if (!snap.empty) {
+          const batch = writeBatch(db);
+          snap.docs.forEach((d) => {
+            batch.delete(d.ref);
+            clearedCount++;
+          });
+          await batch.commit();
+        }
+      } catch (err) {
+        console.warn(`[Reset Clean Install] Notice clearing Firestore ${colName}:`, err);
+      }
+    }
+
+    // Set default secret developer accounts (superadmin, manager, pengawas, klienpt) in USERS collection
+    try {
+      const usersColRef = collection(db, FIRESTORE_COLLECTIONS.USERS);
+      const userSnap = await getDocs(usersColRef);
+      if (!userSnap.empty) {
+        const batch = writeBatch(db);
+        userSnap.docs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+      }
+      for (const acc of DEFAULT_SECRET_DEV_ACCOUNTS) {
+        await setDoc(doc(db, FIRESTORE_COLLECTIONS.USERS, acc.id), cleanForFirestore(acc));
+      }
+    } catch (err) {
+      console.warn('[Reset Clean Install] Notice saving default secret dev accounts to Firestore:', err);
+    }
+  }
+
+  // 3. Clear in-memory live store
+  Object.keys(firestoreMemoryStore).forEach((key) => {
+    firestoreMemoryStore[key] = [];
+  });
+  firestoreMemoryStore[FIRESTORE_COLLECTIONS.USERS] = [...DEFAULT_SECRET_DEV_ACCOUNTS];
+
+  // 4. Clear all local storage keys
+  if (typeof window !== 'undefined') {
+    Object.values(LOCAL_STORAGE_KEYS).forEach((k) => {
+      localStorage.removeItem(k);
+    });
+    localStorage.setItem(LOCAL_STORAGE_KEYS.USERS, JSON.stringify(DEFAULT_SECRET_DEV_ACCOUNTS));
+    localStorage.setItem('suryaland_deleted_staff_ids_v1', JSON.stringify([]));
+    localStorage.setItem('suryaland_deleted_user_ids_v1', JSON.stringify([]));
+    localStorage.removeItem('suryaland_active_report_draft');
+
+    // Dispatch global refresh events
+    window.dispatchEvent(new CustomEvent('suryaland_reports_sync', { detail: { reports: [] } }));
+    window.dispatchEvent(new CustomEvent('suryaland_clients_sync'));
+    window.dispatchEvent(new CustomEvent('suryaland_master_sync', { detail: { reset: true } }));
+    window.dispatchEvent(new CustomEvent('suryaland_company_staff_sync'));
+    window.dispatchEvent(new CustomEvent('suryaland_firestore_sync', { detail: { collection: 'all_clean_reset' } }));
+  }
+
+  return { success: true, clearedCount };
+}
+
 // Initialize Firestore listeners & initial seeding
 export function initFirestoreSync() {
   if (isInitialized || !isFirebaseReady || !db) return;
@@ -613,37 +780,13 @@ export function initFirestoreSync() {
     });
   }
 
-  // Setup initial seeding & one-time cleanup of dummy data in the background
+  // Setup initial seeding & one-time cleanup in the background
   const runInitialSeed = async () => {
     try {
-      // Purge dummy collections in Firestore so user can enter real field data
-      const FIRESTORE_PURGE_FLAG = 'rbs_firestore_master_purged_v2026_09';
-      if (typeof window !== 'undefined' && localStorage.getItem(FIRESTORE_PURGE_FLAG) !== 'done') {
-        const collectionsToWipe = [
-          FIRESTORE_COLLECTIONS.CLIENTS,
-          FIRESTORE_COLLECTIONS.BLOCKS,
-          FIRESTORE_COLLECTIONS.EQUIPMENTS,
-          FIRESTORE_COLLECTIONS.WORKERS,
-          FIRESTORE_COLLECTIONS.PROJECTS,
-          FIRESTORE_COLLECTIONS.WORK_ASSIGNMENTS,
-          FIRESTORE_COLLECTIONS.DAILY_TARGETS,
-        ];
-        for (const colName of collectionsToWipe) {
-          try {
-            const colRef = collection(db, colName);
-            const snap = await getDocs(colRef);
-            if (!snap.empty) {
-              const batch = writeBatch(db);
-              snap.forEach((d) => batch.delete(d.ref));
-              await batch.commit();
-            }
-          } catch (err) {
-            console.warn(`[Firestore Purge] Notice on ${colName}:`, err);
-          }
-        }
-        localStorage.setItem(FIRESTORE_PURGE_FLAG, 'done');
+      if (isCleanInstallMode()) {
+        // Clean install mode is active: do not auto-seed demo mock data
+        return;
       }
-
       // Actively purge obsolete "Ir. Hendra Wijaya, M.Si" records from Firestore companyStaff & managedUsers
       for (const colName of [FIRESTORE_COLLECTIONS.COMPANY_STAFF, FIRESTORE_COLLECTIONS.USERS]) {
         try {
@@ -662,12 +805,18 @@ export function initFirestoreSync() {
         }
       }
 
-      // Run automatic background cloud deduplication pass to ensure 0 duplicate documents exist in Firestore
-      await purgeAllCloudDuplicates();
-
       const deletedUserIds = getDeletedIdsFromStorage('suryaland_deleted_user_ids_v1');
       const deletedStaffIds = getDeletedIdsFromStorage('suryaland_deleted_staff_ids_v1');
 
+      // Seed all primary master collections if Firestore is empty
+      await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.CLIENTS, initialClients);
+      await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.BLOCKS, initialBlocks);
+      await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.EQUIPMENTS, initialEquipments);
+      await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.WORKERS, initialWorkers);
+      await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.PROJECTS, initialProjects);
+      await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.WORK_ASSIGNMENTS, initialWorkAssignments);
+      await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.DAILY_TARGETS, initialDailyTargets);
+      await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.REPORTS, initialDailyReports);
       await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.INVENTORY, initialInventory);
       await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.P2H, initialP2HChecklists);
       await seedCollectionIfEmpty(FIRESTORE_COLLECTIONS.BOWSER, initialFuelBowserReceipts);
@@ -680,6 +829,15 @@ export function initFirestoreSync() {
         FIRESTORE_COLLECTIONS.COMPANY_STAFF,
         initialCompanyStaff.filter((s) => !deletedStaffIds.includes(s.id) && !isObsoleteHendraRecord(s))
       );
+
+      // Seed company profile single document if missing
+      try {
+        const profileDocRef = doc(db, FIRESTORE_COLLECTIONS.COMPANY_PROFILE, 'main_profile');
+        const profileSnap = await getDocFromServer(profileDocRef);
+        if (!profileSnap.exists()) {
+          await setDoc(profileDocRef, cleanForFirestore({ ...initialCompanyProfile, id: 'main_profile' }));
+        }
+      } catch {}
 
       // Push any locally saved active staff & users to Firestore so cloud is always up to date
       if (typeof window !== 'undefined') {
@@ -737,8 +895,30 @@ export function initFirestoreSync() {
     try {
       const colRef = collection(db, colName);
       onSnapshot(colRef, (snapshot) => {
-        // Do not overwrite localStorage with an empty array when Firestore collection is empty/unseeded
         if (snapshot.empty) {
+          firestoreMemoryStore[colName] = [];
+          loadedCollections.add(colName);
+          try {
+            localStorage.setItem(storageKey, JSON.stringify([]));
+          } catch {}
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(
+              new CustomEvent('suryaland_firestore_sync', { 
+                detail: { collection: colName, count: 0 } 
+              })
+            );
+            if (colName === FIRESTORE_COLLECTIONS.REPORTS) {
+              window.dispatchEvent(new CustomEvent('suryaland_reports_sync', { detail: { reports: [] } }));
+            } else if (
+              colName === FIRESTORE_COLLECTIONS.EQUIPMENTS ||
+              colName === FIRESTORE_COLLECTIONS.CLIENTS ||
+              colName === FIRESTORE_COLLECTIONS.BLOCKS ||
+              colName === FIRESTORE_COLLECTIONS.DAILY_TARGETS ||
+              colName === FIRESTORE_COLLECTIONS.WORK_ASSIGNMENTS
+            ) {
+              window.dispatchEvent(new CustomEvent('suryaland_master_sync', { detail: { collection: colName } }));
+            }
+          }
           return;
         }
         const items: T[] = [];
@@ -746,17 +926,17 @@ export function initFirestoreSync() {
           items.push({ ...(d.data() as T), id: (d.data() as any)?.id || d.id });
         });
 
-        // Run universal collection deduplication
-        const { cleanList, removedDocIds } = deduplicateCollectionItems(colName, items);
-
-        // Delete any duplicate documents found in the Firestore cloud snapshot
-        if (removedDocIds.length > 0) {
-          removedDocIds.forEach((dupId) => {
-            syncDocDelete(colName, dupId);
-          });
-        }
+        // Deduplicate in memory by ID only (never delete cloud docs in snapshot)
+        const cleanList = items.filter(
+          (item, idx, self) => item && item.id && idx === self.findIndex((t) => t.id === item.id)
+        );
 
         const finalList = transformList ? transformList(cleanList as T[]) : (cleanList as T[]);
+        
+        // Save directly into the live in-memory store mirroring Firebase Firestore
+        firestoreMemoryStore[colName] = finalList;
+        loadedCollections.add(colName);
+
         try {
           localStorage.setItem(storageKey, JSON.stringify(finalList));
         } catch {
@@ -867,8 +1047,10 @@ export function initFirestoreSync() {
     const profileDocRef = doc(db, FIRESTORE_COLLECTIONS.COMPANY_PROFILE, 'main_profile');
     onSnapshot(profileDocRef, (snap) => {
       if (snap.exists()) {
+        const profileData = snap.data();
+        firestoreCompanyProfile = profileData;
         try {
-          localStorage.setItem(LOCAL_STORAGE_KEYS.COMPANY_PROFILE, JSON.stringify(snap.data()));
+          localStorage.setItem(LOCAL_STORAGE_KEYS.COMPANY_PROFILE, JSON.stringify(profileData));
           if (typeof window !== 'undefined') {
             window.dispatchEvent(
               new CustomEvent('suryaland_firestore_sync', { detail: { collection: FIRESTORE_COLLECTIONS.COMPANY_PROFILE } })

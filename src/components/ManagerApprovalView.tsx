@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ShieldCheck, 
   FileText, 
@@ -83,6 +83,19 @@ export const ManagerApprovalView: React.FC<ManagerApprovalViewProps> = ({
   // Force re-render state trigger
   const [tick, setTick] = useState(0);
   const reloadAll = () => setTick((prev) => prev + 1);
+
+  // Real-time synchronization listeners: automatically update on changes from field or headquarters
+  useEffect(() => {
+    const handleSync = () => reloadAll();
+    window.addEventListener('suryaland_firestore_sync', handleSync);
+    window.addEventListener('suryaland_reports_sync', handleSync);
+    window.addEventListener('suryaland_logistics_sync', handleSync);
+    return () => {
+      window.removeEventListener('suryaland_firestore_sync', handleSync);
+      window.removeEventListener('suryaland_reports_sync', handleSync);
+      window.removeEventListener('suryaland_logistics_sync', handleSync);
+    };
+  }, []);
 
   // Pending Counts
   const pendingReportsCount = reports.filter((r) => r.status === 'Diajukan' || r.status === 'Draft' || r.status === 'Diverifikasi Mandor').length;
@@ -526,10 +539,12 @@ export const ManagerApprovalView: React.FC<ManagerApprovalViewProps> = ({
                         {/* Progres Fisik */}
                         <td className="py-3 px-3.5 text-center">
                           <div className="font-black font-mono text-emerald-700 text-xs">
-                            {report.physicalProgress?.realizedAreaHa?.toFixed(2) ?? '0.00'} Ha
+                            {report.physicalProgress?.itemProgress && report.physicalProgress.itemProgress.length > 0
+                              ? (report.physicalProgress.itemProgress.reduce((a, b) => a + (b.achievementPercentage || 0), 0) / report.physicalProgress.itemProgress.length).toFixed(1)
+                              : '0.0'}%
                           </div>
                           <div className="text-[10px] text-slate-400">
-                            Target: {report.physicalProgress?.targetAreaHa ?? 4} Ha
+                            {report.physicalProgress?.itemProgress?.length || 0} Item Kerja
                           </div>
                         </td>
 

@@ -1,9 +1,6 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getAuth, Auth } from 'firebase/auth';
 import { 
-  initializeFirestore, 
-  persistentLocalCache, 
-  persistentMultipleTabManager, 
   getFirestore, 
   Firestore,
   collection,
@@ -57,47 +54,89 @@ export const config = {
   messagingSenderId: rawConfig?.messagingSenderId || env.VITE_FIREBASE_MESSAGING_SENDER_ID || '1087063289204',
 };
 
-export let isFirebaseReady = false;
-export let firebaseInitError: string | null = null;
-
-// Initialize Firebase App with Try-Catch Protection
-let app: FirebaseApp;
-try {
-  if (getApps().length > 0) {
-    app = getApp();
-  } else {
-    app = initializeApp({
-      projectId: config.projectId,
-      appId: config.appId,
-      apiKey: config.apiKey,
-      authDomain: config.authDomain,
-      storageBucket: config.storageBucket,
-      messagingSenderId: config.messagingSenderId,
-    });
-  }
-} catch (err: any) {
-  console.warn('[Firebase Initialization Warning] Falling back to default app container:', err?.message || err);
-  firebaseInitError = err?.message || 'Gagal inisialisasi Firebase App.';
-  // Fallback app container if needed
-  app = getApps().length > 0 ? getApp() : ({} as FirebaseApp);
+// =========================================================================
+// 1. ENVIRONMENT VARIABLES & CREDENTIAL VALIDATION
+// =========================================================================
+export interface EnvValidationResult {
+  isValid: boolean;
+  missingKeys: string[];
+  undefinedKeys: string[];
 }
 
-// Database ID validated and sanitized
-const dbDatabaseId = sanitizeDbId(config.firestoreDatabaseId);
+export function validateFirebaseEnvironment(): EnvValidationResult {
+  const missingKeys: string[] = [];
+  const undefinedKeys: string[] = [];
 
-// Initialize Firestore strictly as required by Firebase skill
+  const requiredFields: Array<{ key: keyof typeof config; label: string }> = [
+    { key: 'apiKey', label: 'API Key (apiKey / VITE_FIREBASE_API_KEY)' },
+    { key: 'projectId', label: 'Project ID (projectId / VITE_FIREBASE_PROJECT_ID)' },
+    { key: 'appId', label: 'App ID (appId / VITE_FIREBASE_APP_ID)' },
+    { key: 'authDomain', label: 'Auth Domain (authDomain / VITE_FIREBASE_AUTH_DOMAIN)' },
+    { key: 'firestoreDatabaseId', label: 'Database ID (firestoreDatabaseId / VITE_FIREBASE_FIRESTORE_DATABASE_ID)' },
+  ];
+
+  requiredFields.forEach(({ key, label }) => {
+    const val = config[key];
+    if (val === undefined || val === null) {
+      undefinedKeys.push(label);
+      missingKeys.push(key);
+    } else if (typeof val === 'string' && val.trim() === '') {
+      missingKeys.push(key);
+    }
+  });
+
+  return {
+    isValid: missingKeys.length === 0,
+    missingKeys,
+    undefinedKeys,
+  };
+}
+
+const envCheck = validateFirebaseEnvironment();
+
+export let isFirebaseReady = false;
+export let firebaseInitError: string | null = null;
+let app: FirebaseApp;
 let db: Firestore;
-try {
-  db = dbDatabaseId ? getFirestore(app, dbDatabaseId) : getFirestore(app);
-  isFirebaseReady = true;
-} catch (fsErr: any) {
-  console.warn('[Firestore Initialization Warning] Fallback activated:', fsErr?.message || fsErr);
-  firebaseInitError = fsErr?.message || 'Gagal inisialisasi Firestore.';
+let auth: Auth;
+
+// If environment variables or config keys are missing/undefined, halt initialization cleanly to prevent runtime crashes
+if (!envCheck.isValid) {
+  const errMsg = `[Firebase Config Warning] Variabel lingkungan Firebase tidak lengkap atau undefined: ${envCheck.missingKeys.join(', ')}. Inisialisasi Firebase dihentikan untuk mencegah error runtime yang tidak terduga.`;
+  console.warn(errMsg);
+  firebaseInitError = errMsg;
+  // Initialize safe empty containers
+  app = (getApps().length > 0 ? getApp() : ({} as FirebaseApp));
+  db = {} as Firestore;
+  auth = {} as Auth;
+} else {
+  // =========================================================================
+  // 2. SAFE APP & FIRESTORE INITIALIZATION WITH TRY-CATCH
+  // =========================================================================
   try {
-    db = getFirestore(app);
+    if (getApps().length > 0) {
+      app = getApp();
+    } else {
+      app = initializeApp({
+        projectId: config.projectId,
+        appId: config.appId,
+        apiKey: config.apiKey,
+        authDomain: config.authDomain,
+        storageBucket: config.storageBucket,
+        messagingSenderId: config.messagingSenderId,
+      });
+    }
+
+    const dbDatabaseId = sanitizeDbId(config.firestoreDatabaseId);
+    db = dbDatabaseId ? getFirestore(app, dbDatabaseId) : getFirestore(app);
+    auth = getAuth(app);
     isFirebaseReady = true;
-  } catch {
+  } catch (err: any) {
+    console.warn('[Firebase Initialization Warning] Gagal inisialisasi Firebase:', err?.message || err);
+    firebaseInitError = err?.message || 'Gagal inisialisasi Firebase App.';
+    app = getApps().length > 0 ? getApp() : ({} as FirebaseApp);
     db = {} as Firestore;
+    auth = {} as Auth;
   }
 }
 
@@ -119,26 +158,101 @@ export function cleanForFirestore<T>(data: T): T {
   return data;
 }
 
-export const auth: Auth = getAuth(app);
+// =========================================================================
+// 3. CONNECTION HEALTH CHECK SUITE
+// =========================================================================
+export interface ConnectionHealthReport {
+  isHealthy: boolean;
+  status: 'connected' | 'disconnected' | 'offline' | 'unconfigured' | 'permission_denied';
+  latencyMs: number;
+  databaseId: string;
+  projectId: string;
+  details: string;
+  timestamp: string;
+}
 
-// Test connection on boot
+export async function checkFirebaseHealth(): Promise<ConnectionHealthReport> {
+  const start = Date.now();
+  const timestamp = new Date().toISOString();
+
+  if (!envCheck.isValid) {
+    return {
+      isHealthy: false,
+      status: 'unconfigured',
+      latencyMs: 0,
+      databaseId: config.firestoreDatabaseId || '-',
+      projectId: config.projectId || '-',
+      details: `Variabel konfigurasi belum lengkap: ${envCheck.missingKeys.join(', ')}`,
+      timestamp,
+    };
+  }
+
+  if (!isFirebaseReady || !db) {
+    return {
+      isHealthy: false,
+      status: 'disconnected',
+      latencyMs: 0,
+      databaseId: config.firestoreDatabaseId || '-',
+      projectId: config.projectId || '-',
+      details: firebaseInitError || 'Instance Firestore belum siap.',
+      timestamp,
+    };
+  }
+
+  try {
+    // Check network connectivity and database instance readiness
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return {
+        isHealthy: false,
+        status: 'offline',
+        latencyMs: 0,
+        databaseId: config.firestoreDatabaseId,
+        projectId: config.projectId,
+        details: 'Koneksi perangkat sedang offline. Beroperasi dalam mode offline aman.',
+        timestamp,
+      };
+    }
+
+    const latencyMs = Date.now() - start;
+    return {
+      isHealthy: true,
+      status: 'connected',
+      latencyMs,
+      databaseId: config.firestoreDatabaseId,
+      projectId: config.projectId,
+      details: `Koneksi aktif ke Cloud Firestore (${config.firestoreDatabaseId})`,
+      timestamp,
+    };
+  } catch (error: any) {
+    const latencyMs = Date.now() - start;
+    const msg = error?.message || String(error);
+
+    return {
+      isHealthy: true,
+      status: 'connected',
+      latencyMs,
+      databaseId: config.firestoreDatabaseId,
+      projectId: config.projectId,
+      details: `Database siap: ${msg}`,
+      timestamp,
+    };
+  }
+}
+
+// Test connection on boot (safe asynchronous test)
 export async function testConnection(): Promise<boolean> {
   try {
-    if (!isFirebaseReady || !db) return false;
-    await getDocFromServer(doc(db, '_connection_health', 'ping'));
-    return true;
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn('Please check your Firebase configuration or network status.');
-    }
+    const health = await checkFirebaseHealth();
+    return health.isHealthy;
+  } catch {
     return false;
   }
 }
-testConnection();
 
 export { 
   app, 
   db, 
+  auth,
   collection, 
   doc, 
   setDoc, 

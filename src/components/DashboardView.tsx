@@ -108,10 +108,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   // 1. BBM (Solar B50)
   const fuelItem = inventory.find((i) => i.category === 'BBM') || { 
-    id: 'inv-1', code: 'BBM-SOL', name: 'Solar Industri B50', category: 'BBM' as const, stockQuantity: 4734, unit: 'Liter', minThreshold: 1000 
+    id: 'inv-1', code: 'BBM-SOL', name: 'Solar Industri B50', category: 'BBM' as const, stockQuantity: 0, unit: 'Liter', minThreshold: 1000 
   };
   const tankCapacityLiters = 10000;
-  const fuelTankPercent = Math.min(100, Number(((fuelItem.stockQuantity / tankCapacityLiters) * 100).toFixed(1)));
+  const fuelTankPercent = fuelItem.stockQuantity > 0 ? Math.min(100, Number(((fuelItem.stockQuantity / tankCapacityLiters) * 100).toFixed(1))) : 0;
   const pendingFuelInflow = logisticsTx
     .filter((t) => t.category === 'BBM' && t.type === 'in' && t.approvalStatus === 'pending')
     .reduce((acc, t) => acc + t.quantity, 0);
@@ -119,11 +119,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   // 2. Pelumas & Oli (Mesin, Hidrolik, Transmisi, Grease)
   const oliItems = inventory.filter((i) => i.category === 'Oli');
   const totalOliLiters = oliItems.reduce((acc, i) => acc + i.stockQuantity, 0);
-  const oliEng = inventory.find((i) => i.code === 'OLI-ENG')?.stockQuantity || 180;
-  const oliHyd = inventory.find((i) => i.code === 'OLI-HYD')?.stockQuantity || 140;
-  const oliTrm = inventory.find((i) => i.code === 'OLI-TRM')?.stockQuantity || 90;
+  const oliEng = inventory.find((i) => i.code === 'OLI-ENG')?.stockQuantity || 0;
+  const oliHyd = inventory.find((i) => i.code === 'OLI-HYD')?.stockQuantity || 0;
+  const oliTrm = inventory.find((i) => i.code === 'OLI-TRM')?.stockQuantity || 0;
   const greaseItem = inventory.find((i) => i.category === 'Grease') || { 
-    id: 'inv-5', code: 'GRS-CH', name: 'Grease Chassis EP-2', category: 'Grease' as const, stockQuantity: 42, unit: 'Kg', minThreshold: 15 
+    id: 'inv-5', code: 'GRS-CH', name: 'Grease Chassis EP-2', category: 'Grease' as const, stockQuantity: 0, unit: 'Kg', minThreshold: 15 
   };
   const pendingLubricantInflow = logisticsTx
     .filter((t) => (t.category === 'Oli' || t.category === 'Grease') && t.type === 'in' && t.approvalStatus === 'pending')
@@ -141,6 +141,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const displayedReports = isFiltered 
     ? reports.filter((r) => r.clientId === selectedClientId)
     : reports;
+
+  // Real-time Manager Verification list for notifications
+  const managerVerifiedReports = displayedReports
+    .filter((r) => r.status === 'Disetujui Manager' || r.status === 'Ditolak Manager' || r.status === 'Disetujui Direktur' || r.status === 'Ditolak Direktur')
+    .sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
+  
+  const latestManagerVerifications = managerVerifiedReports.slice(0, 5);
 
   const latestReport = displayedReports[0];
   const [selectedPhotoModal, setSelectedPhotoModal] = useState<any>(null);
@@ -196,30 +203,33 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   // Targets from storage for active client selection
   const configuredDailyTargets = storageService.getDailyTargets(selectedClientId);
-  const evalDate = latestReport?.date || '2026-09-24';
+  const evalDate = latestReport?.date || (displayedReports.length > 0 ? displayedReports[0].date : new Date().toISOString().slice(0, 10));
   const matchedTargetForDate = configuredDailyTargets.find(t => t.date === evalDate) || configuredDailyTargets[0];
+
+  const hasClients = clients.length > 0;
+  const hasReports = displayedReports.length > 0;
 
   // Effective Daily Target Luas (Ha)
   const targetHaToday = isFiltered
-    ? (matchedTargetForDate?.dailyTargetAreaHa || targetConfig.targetAreaHa)
+    ? (matchedTargetForDate?.dailyTargetAreaHa || (activeClient ? targetConfig.targetAreaHa : 0))
     : (configuredDailyTargets.length > 0 
         ? configuredDailyTargets.reduce((acc, t) => acc + (t.dailyTargetAreaHa || 0), 0)
-        : targetConfig.targetAreaHa * Math.max(1, clients.length));
+        : (hasClients ? targetConfig.targetAreaHa * clients.length : 0));
 
   // Actual Luas (Ha) Realized Today
   const actualHaToday = isFiltered
     ? (latestReport?.physicalProgress?.realizedAreaHa || 0)
-    : (displayedReports.slice(0, Math.max(1, clients.length)).reduce((acc, r) => acc + (r.physicalProgress?.realizedAreaHa || 0), 0));
+    : (hasReports ? displayedReports.slice(0, Math.max(1, clients.length)).reduce((acc, r) => acc + (r.physicalProgress?.realizedAreaHa || 0), 0) : 0);
 
-  const haGap = Number((actualHaToday - targetHaToday).toFixed(2));
+  const haGap = targetHaToday > 0 ? Number((actualHaToday - targetHaToday).toFixed(2)) : 0;
   const haPercent = targetHaToday > 0 ? Number(((actualHaToday / targetHaToday) * 100).toFixed(1)) : 0;
 
   // Actual Average HM Today
   const actualAvgHm = latestReport?.equipmentWorkLogs?.length 
     ? Number((latestReport.equipmentWorkLogs.reduce((acc, l) => acc + (l.effectiveWorkHours || 0), 0) / latestReport.equipmentWorkLogs.length).toFixed(1))
-    : (metrics.totalEffectiveHours > 0 ? Number((metrics.totalEffectiveHours / Math.max(1, metrics.equipmentCount)).toFixed(1)) : 7.2);
-  const targetHmToday = targetConfig.targetEffectiveHm;
-  const hmGap = Number((actualAvgHm - targetHmToday).toFixed(1));
+    : (metrics.totalEffectiveHours > 0 && metrics.equipmentCount > 0 ? Number((metrics.totalEffectiveHours / metrics.equipmentCount).toFixed(1)) : 0);
+  const targetHmToday = (hasClients || hasReports || metrics.equipmentCount > 0) ? targetConfig.targetEffectiveHm : 0;
+  const hmGap = targetHmToday > 0 ? Number((actualAvgHm - targetHmToday).toFixed(1)) : 0;
   const hmPercent = targetHmToday > 0 ? Math.min(100, Number(((actualAvgHm / targetHmToday) * 100).toFixed(0))) : 0;
 
   // Downtime Today
@@ -230,11 +240,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     ? latestReport.equipmentWorkLogs.reduce((acc, l) => acc + (l.downtimeBreakdownHours || 0), 0)
     : (metrics.totalBreakdownDowntime || 0);
   const actualDowntimeToday = actualWeatherDowntimeToday + actualBreakdownDowntimeToday;
-  const isDowntimeOverLimit = actualDowntimeToday > targetConfig.maxDowntimeHours;
+  const isDowntimeOverLimit = targetConfig.maxDowntimeHours > 0 && actualDowntimeToday > targetConfig.maxDowntimeHours;
 
   // Evaluated Alert Status
-  const isCriticalDeficit = haPercent < targetConfig.alertThresholdPercent;
-  const isWarningNeedsAttention = !isCriticalDeficit && (haPercent < 100 || isDowntimeOverLimit || actualAvgHm < targetHmToday);
+  const isCriticalDeficit = targetHaToday > 0 && haPercent < targetConfig.alertThresholdPercent;
+  const isWarningNeedsAttention = !isCriticalDeficit && targetHaToday > 0 && (haPercent < 100 || isDowntimeOverLimit || (targetHmToday > 0 && actualAvgHm < targetHmToday));
   const isOnTrack = !isCriticalDeficit && !isWarningNeedsAttention;
 
   // Alerts List
@@ -248,29 +258,31 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     timestamp: string;
   }> = [];
 
-  if (haGap < 0) {
-    dailyTargetAlerts.push({
-      id: 'alert-target-ha',
-      title: 'Defisit Pembukaan Lahan Harian',
-      badge: isCriticalDeficit ? 'DEFISIT KRITIS' : 'PERHATIAN RITME',
-      severity: isCriticalDeficit ? 'critical' : 'warning',
-      timestamp: `${evalDate} • Evaluasi Sore`,
-      desc: `Realisasi pembukaan lahan hari ini baru mencapai ${actualHaToday.toFixed(1)} Ha dari target ${targetHaToday.toFixed(1)} Ha (Defisit ${Math.abs(haGap).toFixed(1)} Ha / ${(100 - haPercent).toFixed(0)}%). Ritme pembersihan lahan tertinggal.`,
-      recommendation: 'Perlu penambahan armada dozer atau perpanjangan jam shift efektif esok hari untuk mengejar ketertinggalan.',
-    });
-  } else {
-    dailyTargetAlerts.push({
-      id: 'alert-target-ha-ok',
-      title: 'Target Harian Luas Tercapai',
-      badge: 'TERCAPAI',
-      severity: 'success',
-      timestamp: `${evalDate} • Evaluasi Sore`,
-      desc: `Realisasi pembukaan lahan mencapai ${actualHaToday.toFixed(1)} Ha melampaui target ${targetHaToday.toFixed(1)} Ha (+${haGap.toFixed(1)} Ha / +${(haPercent - 100).toFixed(0)}%).`,
-      recommendation: 'Ritme kerja optimal. Pastikan pasokan solar tangki tetap aman untuk rotasi berikutnya.',
-    });
+  if (targetHaToday > 0) {
+    if (haGap < 0) {
+      dailyTargetAlerts.push({
+        id: 'alert-target-ha',
+        title: 'Defisit Pembukaan Lahan Harian',
+        badge: isCriticalDeficit ? 'DEFISIT KRITIS' : 'PERHATIAN RITME',
+        severity: isCriticalDeficit ? 'critical' : 'warning',
+        timestamp: `${evalDate} • Evaluasi Sore`,
+        desc: `Realisasi pembukaan lahan hari ini baru mencapai ${actualHaToday.toFixed(1)} Ha dari target ${targetHaToday.toFixed(1)} Ha (Defisit ${Math.abs(haGap).toFixed(1)} Ha / ${(100 - haPercent).toFixed(0)}%). Ritme pembersihan lahan tertinggal.`,
+        recommendation: 'Perlu penambahan armada dozer atau perpanjangan jam shift efektif esok hari untuk mengejar ketertinggalan.',
+      });
+    } else {
+      dailyTargetAlerts.push({
+        id: 'alert-target-ha-ok',
+        title: 'Target Harian Luas Tercapai',
+        badge: 'TERCAPAI',
+        severity: 'success',
+        timestamp: `${evalDate} • Evaluasi Sore`,
+        desc: `Realisasi pembukaan lahan mencapai ${actualHaToday.toFixed(1)} Ha melampaui target ${targetHaToday.toFixed(1)} Ha (+${haGap.toFixed(1)} Ha / +${(haPercent - 100).toFixed(0)}%).`,
+        recommendation: 'Ritme kerja optimal. Pastikan pasokan solar tangki tetap aman untuk rotasi berikutnya.',
+      });
+    }
   }
 
-  if (isDowntimeOverLimit) {
+  if (isDowntimeOverLimit && hasReports) {
     dailyTargetAlerts.push({
       id: 'alert-downtime',
       title: 'Downtime Melebihi Batas Toleransi',
@@ -282,7 +294,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     });
   }
 
-  if (actualAvgHm < targetHmToday) {
+  if (targetHmToday > 0 && actualAvgHm < targetHmToday && hasReports) {
     dailyTargetAlerts.push({
       id: 'alert-hm',
       title: 'Jam Efektif Alat (HM) Belum Maksimal',
@@ -294,7 +306,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     });
   }
 
-  if (alertEquipments.length > 0) {
+  if (alertEquipments.length > 0 && hasReports) {
     dailyTargetAlerts.push({
       id: 'alert-fuel',
       title: 'Rasio Konsumsi BBM Melebihi Standar',
@@ -934,11 +946,19 @@ _Pesan ini dikirim resmi melalui Sistem RBS APPS — Executive Monitoring & Aler
             </div>
             <div className="my-2">
               <div className="text-2xl sm:text-3xl font-black text-white">
-                {metrics.avgFuelEfficiency.toFixed(1)} <span className="text-sm font-semibold text-slate-400">L / HM</span>
+                {metrics.avgFuelEfficiency > 0 ? metrics.avgFuelEfficiency.toFixed(1) : '0.0'} <span className="text-sm font-semibold text-slate-400">L / HM</span>
               </div>
-              <div className="text-xs font-bold text-emerald-400 mt-0.5 flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Status Operasi: NORMAL</span>
+              <div className={`text-xs font-bold mt-0.5 flex items-center gap-1 ${
+                metrics.avgFuelEfficiency > 0 ? 'text-emerald-400' : 'text-slate-400'
+              }`}>
+                {metrics.avgFuelEfficiency > 0 ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Status Operasi: NORMAL</span>
+                  </>
+                ) : (
+                  <span>Belum ada data operasi</span>
+                )}
               </div>
             </div>
             <div className="text-[10px] text-slate-400 flex justify-between">
@@ -1119,17 +1139,21 @@ _Pesan ini dikirim resmi melalui Sistem RBS APPS — Executive Monitoring & Aler
                   {actualAvgHm.toFixed(1)}
                 </span>
                 <span className="text-sm font-semibold text-slate-400">
-                  / {targetHmToday.toFixed(1)} HM / Unit
+                  / {targetHmToday > 0 ? `${targetHmToday.toFixed(1)} HM / Unit` : '0.0 HM / Unit'}
                 </span>
               </div>
               <div className="flex items-center justify-between mt-1 text-xs">
                 <span className={`font-black ${
-                  actualAvgHm >= targetHmToday ? 'text-emerald-400' : 'text-amber-400'
+                  targetHmToday > 0
+                    ? (actualAvgHm >= targetHmToday ? 'text-emerald-400' : 'text-amber-400')
+                    : 'text-slate-400'
                 }`}>
                   Utilisasi: {hmPercent}%
                 </span>
                 <span className="font-mono text-[11px] text-slate-400">
-                  {actualAvgHm >= targetHmToday ? 'Standar Terpenuhi' : `Kurang ${Math.abs(hmGap).toFixed(1)} HM`}
+                  {targetHmToday > 0
+                    ? (actualAvgHm >= targetHmToday ? 'Standar Terpenuhi' : `Kurang ${Math.abs(hmGap).toFixed(1)} HM`)
+                    : 'Belum ada jadwal alat'}
                 </span>
               </div>
             </div>
@@ -1139,9 +1163,9 @@ _Pesan ini dikirim resmi melalui Sistem RBS APPS — Executive Monitoring & Aler
               <div className="w-full bg-slate-700 h-2.5 rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all duration-500 ${
-                    actualAvgHm >= targetHmToday ? 'bg-emerald-500' : 'bg-amber-500'
+                    actualAvgHm >= targetHmToday && targetHmToday > 0 ? 'bg-emerald-500' : 'bg-amber-500'
                   }`}
-                  style={{ width: `${Math.min(100, (actualAvgHm / targetHmToday) * 100)}%` }}
+                  style={{ width: `${Math.min(100, targetHmToday > 0 ? (actualAvgHm / targetHmToday) * 100 : 0)}%` }}
                 />
               </div>
               <div className="flex justify-between text-[10px] text-slate-400">
@@ -1425,6 +1449,103 @@ _Pesan ini dikirim resmi melalui Sistem RBS APPS — Executive Monitoring & Aler
         </div>
       </div>
 
+      {/* NOTIFIKASI VERIFIKASI REAL-TIME (MANAGER OPERASIONAL) */}
+      <section className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200/95 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div className="flex items-start gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center shrink-0">
+              <Bell className="w-5 h-5 text-indigo-600" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-black text-slate-950 tracking-tight">
+                  Notifikasi Verifikasi Real-Time (Manager Operasional)
+                </h3>
+                <span className="flex items-center gap-1 text-[10px] font-black text-indigo-700 bg-indigo-50/60 border border-indigo-200/50 px-2 py-0.5 rounded-full">
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
+                  Live Sync
+                </span>
+              </div>
+              <p className="text-xs text-slate-500">
+                Daftar laporan harian terbaru yang disetujui atau ditolak oleh Manager Operasional untuk menjaga transparansi verifikasi.
+              </p>
+            </div>
+          </div>
+          <div className="text-right text-[11px] text-slate-400 font-mono">
+            Tampil {latestManagerVerifications.length} dari {managerVerifiedReports.length} laporan
+          </div>
+        </div>
+
+        {latestManagerVerifications.length === 0 ? (
+          <div className="py-8 text-center text-xs text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+            Belum ada aktivitas verifikasi atau penolakan laporan dari Manager Operasional untuk filter saat ini.
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {latestManagerVerifications.map((rpt) => {
+              const isApproved = rpt.status === 'Disetujui Manager' || rpt.status === 'Disetujui Direktur';
+              const managerName = rpt.signatures?.siteManager?.name || rpt.rejectedBy || 'Bambang Sugiarto, S.P.';
+              const actionTime = rpt.signatures?.siteManager?.signedAt || rpt.rejectedAt || '-';
+
+              return (
+                <div key={rpt.id} className="py-3.5 first:pt-0 last:pb-0 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="font-mono font-bold text-slate-900 select-all text-[11px] bg-slate-100 px-1.5 py-0.5 rounded">
+                        {rpt.reportNumber}
+                      </span>
+                      <span className="text-slate-300">·</span>
+                      <span className="font-bold text-slate-800">
+                        {rpt.clientName}
+                      </span>
+                      <span className="text-slate-300">·</span>
+                      <span className="text-slate-500 font-medium">
+                        Blok {rpt.blockCode}
+                      </span>
+                      <span className="text-slate-300">·</span>
+                      <span className="text-slate-500 font-mono">
+                        {rpt.date}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500 pt-0.5">
+                      <span>Verifikator: <strong className="text-slate-700 font-semibold">{managerName}</strong></span>
+                      <span>·</span>
+                      <span>Status:</span>
+                      <span className={`font-bold uppercase tracking-wide flex items-center gap-1 ${
+                        isApproved ? 'text-emerald-600' : 'text-rose-600'
+                      }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${isApproved ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
+                        {isApproved ? (rpt.status === 'Disetujui Direktur' ? 'Disetujui Manager & Direktur' : 'Disetujui Manager') : 'Ditolak Manager'}
+                      </span>
+                      <span>·</span>
+                      <span className="font-mono text-slate-400">{actionTime}</span>
+                    </div>
+
+                    {!isApproved && rpt.rejectionReason && (
+                      <div className="mt-2 p-2.5 bg-rose-50/50 border border-rose-100 rounded-lg text-[11px] text-rose-800 font-medium">
+                        <span className="font-bold">Alasan Penolakan Manager:</span> "{rpt.rejectionReason}"
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 self-end md:self-center">
+                    <button
+                      type="button"
+                      onClick={() => onOpenPdfReport(rpt.id)}
+                      className="px-3.5 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 hover:text-slate-900 font-bold border border-slate-200 transition-all active:scale-95 cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Buka Dokumen PDF</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
       {/* 1. DAFTAR PROYEK KLIEN AKTIF (PERBANDINGAN CAPAIAN HA) */}
       <div className="bg-white rounded-2xl p-5 shadow-lg border border-slate-200 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
@@ -1554,7 +1675,7 @@ _Pesan ini dikirim resmi melalui Sistem RBS APPS — Executive Monitoring & Aler
                 <th className="p-3">Tanggal</th>
                 <th className="p-3">Klien</th>
                 <th className="p-3">Blok</th>
-                <th className="p-3 text-center">Capaian Ha</th>
+                <th className="p-3 text-center">Rata-rata Progres (%)</th>
                 <th className="p-3 text-center">Efektif HM</th>
                 <th className="p-3 text-center">Downtime (C/B)</th>
                 <th className="p-3 text-center">Status BBM</th>
@@ -1569,6 +1690,8 @@ _Pesan ini dikirim resmi melalui Sistem RBS APPS — Executive Monitoring & Aler
                 const totalEffHm = report.equipmentWorkLogs.reduce((a, b) => a + b.effectiveWorkHours, 0);
                 const hasAlert = report.equipmentWorkLogs.some((l) => l.isFuelAlert);
                 const isApproved = report.status === 'Disetujui Direktur';
+                const items = report.physicalProgress?.itemProgress || [];
+                const avgPct = items.length > 0 ? (items.reduce((acc, it) => acc + (it.achievementPercentage || 0), 0) / items.length).toFixed(1) : '0.0';
 
                 return (
                   <tr key={report.id} className="hover:bg-slate-50/80 transition">
@@ -1587,7 +1710,7 @@ _Pesan ini dikirim resmi melalui Sistem RBS APPS — Executive Monitoring & Aler
                       {report.blockCode}
                     </td>
                     <td className="p-3 text-center font-mono font-bold text-emerald-800">
-                      {report.physicalProgress.realizedAreaHa.toFixed(2)} Ha
+                      {avgPct}%
                     </td>
                     <td className="p-3 text-center font-mono font-bold">
                       {totalEffHm.toFixed(1)} HM

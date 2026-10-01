@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Fuel, 
   Droplet, 
@@ -68,8 +68,26 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
   const [transactions, setTransactions] = useState<LogisticsTransaction[]>(() => 
     storageService.getLogisticsTransactions(effectiveClientId, authUser)
   );
-  const [equipments] = useState<Equipment[]>(() => storageService.getEquipments());
-  const [blocks] = useState<Block[]>(() => storageService.getBlocks(undefined, authUser));
+  const [equipments, setEquipments] = useState<Equipment[]>(() => storageService.getEquipments());
+  const [blocks, setBlocks] = useState<Block[]>(() => storageService.getBlocks(undefined, authUser));
+
+  // Live real-time synchronization from Firebase Firestore
+  useEffect(() => {
+    const handleSync = () => {
+      setInventory(storageService.getInventory());
+      setTransactions(storageService.getLogisticsTransactions(effectiveClientId, authUser));
+      setEquipments(storageService.getEquipments());
+      setBlocks(storageService.getBlocks(undefined, authUser));
+    };
+    window.addEventListener('suryaland_logistics_sync', handleSync);
+    window.addEventListener('suryaland_firestore_sync', handleSync);
+    window.addEventListener('suryaland_master_sync', handleSync);
+    return () => {
+      window.removeEventListener('suryaland_logistics_sync', handleSync);
+      window.removeEventListener('suryaland_firestore_sync', handleSync);
+      window.removeEventListener('suryaland_master_sync', handleSync);
+    };
+  }, [effectiveClientId, authUser?.username]);
 
   // Filters
   const [categoryFilter, setCategoryFilter] = useState<'ALL' | LogisticsCategory>('ALL');
@@ -107,7 +125,7 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
     return true;
   });
 
-  const initialBlockId = validSupervisorBlocks[0]?.id || blocks.find((b) => b.clientId === effectiveClientId)?.id || blocks[0]?.id || 'blk-1';
+  const initialBlockId = validSupervisorBlocks[0]?.id || blocks.find((b) => b.clientId === effectiveClientId)?.id || blocks[0]?.id || '';
 
   // Inflow form state (Penerimaan Stok Masuk - Di-input Pengawas, Disetujui Direktur)
   const [inflowForm, setInflowForm] = useState({
@@ -116,7 +134,7 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
     itemName: 'Solar Industri B50',
     quantity: 5000,
     unit: 'Liter',
-    clientId: effectiveClientId !== 'ALL' ? effectiveClientId : (clients[0]?.id || 'client-1'),
+    clientId: effectiveClientId !== 'ALL' ? effectiveClientId : (clients[0]?.id || ''),
     blockId: initialBlockId,
     supplierOrPoNumber: '',
     deliveryNoteNumber: '',
@@ -131,10 +149,10 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
     itemName: 'Solar Industri B50',
     quantity: 100,
     unit: 'Liter',
-    clientId: effectiveClientId !== 'ALL' ? effectiveClientId : (clients[0]?.id || 'client-1'),
+    clientId: effectiveClientId !== 'ALL' ? effectiveClientId : (clients[0]?.id || ''),
     blockId: initialBlockId,
-    equipmentId: equipments[0]?.id || 'EX-01',
-    equipmentHmAtUsage: equipments[0]?.currentHm || 2150.0,
+    equipmentId: equipments[0]?.id || '',
+    equipmentHmAtUsage: equipments[0]?.currentHm || 0,
     purpose: 'Saat pengisian solar di lapangan (Operasional Rutin)' as LogisticsUsagePurpose,
     notes: '',
   });
@@ -610,7 +628,7 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
         <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-4">
           {/* Solar Card */}
           {(() => {
-            const solItem = inventory.find((i) => i.category === 'BBM') || { stockQuantity: 4734, unit: 'Liter' };
+            const solItem = inventory.find((i) => i.category === 'BBM') || { stockQuantity: 0, unit: 'Liter' };
             const pendingSol = transactions
               .filter((t) => t.category === 'BBM' && t.type === 'in' && t.approvalStatus === 'pending')
               .reduce((acc, t) => acc + t.quantity, 0);
@@ -643,8 +661,8 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
 
           {/* Oli Mesin & Hidrolik Card */}
           {(() => {
-            const oliEng = inventory.find((i) => i.code === 'OLI-ENG')?.stockQuantity || 180;
-            const oliHyd = inventory.find((i) => i.code === 'OLI-HYD')?.stockQuantity || 140;
+            const oliEng = inventory.find((i) => i.code === 'OLI-ENG')?.stockQuantity || 0;
+            const oliHyd = inventory.find((i) => i.code === 'OLI-HYD')?.stockQuantity || 0;
 
             return (
               <div className="bg-blue-50/60 border border-blue-200 rounded-xl p-3.5 space-y-1">
@@ -670,7 +688,7 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
 
           {/* Grease Card */}
           {(() => {
-            const grsItem = inventory.find((i) => i.category === 'Grease') || { stockQuantity: 42, unit: 'Kg' };
+            const grsItem = inventory.find((i) => i.category === 'Grease') || { stockQuantity: 0, unit: 'Kg' };
             const pendingGrs = transactions
               .filter((t) => t.category === 'Grease' && t.type === 'in' && t.approvalStatus === 'pending')
               .reduce((acc, t) => acc + t.quantity, 0);

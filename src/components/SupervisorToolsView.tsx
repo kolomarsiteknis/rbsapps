@@ -636,6 +636,24 @@ export const SupervisorToolsView: React.FC<SupervisorToolsViewProps> = ({
     }
   };
 
+  if (clients.length === 0) {
+    return (
+      <div className="max-w-xl mx-auto py-12 px-4 sm:px-6">
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 text-center space-y-4 shadow-sm">
+          <div className="w-12 h-12 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center mx-auto">
+            <HardHat className="w-6 h-6 animate-pulse" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base font-bold text-slate-900">Belum Ada Proyek Aktif Terdaftar</h3>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Fitur Cepat Pengawas Lapangan memerlukan minimal satu SPK Klien / Blok Kerja terdaftar dalam sistem. Silakan hubungi Direktur atau Administrator untuk menambahkan data SPK baru di menu Master Data.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
       {/* Top Banner: Pengawas Lapangan Operational Suite */}

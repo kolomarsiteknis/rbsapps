@@ -754,13 +754,15 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
                         <div className="bg-slate-50 px-3 py-2 rounded-xl border border-slate-200">
                           <span className="text-[10px] font-bold text-slate-500 uppercase block">
-                            Realisasi Harian
+                            Rata-rata Progres
                           </span>
                           <strong className="text-xs sm:text-sm font-black text-emerald-700 font-mono">
-                            +{report.physicalProgress.realizedAreaHa} Ha
+                            {(report.physicalProgress?.itemProgress && report.physicalProgress.itemProgress.length > 0
+                              ? (report.physicalProgress.itemProgress.reduce((a, b) => a + (b.achievementPercentage || 0), 0) / report.physicalProgress.itemProgress.length).toFixed(1)
+                              : '0.0')}%
                           </strong>
                           <span className="text-[10px] text-slate-400 block">
-                            Target: {report.physicalProgress.targetAreaHa} Ha
+                            {report.physicalProgress?.itemProgress?.length || 0} Item Kerja
                           </span>
                         </div>
 

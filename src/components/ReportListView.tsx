@@ -59,6 +59,13 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
     return Number(val).toFixed(decimals);
   };
 
+  const getReportAverageAchievement = (r: DailyReport): number => {
+    const items = r.physicalProgress?.itemProgress || [];
+    if (items.length === 0) return 0;
+    const sum = items.reduce((acc, item) => acc + (item.achievementPercentage || 0), 0);
+    return Number((sum / items.length).toFixed(1));
+  };
+
   const [searchTerm, setSearchTerm] = useState('');
   const [filterBlock, setFilterBlock] = useState('ALL');
   const [filterAlertOnly, setFilterAlertOnly] = useState(false);
@@ -145,10 +152,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
       'Lokasi Blok',
       'Cuaca',
       'Pengawas',
-      'Target Ha',
-      'Realisasi Ha',
-      'Kumulatif Ha',
-      'Capaian %',
+      'Rata-rata Progres (%)',
       'Total Jam Efektif (HM)',
       'Downtime Cuaca (Jam)',
       'Downtime Breakdown (Jam)',
@@ -170,10 +174,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
         `"${r.blockCode}"`,
         `"${r.weather}"`,
         `"${r.supervisorName}"`,
-        r.physicalProgress.targetAreaHa,
-        r.physicalProgress.realizedAreaHa,
-        r.physicalProgress.cumulativeAreaHa,
-        r.physicalProgress.progressPercentage,
+        getReportAverageAchievement(r),
         totalEffHm.toFixed(1),
         totalDwWeather.toFixed(1),
         totalDwBreakdown.toFixed(1),
@@ -331,10 +332,12 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
               className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none"
             >
               <option value="ALL">Semua Status</option>
+              <option value="Draft">Draft Lapangan</option>
               <option value="Diajukan">Diajukan</option>
+              <option value="Disetujui Manager">Disetujui Manager</option>
+              <option value="Ditolak Manager">Ditolak Manager</option>
               <option value="Disetujui Direktur">Disetujui Direktur</option>
               <option value="Ditolak Direktur">Ditolak Direktur</option>
-              <option value="Draft">Draft Lapangan</option>
             </select>
           </div>
 
@@ -417,9 +420,9 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                 {/* Key Metrics Grid */}
                 <div className="grid grid-cols-3 gap-2 py-2 px-3 bg-slate-50/80 rounded-xl border border-slate-100 text-center">
                   <div>
-                    <div className="text-[10px] text-slate-400 font-medium">Realisasi</div>
+                    <div className="text-[10px] text-slate-400 font-medium">Rata-rata Progres</div>
                     <div className="text-xs font-bold font-mono text-emerald-700">
-                      {safeNum(report.physicalProgress?.realizedAreaHa, 2)} Ha
+                      {getReportAverageAchievement(report)}%
                     </div>
                   </div>
                   <div>
@@ -510,7 +513,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                 <th className="p-3.5">Klien</th>
                 <th className="p-3.5">Blok Kerja</th>
                 <th className="p-3.5 text-center">Cuaca</th>
-                <th className="p-3.5 text-center">Capaian Ha</th>
+                <th className="p-3.5 text-center">Rata-rata Progres (%)</th>
                 <th className="p-3.5 text-center">Jam Efektif</th>
                 <th className="p-3.5 text-center">Downtime</th>
                 <th className="p-3.5 text-center">Status BBM</th>
@@ -553,7 +556,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                       )}
                     </td>
                     <td className="p-3 text-center font-mono font-bold text-emerald-700">
-                      {safeNum(report.physicalProgress?.realizedAreaHa, 2)} Ha
+                      {getReportAverageAchievement(report)}%
                     </td>
                     <td className="p-3 text-center font-mono font-bold">
                       {safeNum(totalEffHm)} HM

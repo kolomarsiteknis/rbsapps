@@ -24,6 +24,7 @@ import { TutorialView } from './components/TutorialView';
 import { ClientPortalView } from './components/ClientPortalView';
 import { DataRecoveryView } from './components/DataRecoveryView';
 import { LoginPage } from './components/LoginPage';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { storageService } from './services/storageService';
 import { initFirestoreSync, onSyncStatusChange, toggleFirestoreNetwork, SyncStatus, getLastSuccessfulSyncTime } from './services/firestoreSync';
 import { recordUserActivity } from './utils/activityLogger';
@@ -431,7 +432,7 @@ export function triggerLoginFailureDiagnostic(
   };
 }
 
-export default function App() {
+function MainApp() {
   // Authentication State
   const [authUser, setAuthUser] = useState<AuthUser | null>(() => {
     try {
@@ -536,10 +537,20 @@ export default function App() {
 
     window.addEventListener('suryaland_firestore_sync', handleFirestoreSync);
     window.addEventListener('suryaland_company_profile_sync', handleCompanySync);
+    window.addEventListener('suryaland_reports_sync', handleFirestoreSync);
+    window.addEventListener('suryaland_master_sync', handleFirestoreSync);
+    window.addEventListener('suryaland_logistics_sync', handleFirestoreSync);
+    window.addEventListener('suryaland_users_sync', handleFirestoreSync);
+    window.addEventListener('suryaland_company_staff_sync', handleFirestoreSync);
     return () => {
       unsubSyncStatus();
       window.removeEventListener('suryaland_firestore_sync', handleFirestoreSync);
       window.removeEventListener('suryaland_company_profile_sync', handleCompanySync);
+      window.removeEventListener('suryaland_reports_sync', handleFirestoreSync);
+      window.removeEventListener('suryaland_master_sync', handleFirestoreSync);
+      window.removeEventListener('suryaland_logistics_sync', handleFirestoreSync);
+      window.removeEventListener('suryaland_users_sync', handleFirestoreSync);
+      window.removeEventListener('suryaland_company_staff_sync', handleFirestoreSync);
     };
   }, [authUser?.username]);
 
@@ -920,15 +931,19 @@ export default function App() {
     }
   };
 
-  const handleResetData = () => {
+  const handleResetData = async () => {
     if (authUser?.role !== 'director') {
-      showToast('Reset data master hanya dapat dilakukan oleh Direktur (Superadmin).', 'warning');
+      showToast('Reset data hanya dapat dilakukan oleh Direktur (Superadmin).', 'warning');
       return;
     }
-    storageService.resetToDefault();
+    showToast('Sedang mereset seluruh database ke kondisi awal standar default (kosongan)...', 'info');
+    await storageService.resetToDefault();
     loadData();
     setSelectedClientId('ALL');
-    showToast('Data berhasil di-reset ke data default multi-klien PT. RBS GROUP.');
+    showToast('Database berhasil di-reset total! Akun default tersimpan di database: superadmin (@Super12345), manager (@manager12345), pengawas (@pengawas12345), klienpt (@klien12345). Mengalihkan ke login...', 'info');
+    setTimeout(() => {
+      handleLogout();
+    }, 1500);
   };
 
   const handleOpenPdfModal = (reportId: string) => {
@@ -956,7 +971,7 @@ export default function App() {
     }
 
     if (authUser?.role === 'supervisor') {
-      if (tab === 'dashboard' || tab === 'master' || tab === 'company-profile' || tab === 'director-field-monitor' || tab === 'user-activity-log' || tab === 'user-management' || tab === 'approval' || tab === 'tutorial' || tab === 'client-portal') {
+      if (tab === 'dashboard' || tab === 'master' || tab === 'company-profile' || tab === 'director-field-monitor' || tab === 'user-activity-log' || tab === 'user-management' || tab === 'approval' || tab === 'client-portal') {
         showToast('Akses Ditolak: Fitur ini hanya dapat diakses oleh Manajemen / Direksi.', 'warning');
         setActiveTab('wizard');
         return;
@@ -964,7 +979,7 @@ export default function App() {
     }
 
     if (authUser?.role === 'manager') {
-      if (tab === 'dashboard' || tab === 'master' || tab === 'company-profile' || tab === 'wizard' || tab === 'supervisor-tools' || tab === 'user-management' || tab === 'user-activity-log' || tab === 'tutorial') {
+      if (tab === 'dashboard' || tab === 'master' || tab === 'company-profile' || tab === 'wizard' || tab === 'supervisor-tools' || tab === 'user-management' || tab === 'user-activity-log') {
         showToast('Akses Ditolak: Fitur ini tidak termasuk dalam wewenang akun Manager.', 'warning');
         setActiveTab('approval');
         return;
@@ -1048,13 +1063,14 @@ export default function App() {
 
       {/* Main Content Area - with responsive padding to accommodate bottom navigation on mobile */}
       <main className="flex-1 pb-20 lg:pb-10">
-        {/* Offline Banner alert if offline mode */}
-        {!isOnline && (
-          <div className="bg-amber-500 text-slate-950 font-bold px-4 py-2 text-xs text-center flex items-center justify-center gap-2 shadow-sm">
-            <AlertCircle className="w-4 h-4" />
-            <span>Mode Lahan (Offline Aktif): Semua data dan foto ber-watermark disimpan secara aman di memori perangkat. Saat terhubung sinyal, klik "Offline Lahan" untuk sinkronisasi.</span>
-          </div>
-        )}
+        <ErrorBoundary fallbackTitle="Kendala Memuat Modul" fallbackMessage="Terjadi kendala saat memuat data tampilan atau konektivitas database. Sistem mengisolasi error agar aplikasi tetap stabil.">
+          {/* Offline Banner alert if offline mode */}
+          {!isOnline && (
+            <div className="bg-amber-500 text-slate-950 font-bold px-4 py-2 text-xs text-center flex items-center justify-center gap-2 shadow-sm">
+              <AlertCircle className="w-4 h-4" />
+              <span>Mode Lahan (Offline Aktif): Semua data dan foto ber-watermark disimpan secara aman di memori perangkat. Saat terhubung sinyal, klik "Offline Lahan" untuk sinkronisasi.</span>
+            </div>
+          )}
 
         {/* Tab 1: Executive Director Dashboard - STRICT: ONLY FOR DIRECTOR */}
         {activeTab === 'dashboard' && (
@@ -1377,8 +1393,10 @@ export default function App() {
         {activeTab === 'tutorial' && (
           <TutorialView
             onNavigateTab={(tab) => setActiveTab(tab)}
+            userRole={authUser?.role}
           />
         )}
+        </ErrorBoundary>
       </main>
 
       {/* Modal Popup for PDF Print View */}
@@ -1484,5 +1502,16 @@ export default function App() {
         onOpenSidebar={() => setIsSidebarOpen(true)}
       />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ErrorBoundary 
+      fallbackTitle="Kendala Sistem Aplikasi" 
+      fallbackMessage="Aplikasi mendeteksi kendala pada koneksi database atau sistem. Silakan coba pulihkan tampilan atau muat ulang halaman."
+    >
+      <MainApp />
+    </ErrorBoundary>
   );
 }

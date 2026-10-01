@@ -91,6 +91,9 @@ export const Header: React.FC<HeaderProps> = ({
 
   const [showLogoutConfirm, setShowLogoutConfirm] = useState<boolean>(false);
   const [showResetConfirm, setShowResetConfirm] = useState<boolean>(false);
+  const [resetConfirmationInput, setResetConfirmationInput] = useState<string>('');
+  const [resetUnderstandChecked, setResetUnderstandChecked] = useState<boolean>(false);
+  const [isResetting, setIsResetting] = useState<boolean>(false);
 
   const activeClientObj = clients.find((c) => c.id === selectedClientId);
   const isSupervisor = authUser?.role === 'supervisor';
@@ -406,9 +409,26 @@ export const Header: React.FC<HeaderProps> = ({
 
 
 
-              {/* User Profile & Direct Action Button */}
+               {/* User Profile & Direct Action Button */}
               {authUser && (
                 <div className="flex items-center gap-1.5 pl-1.5 border-l border-slate-800">
+                  {/* Quick Tutorial Access Button (Hidden for Client) */}
+                  {!isClient && (
+                    <button
+                      type="button"
+                      onClick={() => handleSelectTab('tutorial')}
+                      className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer border ${
+                        activeTab === 'tutorial'
+                          ? 'bg-amber-500 text-slate-950 border-amber-400'
+                          : 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700/80'
+                      }`}
+                      title="Buka Buku Panduan / Tutorial Penggunaan Modul"
+                    >
+                      <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+                      <span className="hidden sm:inline">Panduan</span>
+                    </button>
+                  )}
+
                   {/* Role Avatar Chip (Opens Hidden Sidebar) */}
                   <button
                     type="button"
@@ -672,40 +692,149 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       )}
 
-      {/* IN-APP MODAL: RESET DATA */}
+      {/* IN-APP MODAL: RESET DATA KE STANDAR DEFAULT DENGAN VALIDASI PENGAMAN */}
       {showResetConfirm && (
-        <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white text-slate-900 rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-4 border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
-            <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto">
-              <RotateCcw className="w-6 h-6" />
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white text-slate-900 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4 border border-rose-200 animate-in fade-in zoom-in-95 duration-200 my-auto">
+            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto shadow-inner">
+              <AlertTriangle className="w-6 h-6" />
             </div>
 
             <div className="text-center space-y-1">
-              <h3 className="text-base font-black text-slate-900">
-                Reset Data ke Default
+              <h3 className="text-lg font-black text-slate-900">
+                Reset Data ke Standar Default
               </h3>
-              <p className="text-xs text-slate-600">
-                Tindakan ini akan mengembalikan data laporan, master alat berat, dan klien ke kondisi awal PT. RBS GROUP.
+              <p className="text-xs font-semibold text-rose-700 uppercase tracking-wider">
+                Konfirmasi Pembersihan Database Total
               </p>
+            </div>
+
+            <div className="bg-rose-50 border border-rose-200 rounded-xl p-3.5 text-xs text-slate-800 space-y-2">
+              <p className="font-bold text-rose-950">
+                Tindakan ini akan <span className="underline decoration-rose-500">MENGHAPUS SEMUA DATA INPUTAN</span> di semua halaman akses:
+              </p>
+              <ul className="list-disc list-inside text-[11px] text-slate-700 space-y-1">
+                <li><strong>Akses Direktur</strong>: Master Klien, Blok, Alat Berat, Tenaga Kerja, Inventori, Target Harian.</li>
+                <li><strong>Akses Pengawas</strong>: Seluruh Laporan Harian, Logistik BBM, Foto Lapangan.</li>
+                <li><strong>Akses Manager & Klien</strong>: Approval Laporan & Portal Monitoring.</li>
+              </ul>
+              <div className="pt-2 border-t border-rose-200/80 text-[11px]">
+                Seluruh database dibersihkan total seperti <strong>kondisi awal baru di-install (kosongan)</strong>.
+              </div>
+            </div>
+
+            {/* Secret default developer/maintenance accounts info box */}
+            <div className="bg-slate-900 text-white p-3.5 rounded-xl text-xs space-y-2 shadow-sm">
+              <div className="text-[10px] font-bold text-amber-400 uppercase tracking-wide flex items-center justify-between">
+                <span>Akun Default Rahasia (Dev / Tester / Maintenance):</span>
+                <span className="text-[9px] bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded border border-slate-700">Tidak tampil di UI Direktur</span>
+              </div>
+              <div className="grid grid-cols-2 gap-1.5 text-[11px] font-mono">
+                <div className="bg-slate-800/90 p-1.5 rounded-lg border border-slate-700">
+                  <span className="text-slate-400 block text-[9px]">1. Superadmin (Direktur):</span>
+                  <div className="text-amber-300 font-bold">superadmin</div>
+                  <div className="text-slate-400 text-[10px]">Pass: <span className="text-emerald-300 font-bold">@Super12345</span></div>
+                </div>
+                <div className="bg-slate-800/90 p-1.5 rounded-lg border border-slate-700">
+                  <span className="text-slate-400 block text-[9px]">2. Site Manager:</span>
+                  <div className="text-amber-300 font-bold">manager</div>
+                  <div className="text-slate-400 text-[10px]">Pass: <span className="text-emerald-300 font-bold">@manager12345</span></div>
+                </div>
+                <div className="bg-slate-800/90 p-1.5 rounded-lg border border-slate-700">
+                  <span className="text-slate-400 block text-[9px]">3. Pengawas Lapangan:</span>
+                  <div className="text-amber-300 font-bold">pengawas</div>
+                  <div className="text-slate-400 text-[10px]">Pass: <span className="text-emerald-300 font-bold">@pengawas12345</span></div>
+                </div>
+                <div className="bg-slate-800/90 p-1.5 rounded-lg border border-slate-700">
+                  <span className="text-slate-400 block text-[9px]">4. Klien Mitra:</span>
+                  <div className="text-amber-300 font-bold">klienpt</div>
+                  <div className="text-slate-400 text-[10px]">Pass: <span className="text-emerald-300 font-bold">@klien12345</span></div>
+                </div>
+              </div>
+              <p className="text-[10px] text-slate-400 italic">
+                *Akun tersimpan aman di database untuk kebutuhan testing & maintenance pengembang.
+              </p>
+            </div>
+
+            {/* Validasi Konfirmasi Pengaman */}
+            <div className="space-y-3 pt-1">
+              <label className="flex items-start gap-2.5 cursor-pointer bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                <input
+                  type="checkbox"
+                  checked={resetUnderstandChecked}
+                  onChange={(e) => setResetUnderstandChecked(e.target.checked)}
+                  className="mt-0.5 rounded text-rose-600 focus:ring-rose-500 w-4 h-4 cursor-pointer"
+                />
+                <span className="text-[11px] text-slate-700 font-medium leading-tight">
+                  Saya paham seluruh data laporan dan master data proyek akan <strong>dihapus permanen</strong>.
+                </span>
+              </label>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-700 flex justify-between">
+                  <span>Ketik kata <strong className="text-rose-600 font-mono">RESET</strong> untuk konfirmasi:</span>
+                  {resetConfirmationInput.trim().toUpperCase() === 'RESET' && (
+                    <span className="text-emerald-600 font-bold flex items-center gap-0.5 text-[10px]">
+                      <Check className="w-3 h-3" /> Valid
+                    </span>
+                  )}
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ketik RESET di sini..."
+                  value={resetConfirmationInput}
+                  onChange={(e) => setResetConfirmationInput(e.target.value)}
+                  disabled={isResetting}
+                  className="w-full px-3 py-2 border-2 border-slate-300 focus:border-rose-500 rounded-xl text-xs font-mono font-bold uppercase tracking-wider text-slate-900 focus:outline-none"
+                />
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
               <button
                 type="button"
-                onClick={() => setShowResetConfirm(false)}
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 text-xs font-bold hover:bg-slate-100 transition cursor-pointer"
+                disabled={isResetting}
+                onClick={() => {
+                  setShowResetConfirm(false);
+                  setResetConfirmationInput('');
+                  setResetUnderstandChecked(false);
+                }}
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 text-xs font-bold hover:bg-slate-100 transition cursor-pointer disabled:opacity-50"
               >
                 Batal
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setShowResetConfirm(false);
-                  onResetData();
+                disabled={
+                  !resetUnderstandChecked || 
+                  resetConfirmationInput.trim().toUpperCase() !== 'RESET' || 
+                  isResetting
+                }
+                onClick={async () => {
+                  setIsResetting(true);
+                  try {
+                    await onResetData();
+                  } finally {
+                    setIsResetting(false);
+                    setShowResetConfirm(false);
+                    setResetConfirmationInput('');
+                    setResetUnderstandChecked(false);
+                  }
                 }}
-                className="w-full px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 text-xs font-black shadow-md transition cursor-pointer"
+                className={`w-full px-4 py-2.5 rounded-xl text-xs font-black shadow-md transition flex items-center justify-center gap-1.5 ${
+                  resetUnderstandChecked && resetConfirmationInput.trim().toUpperCase() === 'RESET' && !isResetting
+                    ? 'bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white cursor-pointer shadow-rose-600/30'
+                    : 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
+                }`}
               >
-                Ya, Reset Data
+                {isResetting ? (
+                  <>
+                    <RotateCcw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Mereset Data...</span>
+                  </>
+                ) : (
+                  <span>Hapus & Reset Data</span>
+                )}
               </button>
             </div>
           </div>

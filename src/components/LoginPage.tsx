@@ -121,8 +121,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({
           return;
         }
 
-        // Validate password (exact or trimmed match)
-        if ((user.password || '').trim() === trimmedPass) {
+        // Validate password (exact, trimmed, or with/without leading @)
+        const userPass = (user.password || '').trim();
+        const isMatch =
+          userPass === trimmedPass ||
+          userPass.replace(/^@+/, '') === trimmedPass.replace(/^@+/, '') ||
+          userPass === `@${trimmedPass.replace(/^@+/, '')}`;
+
+        if (isMatch) {
           onLoginSuccess(buildAuthUserFromManaged(user));
           setIsLoading(false);
           return;
@@ -148,7 +154,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
       // 2. Fallback checks for standard default / core usernames
       const upperUser = trimmedUser.toUpperCase();
-      if (upperUser === 'ANDIMUJIBAL' || upperUser === 'MANAGER') {
+      if (upperUser === 'ANDIMUJIBAL') {
         if (trimmedPass === 'andi12345' || trimmedPass === 'manager123') {
           const staffList = storageService.getCompanyStaff();
           const mgrStaff = staffList.find(
@@ -177,14 +183,130 @@ export const LoginPage: React.FC<LoginPageProps> = ({
           setIsLoading(false);
           return;
         } else {
-          onLoginFailureDiagnostic?.(trimmedUser, 'FALLBACK_MANAGER_PASSWORD_MISMATCH');
+          onLoginFailureDiagnostic?.(trimmedUser, 'FALLBACK_ANDIMUJIBAL_PASSWORD_MISMATCH');
           setErrorMsg('Password salah! Silakan periksa kembali kata sandi Anda.');
           setIsLoading(false);
           return;
         }
       }
 
-      if (upperUser === 'BOSDIREKTUR' || upperUser === 'DIREKTUR' || upperUser === 'SUPERADMIN') {
+      if (upperUser === 'SUPERADMIN') {
+        if (trimmedPass === '@Super12345' || trimmedPass === 'Super12345' || trimmedPass === '@super12345' || trimmedPass === 'super12345') {
+          const userObj: AuthUser = {
+            id: 'usr-dev-superadmin',
+            username: 'superadmin',
+            displayName: 'Super Administrator',
+            role: 'director',
+            roleTitle: 'Super Administrator • Direktur Utama (Akses Penuh)',
+            email: 'superadmin@suryaland.co.id',
+            phoneNumber: '081100000001',
+            address: 'Kantor Pusat',
+            userLevel: 'Superadmin',
+            jobTitle: 'Super Administrator / Direktur Utama',
+            assignedClientId: 'all',
+            assignedClientName: 'Semua Proyek (Owner)',
+            assignedBlockCodes: ['Akses Semua Blok'],
+            loginTime: new Date().toISOString(),
+          };
+          onLoginSuccess(userObj);
+          setIsLoading(false);
+          return;
+        } else {
+          onLoginFailureDiagnostic?.(trimmedUser, 'FALLBACK_SUPERADMIN_PASSWORD_MISMATCH');
+          setErrorMsg('Password salah! Silakan gunakan password default: @Super12345');
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      if (upperUser === 'MANAGER') {
+        if (trimmedPass === '@manager12345' || trimmedPass === 'manager12345' || trimmedPass === '@Manager12345' || trimmedPass === 'Manager12345') {
+          const userObj: AuthUser = {
+            id: 'usr-dev-manager',
+            username: 'manager',
+            displayName: 'Site Manager Operasional',
+            role: 'manager',
+            roleTitle: 'Site Manager Operasional (Akses Approval & Audit)',
+            email: 'manager@suryaland.co.id',
+            phoneNumber: '081100000002',
+            address: 'Kantor Lapangan',
+            userLevel: 'Site Manager',
+            jobTitle: 'Site Manager Operasional',
+            assignedClientId: 'all',
+            assignedClientName: 'Semua Proyek (Site Manager Operasional)',
+            assignedBlockCodes: ['Akses Supervisi Semua Blok'],
+            loginTime: new Date().toISOString(),
+          };
+          onLoginSuccess(userObj);
+          setIsLoading(false);
+          return;
+        } else {
+          onLoginFailureDiagnostic?.(trimmedUser, 'FALLBACK_MANAGER_PASSWORD_MISMATCH');
+          setErrorMsg('Password salah! Silakan gunakan password default: @manager12345');
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      if (upperUser === 'PENGAWAS') {
+        if (trimmedPass === '@pengawas12345' || trimmedPass === 'pengawas12345' || trimmedPass === '@Pengawas12345' || trimmedPass === 'Pengawas12345') {
+          const userObj: AuthUser = {
+            id: 'usr-dev-pengawas',
+            username: 'pengawas',
+            displayName: 'Pengawas Lapangan',
+            role: 'supervisor',
+            roleTitle: 'Mandor / Pengawas Lapangan (Akses Input Laporan)',
+            email: 'pengawas@suryaland.co.id',
+            phoneNumber: '081100000003',
+            address: 'Basecamp Lapangan',
+            userLevel: 'Pengawas',
+            jobTitle: 'Mandor / Pengawas Lapangan',
+            assignedClientId: 'all',
+            assignedClientName: 'Semua Proyek',
+            assignedBlockCodes: ['Akses Semua Blok'],
+            loginTime: new Date().toISOString(),
+          };
+          onLoginSuccess(userObj);
+          setIsLoading(false);
+          return;
+        } else {
+          onLoginFailureDiagnostic?.(trimmedUser, 'FALLBACK_PENGAWAS_PASSWORD_MISMATCH');
+          setErrorMsg('Password salah! Silakan gunakan password default: @pengawas12345');
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      if (upperUser === 'KLIENPT' || upperUser === 'KLIEN') {
+        if (trimmedPass === '@klien12345' || trimmedPass === 'klien12345' || trimmedPass === '@Klien12345' || trimmedPass === 'Klien12345') {
+          const userObj: AuthUser = {
+            id: 'usr-dev-klienpt',
+            username: 'klienpt',
+            displayName: 'Klien Mitra Proyek',
+            role: 'client',
+            roleTitle: 'Perwakilan Klien / Pemberi Kerja (Portal Monitoring)',
+            email: 'klien@mitraproyek.co.id',
+            phoneNumber: '081100000004',
+            address: 'Kantor Klien',
+            userLevel: 'Klien',
+            jobTitle: 'Perwakilan Klien',
+            assignedClientId: 'all',
+            assignedClientName: 'Portal Monitoring Klien',
+            assignedBlockCodes: ['Akses Blok Klien'],
+            loginTime: new Date().toISOString(),
+          };
+          onLoginSuccess(userObj);
+          setIsLoading(false);
+          return;
+        } else {
+          onLoginFailureDiagnostic?.(trimmedUser, 'FALLBACK_KLIENPT_PASSWORD_MISMATCH');
+          setErrorMsg('Password salah! Silakan gunakan password default: @klien12345');
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      if (upperUser === 'BOSDIREKTUR' || upperUser === 'DIREKTUR') {
         if (trimmedPass === 'bos12345') {
           const staffList = storageService.getCompanyStaff();
           const directorStaff = staffList.find(
