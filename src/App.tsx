@@ -1017,7 +1017,7 @@ function MainApp() {
   const effectiveRole: UserRole = authUser.role;
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans selection:bg-amber-400 selection:text-slate-950">
+    <div className="min-h-screen max-w-full overflow-x-hidden bg-slate-100 text-slate-900 flex flex-col font-sans selection:bg-amber-400 selection:text-slate-950">
       {/* Global Header & Nav with Auth integration */}
       <Header
         activeTab={activeTab}
@@ -1477,7 +1477,7 @@ function MainApp() {
       )}
 
       {/* Corporate Footer */}
-      <footer className="bg-slate-900 border-t border-slate-800 text-slate-500 text-xs py-4 text-center mb-16 lg:mb-0">
+      <footer className="bg-slate-900 border-t border-slate-800 text-slate-500 text-xs py-4 text-center mb-0">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div>
             <strong className="text-slate-300">RBS APPS</strong> • Sistem Pengawasan Proyek Land Clearing (Zero Burning Method)
@@ -1493,14 +1493,6 @@ function MainApp() {
           </div>
         </div>
       </footer>
-
-      {/* Mobile Bottom Navigation Bar (Hidden on desktop/laptop) */}
-      <MobileBottomNav
-        activeTab={activeTab}
-        onSelectTab={handleTabChange}
-        userRole={effectiveRole}
-        onOpenSidebar={() => setIsSidebarOpen(true)}
-      />
     </div>
   );
 }

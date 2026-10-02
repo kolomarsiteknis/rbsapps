@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { UserRole, Client, AuthUser, CompanyProfile } from '../types';
 import { ConnectionHealthCheck } from './ConnectionHealthCheck';
+import { PWAInstallButton } from './PWAInstallButton';
 import { getLastSuccessfulSyncTime } from '../services/firestoreSync';
 
 export type TabKey = 
@@ -375,41 +376,12 @@ export const Header: React.FC<HeaderProps> = ({
 
 
 
-            {/* RIGHT: Quick Status & User Profile Trigger */}
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              {/* Connection Health Check Indicator */}
-              <ConnectionHealthCheck variant="header" />
+            {/* RIGHT: Quick Action & Sidebar Menu Trigger */}
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              {/* PWA Install Button */}
+              <PWAInstallButton variant="header" />
 
-              {/* Online / Offline Status Toggle Button */}
-              <button
-                type="button"
-                onClick={() => setIsOnline(!isOnline)}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 border cursor-pointer ${
-                  isOnline
-                    ? 'bg-emerald-950/70 border-emerald-700/80 text-emerald-300 hover:bg-emerald-900/80 shadow-xs'
-                    : 'bg-amber-950/70 border-amber-700/80 text-amber-300 hover:bg-amber-900/80'
-                }`}
-                title={
-                  isOnline 
-                    ? 'Cloud Firestore Terhubung (Real-Time). Klik untuk simulasi Mode Offline Lahan.' 
-                    : 'Mode Offline Lahan (IndexedDB Cache Aktif). Data tetap bisa di-CRUD dan otomatis disinkronkan ke Cloud saat online.'
-                }
-              >
-                <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
-                {isOnline ? <Wifi className="w-3.5 h-3.5 text-emerald-400" /> : <WifiOff className="w-3.5 h-3.5 text-amber-400" />}
-                <span className="hidden sm:inline font-bold">
-                  {isOnline ? 'Cloud Synced' : 'Offline Lahan'}
-                </span>
-                {pendingSyncCount > 0 && (
-                  <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-1.5 rounded-full">
-                    {pendingSyncCount}
-                  </span>
-                )}
-              </button>
-
-
-
-               {/* User Profile & Direct Action Button */}
+              {/* User Profile & Direct Action Button */}
               {authUser && (
                 <div className="flex items-center gap-1.5 pl-1.5 border-l border-slate-800">
                   {/* Quick Tutorial Access Button (Hidden for Client) */}
@@ -429,14 +401,14 @@ export const Header: React.FC<HeaderProps> = ({
                     </button>
                   )}
 
-                  {/* Role Avatar Chip (Opens Hidden Sidebar) */}
+                  {/* Role Avatar Chip / Menu Button */}
                   <button
                     type="button"
                     onClick={() => setIsSidebarOpen(true)}
-                    className="flex items-center gap-1.5 p-1 sm:px-2 sm:py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/70 text-xs transition-all duration-200 cursor-pointer"
-                    title="Buka Menu Pengguna & Navigasi Lengkap"
+                    className="flex items-center gap-1.5 p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700/90 border border-slate-700/80 text-xs font-bold transition-all duration-200 cursor-pointer text-slate-200 shadow-xs"
+                    title="Buka Menu Pengguna & Status Sistem Lengkap"
                   >
-                    <div className="w-6 h-6 rounded-md bg-slate-700 flex items-center justify-center text-slate-200 font-bold shrink-0">
+                    <div className="w-5 h-5 rounded-md bg-slate-700 flex items-center justify-center text-slate-200 font-bold shrink-0">
                       {isSupervisor ? (
                         <HardHat className="w-3.5 h-3.5 text-amber-400" />
                       ) : isManager ? (
@@ -445,19 +417,9 @@ export const Header: React.FC<HeaderProps> = ({
                         <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
                       )}
                     </div>
-                    <span className="hidden md:inline font-bold text-slate-200 text-xs max-w-[100px] truncate">
+                    <span className="hidden sm:inline text-xs font-bold truncate max-w-[90px]">
                       {authUser.username}
                     </span>
-                  </button>
-
-                  {/* Desktop Quick Logout */}
-                  <button
-                    type="button"
-                    onClick={() => setShowLogoutConfirm(true)}
-                    className="hidden sm:flex items-center justify-center p-2 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-950/30 transition-all duration-200 cursor-pointer"
-                    title="Keluar dari sistem"
-                  >
-                    <LogOut className="w-4 h-4" />
                   </button>
                 </div>
               )}
@@ -556,6 +518,19 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
             )}
 
+            {/* System Status & PWA Install Section */}
+            <div className="px-3 py-3 border-t border-slate-800/80 space-y-2.5">
+              <div className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                Status Sistem &amp; Database
+              </div>
+
+              {/* PWA Install Button */}
+              <PWAInstallButton variant="sidebar" />
+
+              {/* Connection Health Check Indicator */}
+              <ConnectionHealthCheck variant="dashboard" className="!p-2.5 !bg-slate-950/90 !border-slate-800" />
+            </div>
+
             {/* Navigation Menu List */}
             <div className="px-3 py-3 border-t border-slate-800/80">
               <div className="px-3 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
@@ -614,7 +589,13 @@ export const Header: React.FC<HeaderProps> = ({
                 {isOnline ? <Wifi className="w-4 h-4 text-emerald-400" /> : <WifiOff className="w-4 h-4 text-amber-400" />}
                 <span>{isOnline ? 'Mode Online (Terhubung)' : 'Mode Offline Lahan'}</span>
               </div>
-              <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
+              {pendingSyncCount > 0 ? (
+                <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-1.5 py-0.5 rounded-full">
+                  {pendingSyncCount} pending
+                </span>
+              ) : (
+                <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
+              )}
             </button>
 
             {/* Reset Data Button: Khusus Direktur / Superadmin */}
