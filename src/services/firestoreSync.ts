@@ -396,16 +396,12 @@ export function deduplicateStaffList(list: any[]): DeduplicationResult<any> {
     const normName = normalizeKey(item.fullName || item.name);
     const normId = String(item.id || '').trim();
 
-    // Check if item already exists by id, username, employeeIdNumber, or fullName
+    // Check if item already exists strictly by id or exact username
     let targetIdx = -1;
     if (normId && idMap.has(normId)) {
       targetIdx = idMap.get(normId)!;
     } else if (normU && userMap.has(normU)) {
       targetIdx = userMap.get(normU)!;
-    } else if (normEmp && empIdMap.has(normEmp)) {
-      targetIdx = empIdMap.get(normEmp)!;
-    } else if (normName && nameMap.has(normName)) {
-      targetIdx = nameMap.get(normName)!;
     }
 
     if (targetIdx >= 0) {
@@ -474,10 +470,6 @@ export function deduplicateUsersList(list: any[]): DeduplicationResult<any> {
       targetIdx = idMap.get(normId)!;
     } else if (normU && userMap.has(normU)) {
       targetIdx = userMap.get(normU)!;
-    } else if (normEmp && empIdMap.has(normEmp)) {
-      targetIdx = empIdMap.get(normEmp)!;
-    } else if (normName && nameMap.has(normName)) {
-      targetIdx = nameMap.get(normName)!;
     }
 
     if (targetIdx >= 0) {

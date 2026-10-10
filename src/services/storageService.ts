@@ -2734,14 +2734,10 @@ export const storageService = {
       if (!cleanU || !staff.password) return;
       activeStaffUsernames.add(cleanU);
 
-      const staffNameLower = (staff.fullName || '').trim().toLowerCase();
-      const staffEmpLower = (staff.employeeIdNumber || '').trim().toLowerCase();
       const idx = raw.findIndex(
         (u) =>
           (staff.linkedUserId && u.id === staff.linkedUserId) ||
-          normalizeUsername(u.username) === cleanU ||
-          (staffEmpLower && u.employeeIdNumber && u.employeeIdNumber.trim().toLowerCase() === staffEmpLower) ||
-          (staffNameLower && (u.fullName || '').trim().toLowerCase() === staffNameLower)
+          normalizeUsername(u.username) === cleanU
       );
 
       const resolvedUserId =
@@ -2821,12 +2817,39 @@ export const storageService = {
       }
     });
 
-    const filteredUsers = raw.filter(
-      (u) =>
-        activeStaffUserIds.has(u.id) ||
-        activeStaffUsernames.has(normalizeUsername(u.username)) ||
-        !deletedIds.includes(u.id)
-    );
+    const clientsList = loadFromStorage<Client[]>(STORAGE_KEYS.CLIENTS, initialClients);
+    const clientUsernames = new Set<string>();
+    const clientUserIds = new Set<string>();
+    clientsList.forEach((c) => {
+      if (c.username) clientUsernames.add(normalizeUsername(c.username));
+      if (c.linkedUserId) clientUserIds.add(c.linkedUserId);
+    });
+
+    const protectedUsernames = new Set(['superadmin', 'manager', 'pengawas', 'klienpt']);
+
+    // Actively identify and purge orphaned leftover accounts that belong to neither active staff nor clients
+    const filteredUsers = raw.filter((u) => {
+      if (!u || !u.id || deletedIds.includes(u.id) || isObsoleteHendraRecord(u)) {
+        return false;
+      }
+      const uNorm = normalizeUsername(u.username);
+      const isProtected = protectedUsernames.has(uNorm) || u.isSystemHidden;
+      const isLinkedToStaff = activeStaffUserIds.has(u.id) || activeStaffUsernames.has(uNorm);
+      const isLinkedToClient = clientUserIds.has(u.id) || clientUsernames.has(uNorm) || u.userLevel === 'Klien';
+
+      if (!isProtected && !isLinkedToStaff && !isLinkedToClient) {
+        // Orphaned garbage account from old deleted staff: permanently clean up!
+        syncDocDelete(FIRESTORE_COLLECTIONS.USERS, u.id);
+        if (!deletedIds.includes(u.id)) deletedIds.push(u.id);
+        usersListChanged = true;
+        return false;
+      }
+      return true;
+    });
+
+    if (deletedIds.length > 0) {
+      saveToStorage(STORAGE_KEYS.DELETED_USER_IDS, deletedIds);
+    }
 
     // Apply strict deduplication engine
     const { cleanList, removedDocIds } = deduplicateUsersList(filteredUsers);
@@ -3035,13 +3058,11 @@ export const storageService = {
     const normEmp = (cleanUser.employeeIdNumber || '').trim().toLowerCase();
     const normName = (cleanUser.fullName || '').trim().toLowerCase();
 
-    // Find existing by id, username, employeeIdNumber, or fullName
+    // Find existing strictly by id or exact username
     const idx = list.findIndex(
       (u) =>
         u.id === cleanUser.id ||
-        (normUsername && normalizeUsername(u.username) === normUsername) ||
-        (normEmp && u.employeeIdNumber && u.employeeIdNumber.trim().toLowerCase() === normEmp) ||
-        (normName && (u.fullName || '').trim().toLowerCase() === normName)
+        (normUsername && normalizeUsername(u.username) === normUsername)
     );
 
     const jobLower = (cleanUser.jobTitle || '').toLowerCase();
@@ -3323,13 +3344,11 @@ export const storageService = {
     const staffEmpLower = (staff.employeeIdNumber || '').trim().toLowerCase();
     const staffNameLower = (staff.fullName || '').trim().toLowerCase();
 
-    // Check by id, username, employeeIdNumber, or fullName to avoid duplicate staff records
+    // Check strictly by id or exact username to avoid accidental overwrite of other staff
     const existingIndex = staffList.findIndex(
       (s) =>
         s.id === staff.id ||
-        (cleanUser && normalizeUsername(s.username) === cleanUser) ||
-        (staffEmpLower && s.employeeIdNumber && s.employeeIdNumber.trim().toLowerCase() === staffEmpLower) ||
-        (staffNameLower && (s.fullName || '').trim().toLowerCase() === staffNameLower)
+        (cleanUser && normalizeUsername(s.username) === cleanUser)
     );
 
     const previousStaff = existingIndex >= 0 ? staffList[existingIndex] : undefined;
@@ -3359,9 +3378,7 @@ export const storageService = {
           (payload.linkedUserId && u.id === payload.linkedUserId) ||
           (previousStaff?.linkedUserId && u.id === previousStaff.linkedUserId) ||
           (prevUserLower && normalizeUsername(u.username) === prevUserLower) ||
-          (prevNameLower && u.fullName && u.fullName.trim().toLowerCase() === prevNameLower) ||
-          (payloadUserLower && normalizeUsername(u.username) === payloadUserLower) ||
-          (payloadNameLower && u.fullName && u.fullName.trim().toLowerCase() === payloadNameLower)
+          (payloadUserLower && normalizeUsername(u.username) === payloadUserLower)
       );
       const userId =
         existingUser?.id ||
@@ -3513,17 +3530,26 @@ export const storageService = {
       if (target.linkedUserId) {
         this.deleteManagedUser(target.linkedUserId);
       }
-      if (target.username) {
-        const u = this.getManagedUserByUsername(target.username);
+      const targetUserNorm = normalizeUsername(target.username);
+      const derivedUserId = `user-usr-${target.id.replace(/^staff-/, '')}`;
+      if (target.linkedUserId) {
+        this.deleteManagedUser(target.linkedUserId);
+      }
+      this.deleteManagedUser(derivedUserId);
+      if (targetUserNorm) {
+        const u = this.getManagedUserByUsername(targetUserNorm);
         if (u) this.deleteManagedUser(u.id);
       }
-      const fullNameLower = (target.fullName || '').trim().toLowerCase();
-      if (fullNameLower) {
-        const matchingUsers = this.getManagedUsers().filter(
-          (u) => (u.fullName || '').trim().toLowerCase() === fullNameLower
-        );
-        matchingUsers.forEach((u) => this.deleteManagedUser(u.id));
-      }
+      const rawUsers = loadFromStorage<ManagedUser[]>(STORAGE_KEYS.MANAGED_USERS, []);
+      rawUsers.forEach((u) => {
+        if (
+          u.id === target.linkedUserId ||
+          u.id === derivedUserId ||
+          (targetUserNorm && normalizeUsername(u.username) === targetUserNorm)
+        ) {
+          this.deleteManagedUser(u.id);
+        }
+      });
     }
 
     // Record deleted staff ID so it will not be re-seeded from initialCompanyStaff or Firestore
@@ -3539,6 +3565,62 @@ export const storageService = {
       window.dispatchEvent(new CustomEvent('suryaland_company_staff_sync', { detail: { deletedId: id } }));
     }
     return true;
+  },
+
+  // Bersihkan akun sampah lama yang tidak terhubung ke staff aktif, klien aktif, atau superadmin
+  purgeOrphanedUsers(): { purgedCount: number; purgedUsernames: string[] } {
+    const staffList = this.getCompanyStaff();
+    const activeStaffUserIds = new Set<string>();
+    const activeStaffUsernames = new Set<string>();
+    staffList.forEach((s) => {
+      if (s.id) activeStaffUserIds.add(s.id);
+      if (s.linkedUserId) activeStaffUserIds.add(s.linkedUserId);
+      const derivedId = `user-usr-${(s.id || '').replace(/^staff-/, '')}`;
+      activeStaffUserIds.add(derivedId);
+      const uNorm = normalizeUsername(s.username);
+      if (uNorm) activeStaffUsernames.add(uNorm);
+    });
+
+    const clientsList = loadFromStorage<Client[]>(STORAGE_KEYS.CLIENTS, initialClients);
+    const activeClientUserIds = new Set<string>();
+    const activeClientUsernames = new Set<string>();
+    clientsList.forEach((c) => {
+      if (c.id) activeClientUserIds.add(c.id);
+      if (c.linkedUserId) activeClientUserIds.add(c.linkedUserId);
+      const uNorm = normalizeUsername(c.username);
+      if (uNorm) activeClientUsernames.add(uNorm);
+    });
+
+    const protectedUsernames = new Set(['superadmin', 'manager', 'pengawas', 'klienpt']);
+
+    const rawUsers = loadFromStorage<ManagedUser[]>(STORAGE_KEYS.MANAGED_USERS, initialManagedUsers);
+    const deletedUserIds = loadFromStorage<string[]>(STORAGE_KEYS.DELETED_USER_IDS, []);
+    const cleanUsers: ManagedUser[] = [];
+    const purgedUsernames: string[] = [];
+
+    rawUsers.forEach((u) => {
+      if (!u || !u.id) return;
+      const uNorm = normalizeUsername(u.username);
+      const isSuper = uNorm === 'superadmin' || u.userLevel === 'Superadmin';
+      const isProtected = protectedUsernames.has(uNorm) || u.isSystemHidden;
+      const isLinkedToStaff = activeStaffUserIds.has(u.id) || activeStaffUsernames.has(uNorm);
+      const isLinkedToClient = activeClientUserIds.has(u.id) || activeClientUsernames.has(uNorm) || u.userLevel === 'Klien';
+
+      if (isSuper || isProtected || isLinkedToStaff || isLinkedToClient) {
+        cleanUsers.push(u);
+      } else {
+        purgedUsernames.push(u.username || u.id);
+        if (!deletedUserIds.includes(u.id)) {
+          deletedUserIds.push(u.id);
+        }
+        syncDocDelete(FIRESTORE_COLLECTIONS.USERS, u.id);
+      }
+    });
+
+    saveToStorage(STORAGE_KEYS.MANAGED_USERS, cleanUsers);
+    saveToStorage(STORAGE_KEYS.DELETED_USER_IDS, deletedUserIds);
+
+    return { purgedCount: purgedUsernames.length, purgedUsernames };
   },
 
   deleteCompanyStaff(id: string, currentAuthUser?: AuthUser | null): boolean {
@@ -4158,6 +4240,10 @@ export const storageService = {
     } catch (err) {
       console.warn('Cloud purge notice:', err);
     }
+
+    // Purge any orphaned garbage accounts not belonging to active staff or clients
+    const orphanRes = this.purgeOrphanedUsers();
+    totalRemoved += orphanRes.purgedCount;
 
     // Refresh staff & users to guarantee 100% active status
     this.getCompanyStaff();

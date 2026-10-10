@@ -234,6 +234,9 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
   const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
   const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
   const [showModalPassword, setShowModalPassword] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
+
+  const normalizeUsername = (u?: string): string => String(u || '').trim().replace(/^@+/, '').toLowerCase();
 
   const [staffFormData, setStaffFormData] = useState<{
     fullName: string;
@@ -282,6 +285,12 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
     return dedup.cleanList.map((s) => ({ ...s, status: 'Aktif' as const }));
   }, [staffList]);
 
+  // Fallback to storageService if clients prop is still empty or not yet hydrated
+  const effectiveClients = useMemo(() => {
+    if (clients && clients.length > 0) return clients;
+    return storageService.getClients();
+  }, [clients]);
+
   const reloadStaffAndUsers = () => {
     setStaffList(storageService.getCompanyStaff());
     setManagedUsers(storageService.getManagedUsers());
@@ -294,7 +303,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
       reloadStaffAndUsers();
       setWorkers(storageService.getWorkers());
       showToast(
-        `Audit & pembersihan selesai! ${res.totalRemoved} duplikat lokal & ${res.cloudPurgedCount} duplikat cloud dibersihkan. Semua akun staff 100% Aktif & bisa login dimanapun!`,
+        `Audit & pembersihan tuntas! ${res.totalRemoved} sampah & duplikat lokal serta ${res.cloudPurgedCount} cloud dibersihkan. Username lama yang terhapus kini bebas digunakan kembali!`,
         'success'
       );
     } catch {
@@ -305,6 +314,19 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
   };
 
   useEffect(() => {
+    // 100% Otomatis di balik layar: Rekonsiliasi, sanitasi sampah lama & auto-heal saat modul dibuka
+    const autoCleanInBackground = async () => {
+      try {
+        await storageService.deduplicateAllDatabase();
+        setStaffList(storageService.getCompanyStaff());
+        setManagedUsers(storageService.getManagedUsers());
+        setWorkers(storageService.getWorkers());
+      } catch (err) {
+        console.warn('Background auto-clean notice:', err);
+      }
+    };
+    autoCleanInBackground();
+
     const handleSync = () => {
       setStaffList(storageService.getCompanyStaff());
       setManagedUsers(storageService.getManagedUsers());
@@ -430,11 +452,12 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
   };
 
   const handleOpenAddStaff = () => {
+    setModalError(null);
     setEditingStaffId(null);
     setShowModalPassword(false);
     setHasDrawnOnCanvas(false);
     setSigMode('preset');
-    const defaultEmpId = `EMP-${Date.now().toString().slice(-4)}`;
+    const defaultEmpId = `EMP-${Date.now().toString().slice(-6)}`;
     setStaffFormData({
       fullName: '',
       jobRole: 'Pengawas Lapangan',
@@ -456,6 +479,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
   };
 
   const handleOpenEditStaff = (staff: CompanyStaff) => {
+    setModalError(null);
     setEditingStaffId(staff.id);
     setShowModalPassword(false);
     setHasDrawnOnCanvas(false);
@@ -506,81 +530,112 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
 
   const handleSaveStaff = (e: React.FormEvent) => {
     e.preventDefault();
+    setModalError(null);
+
     if (!staffFormData.fullName?.trim()) {
-      showToast('Nama Lengkap Staff wajib diisi.', 'warning');
+      const err = 'Nama Lengkap Staff wajib diisi.';
+      setModalError(err);
+      showToast(err, 'warning');
       return;
     }
     if (!staffFormData.jobRole?.trim()) {
-      showToast('Jabatan Resmi Staff wajib diisi.', 'warning');
+      const err = 'Jabatan Resmi Staff wajib diisi.';
+      setModalError(err);
+      showToast(err, 'warning');
       return;
     }
     if (!staffFormData.username?.trim()) {
-      showToast('Username login akun wajib diisi.', 'warning');
+      const err = 'Username login akun wajib diisi.';
+      setModalError(err);
+      showToast(err, 'warning');
       return;
     }
     if (!staffFormData.password?.trim()) {
-      showToast('Password login akun wajib diisi.', 'warning');
+      const err = 'Password login akun wajib diisi.';
+      setModalError(err);
+      showToast(err, 'warning');
       return;
     }
 
     const cleanUsername = (staffFormData.username || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
-    if (!cleanUsername) {
-      showToast('Username harus berupa huruf atau angka valid.', 'error');
+    if (!cleanUsername || cleanUsername.length < 3) {
+      const err = 'Username minimal 3 karakter (hanya boleh berupa huruf, angka, atau underscore).';
+      setModalError(err);
+      showToast(err, 'error');
       return;
     }
 
-    const cleanNik = (staffFormData.employeeIdNumber || '').trim().toLowerCase();
-    const formFullNameLower = (staffFormData.fullName || '').trim().toLowerCase();
-
-    // Check if staff already exists by editingStaffId, or by matching username, employeeIdNumber, or fullName
-    const matchedExistingStaff = cleanStaffList.find(
+    // 1. Validasi bentrok dengan Staff Aktif lain yang terdaftar resmi
+    const conflictingActiveStaff = cleanStaffList.find(
       (s) =>
-        (editingStaffId && s.id === editingStaffId) ||
-        (cleanUsername && (s.username || '').trim().replace(/^@+/, '').toLowerCase() === cleanUsername) ||
-        (cleanNik && s.employeeIdNumber && s.employeeIdNumber.trim().toLowerCase() === cleanNik) ||
-        (formFullNameLower && (s.fullName || '').trim().toLowerCase() === formFullNameLower)
+        s.id !== editingStaffId &&
+        normalizeUsername(s.username) === cleanUsername
     );
-
-    const staffId = editingStaffId || matchedExistingStaff?.id || `staff-${Date.now()}`;
-    const existingStaff = matchedExistingStaff || (editingStaffId ? staffList.find((s) => s.id === editingStaffId) : undefined);
-    const prevNameLower = (existingStaff?.fullName || '').trim().toLowerCase();
-    const prevUserLower = (existingStaff?.username || '').trim().toLowerCase();
-
-    const matchedExistingUser = editingStaffId || matchedExistingStaff
-      ? managedUsers.find(
-          (u) =>
-            (existingStaff?.linkedUserId && u.id === existingStaff.linkedUserId) ||
-            u.id === staffId.replace(/^staff-from-/, '') ||
-            u.id === `user-usr-${staffId.replace(/^staff-/, '')}` ||
-            (prevUserLower && u.username && u.username.trim().toLowerCase() === prevUserLower) ||
-            (prevNameLower && u.fullName && u.fullName.trim().toLowerCase() === prevNameLower) ||
-            (formFullNameLower && u.fullName && u.fullName.trim().toLowerCase() === formFullNameLower)
-        )
-      : undefined;
-
-    const linkedUserId = matchedExistingUser?.id || existingStaff?.linkedUserId || `user-usr-${staffId.replace(/^staff-/, '')}`;
-
-    // Duplicate username check (ignore current user being edited)
-    const duplicateUser = managedUsers.find(
-      (u) =>
-        u.username &&
-        u.username.trim().toLowerCase() === cleanUsername &&
-        u.id !== linkedUserId &&
-        (!prevUserLower || u.username.trim().toLowerCase() !== prevUserLower)
-    );
-    if (duplicateUser) {
-      showToast(`Username "${cleanUsername}" sudah digunakan oleh ${duplicateUser.fullName}. Silakan buat username lain.`, 'error');
+    if (conflictingActiveStaff) {
+      const err = `Username "@${cleanUsername}" sudah digunakan oleh Staff Aktif: ${conflictingActiveStaff.fullName} (${conflictingActiveStaff.jobRole}). Silakan gunakan username berbeda.`;
+      setModalError(err);
+      showToast(err, 'error');
       return;
+    }
+
+    // 2. Validasi bentrok dengan Akun Klien SPK aktif
+    const conflictingClient = clients.find(
+      (c) =>
+        c.username &&
+        normalizeUsername(c.username) === cleanUsername
+    );
+    if (conflictingClient) {
+      const err = `Username "@${cleanUsername}" sudah digunakan oleh Akun Portal Klien: ${conflictingClient.name}. Silakan gunakan username berbeda.`;
+      setModalError(err);
+      showToast(err, 'error');
+      return;
+    }
+
+    // 3. Validasi akun Superadmin sistem
+    if (cleanUsername === 'superadmin' && !editingStaffId) {
+      const err = `Username "@superadmin" dikhususkan untuk akun utama Direktur. Silakan pilih username lain.`;
+      setModalError(err);
+      showToast(err, 'error');
+      return;
+    }
+
+    // Tentukan ID Staff & ID User
+    const existingStaff = editingStaffId ? cleanStaffList.find((s) => s.id === editingStaffId) : undefined;
+    const staffId = editingStaffId || `staff-${Date.now()}`;
+    const linkedUserId = existingStaff?.linkedUserId || `user-usr-${staffId.replace(/^staff-/, '')}`;
+
+    // 4. Bersihkan otomatis jika ada sisa sampah akun lama/terhapus di database yang memegang username ini
+    const orphanUser = managedUsers.find(
+      (u) =>
+        normalizeUsername(u.username) === cleanUsername &&
+        u.id !== linkedUserId
+    );
+    if (orphanUser) {
+      console.log(`[Auto Cleanup] Menghapus sampah akun lama @${orphanUser.username} (${orphanUser.id}) agar username dapat digunakan.`);
+      storageService.deleteManagedUser(orphanUser.id);
     }
 
     const isSuper = staffFormData.userLevel === 'Superadmin';
     const isSiteMgr = staffFormData.userLevel === 'Site Manager';
+    const isAllProjects = !staffFormData.assignedClientId || staffFormData.assignedClientId === 'all';
     const selectedClient = clients.find((c) => c.id === staffFormData.assignedClientId);
-    const assignedClientName = isSuper 
-      ? 'Semua Proyek (Owner)' 
-      : isSiteMgr 
-      ? 'Semua Proyek (Site Manager Operasional)' 
-      : (selectedClient ? `${selectedClient.contractNumber ? `${selectedClient.contractNumber} - ` : ''}${selectedClient.name}` : 'Semua Proyek');
+    const assignedClientName = isAllProjects
+      ? (isSuper 
+          ? 'Semua Proyek (Owner)' 
+          : isSiteMgr 
+          ? 'Semua Proyek (Site Manager Operasional)' 
+          : 'Semua Proyek')
+      : (selectedClient 
+          ? `${selectedClient.contractNumber ? `${selectedClient.contractNumber} - ` : ''}${selectedClient.name}` 
+          : staffFormData.assignedClientName || 'Semua Proyek');
+
+    const assignedBlockCodes = isAllProjects
+      ? ['Akses Semua Blok (Tanpa Batas)']
+      : (staffFormData.assignedBlockCodes && staffFormData.assignedBlockCodes.length > 0 && !staffFormData.assignedBlockCodes[0].includes('Akses Semua Blok')
+          ? staffFormData.assignedBlockCodes
+          : selectedClient?.contractNumber
+          ? [selectedClient.contractNumber]
+          : ['Akses Semua Blok']);
 
     const signatureFinal = staffFormData.signatureUrl || createSimulatedSignatureSvg(staffFormData.fullName, staffFormData.jobRole);
 
@@ -600,9 +655,9 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
       username: cleanUsername,
       password: staffFormData.password,
       userLevel: staffFormData.userLevel,
-      assignedClientId: (isSuper || isSiteMgr) ? 'all' : staffFormData.assignedClientId,
+      assignedClientId: staffFormData.assignedClientId || 'all',
       assignedClientName,
-      assignedBlockCodes: (isSuper || isSiteMgr) ? ['Akses Semua Blok (Tanpa Batas)'] : staffFormData.assignedBlockCodes,
+      assignedBlockCodes,
       createdAt: staffFormData.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -1342,15 +1397,23 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
               </div>
 
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
+                <div
+                  className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-800 border border-emerald-200/80 rounded-xl text-[11px] font-bold shadow-2xs select-none"
+                  title="Sistem secara otomatis membersihkan sisa sampah akun lama dan menyinkronkan data di balik layar tanpa intervensi manual"
+                >
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span>Auto-Clean & Sync Aktif</span>
+                </div>
+
                 <button
                   type="button"
                   onClick={handleAuditAndDeduplicateAll}
                   disabled={isAuditingDuplicates}
                   className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-amber-400 border border-amber-500/40 font-black text-xs rounded-xl shadow-md flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-50"
-                  title="Pindai dan bersihkan duplikat database serta pastikan semua user aktif dan bisa login"
+                  title="Pindai manual dan bersihkan sampah kredensial lama, akun tak terpakai & duplikat database"
                 >
                   <RefreshCw className={`w-4 h-4 text-amber-400 ${isAuditingDuplicates ? 'animate-spin' : ''}`} />
-                  <span>{isAuditingDuplicates ? 'Membersihkan Duplikat...' : 'Audit & Bersihkan Duplikat Sekarang'}</span>
+                  <span>{isAuditingDuplicates ? 'Membersihkan Database...' : 'Bersihkan Sampah & Duplikat'}</span>
                 </button>
 
                 <button
@@ -2017,6 +2080,25 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
             </div>
 
             <form onSubmit={handleSaveStaff} className="space-y-6 text-xs">
+              {/* Prominent Error Alert Banner right inside modal */}
+              {modalError && (
+                <div className="p-4 bg-rose-50 border-2 border-rose-300 rounded-2xl flex items-start gap-3 text-rose-950 text-xs shadow-sm">
+                  <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <h4 className="font-bold text-rose-950">Kendala Validasi & Kredensial</h4>
+                    <p className="mt-0.5 text-rose-800 leading-relaxed font-semibold">{modalError}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setModalError(null)}
+                    className="p-1 text-rose-400 hover:text-rose-700 rounded-lg hover:bg-rose-100 transition cursor-pointer"
+                    title="Tutup Pesan"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
               {/* SECTION 1: DATA IDENTITAS & PROFIL STAFF */}
               <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200 space-y-3.5">
                 <div className="flex items-center justify-between border-b border-slate-200 pb-2">
@@ -2143,19 +2225,26 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                       value={staffFormData.userLevel}
                       onChange={(e) => {
                         const lvl = e.target.value as ManagedUserLevel;
-                        setStaffFormData((prev) => ({
-                          ...prev,
-                          userLevel: lvl,
-                          assignedClientId: (lvl === 'Superadmin' || lvl === 'Site Manager') ? 'all' : (clients[0]?.id || 'all'),
-                          assignedClientName: (lvl === 'Superadmin')
-                            ? 'Semua Proyek (Owner)'
-                            : (lvl === 'Site Manager')
-                            ? 'Semua Proyek (Site Manager Operasional)'
-                            : (clients[0]?.name || 'Semua Proyek'),
-                          assignedBlockCodes: (lvl === 'Superadmin' || lvl === 'Site Manager')
-                            ? ['Akses Semua Blok (Tanpa Batas)']
-                            : [],
-                        }));
+                        setStaffFormData((prev) => {
+                          const hasCustomClient = prev.assignedClientId && prev.assignedClientId !== 'all';
+                          return {
+                            ...prev,
+                            userLevel: lvl,
+                            assignedClientId: hasCustomClient ? prev.assignedClientId : (lvl === 'Superadmin' ? 'all' : (effectiveClients[0]?.id || 'all')),
+                            assignedClientName: hasCustomClient
+                              ? prev.assignedClientName
+                              : (lvl === 'Superadmin')
+                              ? 'Semua Proyek (Owner)'
+                              : (lvl === 'Site Manager')
+                              ? 'Semua Proyek (Site Manager Operasional)'
+                              : (effectiveClients[0]?.name || 'Semua Proyek'),
+                            assignedBlockCodes: hasCustomClient
+                              ? prev.assignedBlockCodes
+                              : (lvl === 'Superadmin')
+                              ? ['Akses Semua Blok (Tanpa Batas)']
+                              : [],
+                          };
+                        });
                       }}
                       className="w-full px-3.5 py-2.5 bg-white border border-sky-300 rounded-xl font-black text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 cursor-pointer"
                     >
@@ -2188,7 +2277,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                       value={staffFormData.assignedClientId || 'all'}
                       onChange={(e) => {
                         const val = e.target.value;
-                        const foundClient = clients.find((c) => c.id === val);
+                        const foundClient = effectiveClients.find((c) => c.id === val);
                         setStaffFormData((prev) => ({
                           ...prev,
                           assignedClientId: val,
@@ -2199,29 +2288,71 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                                 : prev.userLevel === 'Site Manager'
                                 ? 'Semua Proyek (Site Manager Operasional)'
                                 : 'Semua Proyek'
-                              : foundClient?.name || 'Semua Proyek',
+                              : foundClient 
+                              ? `${foundClient.contractNumber ? `${foundClient.contractNumber} - ` : ''}${foundClient.name}`
+                              : 'Semua Proyek',
                           assignedBlockCodes:
                             val === 'all'
                               ? ['Akses Semua Blok (Tanpa Batas)']
                               : foundClient?.contractNumber
                               ? [foundClient.contractNumber]
-                              : [],
+                              : ['Akses Semua Blok'],
                         }));
                       }}
                       className="w-full px-3.5 py-2.5 bg-white border border-sky-300 rounded-xl font-bold text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 cursor-pointer"
                     >
                       <option value="all">🌐 Akses Semua Proyek / Semua Klien SPK</option>
-                      {clients.map((c) => (
+                      {effectiveClients.map((c) => (
                         <option key={c.id} value={c.id}>
                           🏢 {c.name} {c.contractNumber ? `(SPK: ${c.contractNumber})` : ''}
                         </option>
                       ))}
                     </select>
+                    {effectiveClients.length === 0 ? (
+                      <div className="mt-1.5 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-[11px] leading-relaxed flex items-start gap-2">
+                        <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-bold">Belum ada Klien / Proyek SPK terdaftar di sistem.</p>
+                          <p className="text-amber-700">Pilihan penugasan otomatis aktif di <strong>&quot;Akses Semua Proyek&quot;</strong>. Jika Anda menambahkan Klien di tab <strong>Master Klien SPK</strong>, pilihan proyek otomatis muncul di sini tanpa perlu me-refresh.</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="mt-1 text-[10px] text-slate-500">
+                        Pilih <strong>Akses Semua Proyek</strong> untuk akses tanpa batas, atau pilih salah satu Klien SPK untuk membatasi penugasan staf.
+                      </p>
+                    )}
                   </div>
 
                   {/* Username */}
                   <div>
-                    <label className="block font-bold text-slate-800 mb-1">Username Login *</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-bold text-slate-800">Username Login *</label>
+                      {staffFormData.username && (() => {
+                        const uNorm = (staffFormData.username || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+                        const isTakenByStaff = cleanStaffList.some((s) => s.id !== editingStaffId && normalizeUsername(s.username) === uNorm);
+                        const isTakenByClient = clients.some((c) => c.username && normalizeUsername(c.username) === uNorm);
+                        const isSuper = uNorm === 'superadmin' && !editingStaffId;
+                        const isConflict = isTakenByStaff || isTakenByClient || isSuper;
+
+                        if (!uNorm || uNorm.length < 3) {
+                          return <span className="text-[10px] text-amber-700 font-bold">Min. 3 karakter</span>;
+                        }
+                        if (isConflict) {
+                          return (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-200 flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3 text-rose-600" />
+                              <span>Sudah Digunakan</span>
+                            </span>
+                          );
+                        }
+                        return (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            <span>Username Tersedia</span>
+                          </span>
+                        );
+                      })()}
+                    </div>
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono font-bold text-slate-400">@</span>
                       <input
@@ -2229,7 +2360,10 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                         required
                         placeholder="username"
                         value={staffFormData.username}
-                        onChange={(e) => setStaffFormData({ ...staffFormData, username: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '') })}
+                        onChange={(e) => {
+                          setModalError(null);
+                          setStaffFormData({ ...staffFormData, username: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '') });
+                        }}
                         className="w-full pl-7 pr-3 py-2 bg-white border border-slate-300 rounded-xl font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
                       />
                     </div>

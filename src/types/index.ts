@@ -702,4 +702,15 @@ export interface CompanyStaff {
   updatedAt?: string;
 }
 
+export interface Post {
+  id: string;
+  title: string;
+  content: string;
+  author_id: string;
+  author_name: string;
+  author_role: string;
+  created_at: string;
+  updated_at?: string;
+}
+
 

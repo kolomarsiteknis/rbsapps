@@ -329,7 +329,13 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
         (u) => u.username && u.username.toLowerCase() === cleanUsername.toLowerCase() && u.id !== editingUserId
       );
       if (existingUser) {
-        errors.username = `Username "${cleanUsername}" sudah digunakan oleh ${existingUser.fullName}.`;
+        const staffList = storageService.getCompanyStaff();
+        const isStaff = staffList.some(s => s.id === existingUser.id || (s.username && s.username.toLowerCase() === cleanUsername.toLowerCase()));
+        if (!isStaff && existingUser.userLevel !== 'Superadmin' && existingUser.userLevel !== 'Klien') {
+          storageService.deleteManagedUser(existingUser.id);
+        } else {
+          errors.username = `Username "${cleanUsername}" sudah digunakan oleh ${existingUser.fullName}.`;
+        }
       }
     }
 

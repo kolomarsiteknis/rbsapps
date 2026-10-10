@@ -23,13 +23,14 @@ import { CompanyMasterDataView } from './components/CompanyMasterDataView';
 import { TutorialView } from './components/TutorialView';
 import { ClientPortalView } from './components/ClientPortalView';
 import { DataRecoveryView } from './components/DataRecoveryView';
+import { PostsView } from './components/PostsView';
 import { LoginPage } from './components/LoginPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { storageService } from './services/storageService';
 import { initFirestoreSync, onSyncStatusChange, toggleFirestoreNetwork, SyncStatus, getLastSuccessfulSyncTime } from './services/firestoreSync';
 import { recordUserActivity } from './utils/activityLogger';
 import { DailyReport, Equipment, UserRole, Client, AuthUser, CompanyProfile, CompanyStaff, ManagedUser } from './types';
-import { CheckCircle2, AlertCircle, ShieldAlert, Clock, RotateCcw, LogOut } from 'lucide-react';
+import { CheckCircle2, AlertCircle, ShieldAlert, Clock, RotateCcw, LogOut, X } from 'lucide-react';
 
 const AUTH_STORAGE_KEY = 'suryaland_auth_user_v1';
 const IDLE_STORAGE_KEY = 'suryaland_last_activity_v1';
@@ -1039,25 +1040,33 @@ function MainApp() {
         setIsSidebarOpen={setIsSidebarOpen}
       />
 
-      {/* Floating Alert Toast */}
+      {/* Floating Alert Toast - Guaranteed top-level layer above all modals, overlays & backdrops */}
       {toastMessage && (
-        <div className={`fixed bottom-20 sm:bottom-6 right-4 sm:right-6 z-50 px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2.5 animate-bounce text-xs font-semibold border ${
+        <div className={`fixed top-5 sm:top-6 right-4 sm:right-6 z-[99999] max-w-md w-[calc(100%-2rem)] sm:w-auto px-4 py-3.5 rounded-2xl shadow-2xl flex items-start sm:items-center gap-3 text-xs font-bold border backdrop-blur-md transition-all duration-300 ${
           toastMessage.type === 'error'
-            ? 'bg-rose-950 text-rose-200 border-rose-600'
+            ? 'bg-rose-950/95 text-rose-100 border-rose-500 shadow-rose-950/60'
             : toastMessage.type === 'warning'
-            ? 'bg-amber-950 text-amber-200 border-amber-600'
+            ? 'bg-amber-950/95 text-amber-100 border-amber-500 shadow-amber-950/60'
             : toastMessage.type === 'info'
-            ? 'bg-slate-900 text-slate-200 border-slate-700'
-            : 'bg-slate-900 text-white border-emerald-500/50'
+            ? 'bg-slate-900/95 text-slate-100 border-sky-500 shadow-slate-950/60'
+            : 'bg-slate-900/95 text-emerald-100 border-emerald-500 shadow-emerald-950/60'
         }`}>
           {toastMessage.type === 'error' ? (
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5 sm:mt-0" />
           ) : toastMessage.type === 'warning' ? (
-            <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0" />
+            <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
           ) : (
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5 sm:mt-0" />
           )}
-          <span>{toastMessage.text}</span>
+          <span className="flex-1 leading-snug">{toastMessage.text}</span>
+          <button
+            type="button"
+            onClick={() => setToastMessage(null)}
+            className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-white/10 transition cursor-pointer shrink-0 ml-1"
+            title="Tutup Notifikasi"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
@@ -1394,6 +1403,14 @@ function MainApp() {
           <TutorialView
             onNavigateTab={(tab) => setActiveTab(tab)}
             userRole={authUser?.role}
+          />
+        )}
+
+        {/* Tab: Papan Memo / Posts & QA Test Suite */}
+        {activeTab === 'posts' && (
+          <PostsView
+            authUser={authUser}
+            showToast={showToast}
           />
         )}
         </ErrorBoundary>

@@ -48,7 +48,8 @@ export type TabKey =
   | 'supervisor-tools'
   | 'approval'
   | 'data-recovery'
-  | 'client-portal';
+  | 'client-portal'
+  | 'posts';
 
 interface HeaderProps {
   activeTab: TabKey;
@@ -221,6 +222,13 @@ export const Header: React.FC<HeaderProps> = ({
           visible: true,
         },
         {
+          key: 'posts' as TabKey,
+          label: 'Papan Memo / Posts',
+          subtitle: 'Pengumuman & Uji Validasi Zod',
+          icon: FileText,
+          visible: true,
+        },
+        {
           key: 'tutorial' as TabKey,
           label: 'Tutorial',
           subtitle: 'Panduan Modul, Fitur & SOP',
@@ -266,6 +274,13 @@ export const Header: React.FC<HeaderProps> = ({
           visible: true,
         },
         {
+          key: 'posts' as TabKey,
+          label: 'Papan Memo / Posts',
+          subtitle: 'Pengumuman & Uji Validasi Zod',
+          icon: FileText,
+          visible: true,
+        },
+        {
           key: 'tutorial' as TabKey,
           label: 'Tutorial',
           subtitle: 'Panduan Fitur & SOP',
@@ -307,6 +322,13 @@ export const Header: React.FC<HeaderProps> = ({
           label: 'Cetak Pdf',
           subtitle: 'Format Resmi Direktur & Klien',
           icon: Printer,
+          visible: true,
+        },
+        {
+          key: 'posts' as TabKey,
+          label: 'Papan Memo / Posts',
+          subtitle: 'Pengumuman Lapangan & Memo',
+          icon: FileText,
           visible: true,
         },
         {
@@ -518,19 +540,6 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
             )}
 
-            {/* System Status & PWA Install Section */}
-            <div className="px-3 py-3 border-t border-slate-800/80 space-y-2.5">
-              <div className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                Status Sistem &amp; Database
-              </div>
-
-              {/* PWA Install Button */}
-              <PWAInstallButton variant="sidebar" />
-
-              {/* Connection Health Check Indicator */}
-              <ConnectionHealthCheck variant="dashboard" className="!p-2.5 !bg-slate-950/90 !border-slate-800" />
-            </div>
-
             {/* Navigation Menu List */}
             <div className="px-3 py-3 border-t border-slate-800/80">
               <div className="px-3 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
@@ -570,6 +579,19 @@ export const Header: React.FC<HeaderProps> = ({
                     );
                   })}
               </div>
+            </div>
+
+            {/* Status Sistem & Database (Indikator Koneksi Firestore) - Tepat di Bawah Menu Tutorial */}
+            <div className="px-3 py-3 border-t border-slate-800/80 space-y-2.5">
+              <div className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                Status Sistem &amp; Database
+              </div>
+
+              {/* PWA Install Button */}
+              <PWAInstallButton variant="sidebar" />
+
+              {/* Connection Health Check Indicator */}
+              <ConnectionHealthCheck variant="dashboard" className="!p-2.5 !bg-slate-950/90 !border-slate-800" />
             </div>
           </div>
 
