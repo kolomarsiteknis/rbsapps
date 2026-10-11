@@ -690,7 +690,10 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
 
                         {/* 2. CETAK (Ikon Print) */}
                         <button
-                          onClick={() => onOpenPdf(report.id)}
+                          onClick={() => {
+                            console.log("Print button clicked for report:", report.id);
+                            onOpenPdf(report.id);
+                          }}
                           className="p-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 text-amber-400 rounded-lg shadow-xs transition-all duration-200 cursor-pointer"
                           title="2. Cetak Format PDF Resmi"
                         >

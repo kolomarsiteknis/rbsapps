@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { 
   CheckCircle2, 
   ChevronRight, 
@@ -117,7 +117,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
   const [allWorkers, setAllWorkers] = useState<Worker[]>(() => storageService.getWorkers());
 
   // Filter blocks for selected client and supervisor assigned blocks using storageService
-  const clientBlocks = storageService.getBlocks(selectedClientId, authUser);
+  const clientBlocks = useMemo(() => storageService.getBlocks(selectedClientId, authUser), [selectedClientId, authUser]);
 
   const [reportNumber, setReportNumber] = useState<string>(
     `LC-RPT/${new Date().toISOString().slice(0, 10).replace(/-/g, '/')}-00${Math.floor(Math.random() * 80 + 10)}`
@@ -141,12 +141,12 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
   const [workShift, setWorkShift] = useState<string>('07.00 - 17.00 WIB');
   const [supervisorName, setSupervisorName] = useState<string>(() => authUser?.displayName || 'Budi Santoso');
 
-  // Keep selectedBlockId aligned with clientBlocks
+  // Keep selectedBlockId aligned when client changes
   useEffect(() => {
     if (clientBlocks.length > 0 && !clientBlocks.some((b) => b.id === selectedBlockId)) {
       setSelectedBlockId(clientBlocks[0].id);
     }
-  }, [clientBlocks, selectedBlockId]);
+  }, [selectedClientId]);
 
   // Quick modal to add new client or block on-site
   const [showQuickAddClient, setShowQuickAddClient] = useState<boolean>(false);
@@ -451,7 +451,14 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
   const tankRemaining = tankInitial + tankInflow - totalFuelUsed;
 
   const selectedClient = clients.find((c) => c.id === selectedClientId) || clients[0];
-  const activeBlock = allBlocks.find((b) => b.id === selectedBlockId && b.clientId === selectedClientId) || clientBlocks[0] || null;
+  const activeBlock = useMemo(() => {
+    // Look in clientBlocks first, it's scoped to the selected client.
+    const block = clientBlocks.find((b) => b.id === selectedBlockId);
+    if (block) return block;
+
+    // Fallback to allBlocks.
+    return allBlocks.find((b) => b.id === selectedBlockId) || null;
+  }, [allBlocks, selectedBlockId, clientBlocks]);
   const cumulativeAreaCalc = (activeBlock ? activeBlock.clearedAreaHa : 48.8) + (realizedAreaHa || 0);
 
   const averagePercentage = workItemEntries.length > 0
@@ -1077,7 +1084,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
               Laporan Harian Operasional Proyek
             </h2>
             <p className="text-xs text-slate-400">
-              Metode Zero Burning (Tanpa Bakar) • Blok: <strong className="text-amber-400">{activeBlock?.code}</strong>
+              Metode Zero Burning (Tanpa Bakar)
             </p>
           </div>
 
@@ -1207,10 +1214,12 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                     value={selectedClientId}
                     onChange={(e) => {
                       const newClientId = e.target.value;
-                      setSelectedClientId(newClientId);
                       const matchingBlocks = allBlocks.filter((b) => b.clientId === newClientId);
+                      setSelectedClientId(newClientId);
                       if (matchingBlocks.length > 0) {
                         setSelectedBlockId(matchingBlocks[0].id);
+                      } else {
+                        setSelectedBlockId('');
                       }
                     }}
                     className="w-full px-3 py-2 bg-white border border-amber-400 rounded-lg text-sm font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 focus:outline-none"
@@ -1644,12 +1653,6 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                     {selectedClient?.name} — {activeBlock?.code}
                   </span>
                 </div>
-                <div className="text-xs text-slate-300 flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>
-                    Ditetapkan Superadmin: <strong className="text-amber-300 font-bold">{locationWorkers.length} personel</strong> ditugaskan pada lokasi ini.
-                  </span>
-                </div>
               </div>
 
               {/* Status Kehadiran Quick Badges */}
@@ -1679,17 +1682,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs font-bold text-slate-600">Lingkup Personel:</span>
                 <div className="inline-flex rounded-xl p-1 bg-slate-200/80">
-                  <button
-                    type="button"
-                    onClick={() => setLaborFilterScope('assigned_only')}
-                    className={`px-3 py-1 text-xs font-bold rounded-lg transition cursor-pointer ${
-                      laborFilterScope === 'assigned_only'
-                        ? 'bg-white text-slate-900 shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Personil di Lokasi Ini ({locationWorkers.length})
-                  </button>
+
                   <button
                     type="button"
                     onClick={() => setLaborFilterScope('all')}
