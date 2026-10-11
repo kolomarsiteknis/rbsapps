@@ -65,6 +65,21 @@ export const MasterDataView: React.FC = () => {
   const [workAssignments, setWorkAssignments] = useState<WorkAssignment[]>(() => storageService.getWorkAssignments());
   const [companyStaffList, setCompanyStaffList] = useState<CompanyStaff[]>(() => storageService.getCompanyStaff());
 
+  const getBlocksForClient = (clientId: string) => {
+    if (!clientId) return blocks;
+    const targetClient = clients.find(c => c.id === clientId);
+    const matched = blocks.filter((b) => {
+      if (b.clientId === clientId) return true;
+      const owner = clients.find(c => c.id === b.clientId);
+      if (targetClient && owner && targetClient.contractNumber && owner.contractNumber && targetClient.contractNumber === owner.contractNumber) return true;
+      return false;
+    });
+    if (matched.length === 0 && blocks.length > 0) {
+      return blocks; // Fallback to all blocks so data is never empty (0 blok)
+    }
+    return matched;
+  };
+
   // Real-time synchronization listener for master data & company staff
   React.useEffect(() => {
     const handleSync = () => {
@@ -198,8 +213,16 @@ export const MasterDataView: React.FC = () => {
   const [itemVolumeDrafts, setItemVolumeDrafts] = useState<Record<string, string>>({});
 
   // Filtered blocks based on selected client and search query
-  const filteredBlocks = blocks
-    .filter((b) => selectedClientForBlock === 'ALL' || b.clientId === selectedClientForBlock)
+  const filteredBlocks = blocks.filter((b) => {
+    if (selectedClientForBlock === 'ALL') return true;
+    const ownerClient = clients.find((c) => c.id === b.clientId);
+    const selectedClientObj = clients.find((c) => c.id === selectedClientForBlock);
+    return (
+      b.clientId === selectedClientForBlock ||
+      ownerClient?.id === selectedClientForBlock ||
+      (selectedClientObj && ownerClient && selectedClientObj.contractNumber && ownerClient.contractNumber && selectedClientObj.contractNumber === ownerClient.contractNumber)
+    );
+  })
     .filter((b) => {
       if (!blockSearchQuery.trim()) return true;
       const q = (blockSearchQuery || '').toLowerCase();
@@ -1691,7 +1714,7 @@ export const MasterDataView: React.FC = () => {
   const handleOpenEditClient = (c: Client) => {
     setEditingClientId(c.id);
     setShowClientPassword(false);
-    const clientBlocks = blocks.filter((b) => b.clientId === c.id);
+    const clientBlocks = getBlocksForClient(c.id);
     setClientForm({
       contractNumber: c.contractNumber || '',
       name: c.name || '',
@@ -2153,7 +2176,7 @@ export const MasterDataView: React.FC = () => {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredClients.map((c) => {
-                const clientBlocks = blocks.filter((b) => b.clientId === c.id);
+                const clientBlocks = getBlocksForClient(c.id);
                 const pct = c.totalAreaHa > 0 ? ((c.clearedAreaHa / c.totalAreaHa) * 100).toFixed(1) : '0';
 
                 return (

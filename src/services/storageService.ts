@@ -955,7 +955,7 @@ export const storageService = {
     };
 
     // Ensure every block has workItems populated with target volumes
-    const all = raw.map((b) => {
+    const mappedBlocks = raw.map((b) => {
       if (b.workItems && Array.isArray(b.workItems) && b.workItems.length > 0) {
         // Fill targetVolume if missing from older storage and normalize units
         const enrichedItems = b.workItems.map((wi) => {
@@ -987,6 +987,8 @@ export const storageService = {
         ],
       };
     });
+
+    const all = mappedBlocks.length > 0 ? mappedBlocks : initialBlocks;
 
     // Klien: Hanya blok untuk SPK milik klien yang bersangkutan
     if (authUser && (authUser.role === 'client' || authUser.userLevel === 'Klien')) {

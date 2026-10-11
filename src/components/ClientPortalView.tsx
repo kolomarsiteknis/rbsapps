@@ -161,10 +161,11 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
     const activeIds = new Set(activeSpkClients.map((c) => c.id));
     const relevantBlocks = authorizedBlocks.filter((b) => activeIds.has(b.clientId));
 
+    const totalContractHa = activeSpkClients.reduce((acc, c) => acc + (c.totalAreaHa || 0), 0);
     const totalTargetHa =
-      relevantBlocks.length > 0
-        ? relevantBlocks.reduce((acc, b) => acc + (b.targetAreaHa || 0), 0)
-        : activeSpkClients.reduce((acc, c) => acc + (c.totalAreaHa || 0), 0);
+      totalContractHa > 0
+        ? totalContractHa
+        : relevantBlocks.reduce((acc, b) => acc + (b.targetAreaHa || 0), 0);
 
     const totalClearedHa =
       relevantBlocks.length > 0
@@ -473,9 +474,11 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
                 (r) => r.clientId === spk.id || (r.contractNumber && r.contractNumber === spk.contractNumber)
               );
               const targetHa =
-                spkBlocks.length > 0
-                  ? spkBlocks.reduce((acc, b) => acc + (b.targetAreaHa || 0), 0)
-                  : spk.totalAreaHa || 0;
+                spk.totalAreaHa && spk.totalAreaHa > 0
+                  ? spk.totalAreaHa
+                  : (spkBlocks.length > 0
+                      ? spkBlocks.reduce((acc, b) => acc + (b.targetAreaHa || 0), 0)
+                      : 0);
               const clearedHa =
                 spkBlocks.length > 0
                   ? spkBlocks.reduce((acc, b) => acc + (b.clearedAreaHa || 0), 0)
