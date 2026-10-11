@@ -52,9 +52,29 @@ export function createGeotaggedPhotoDataUrl(
   );
 }
 
-export const initialClients: Client[] = [];
+export const initialClients: Client[] = [
+  {
+    id: 'client-1',
+    name: 'PT. GUDANG',
+    fullCompanyName: 'PT. GUDANG KOMODITAS KONDANG',
+    contractNumber: 'B/0001/33/GKK/OPS/9/2026',
+    location: 'Kec. Kuranji, Tanah Bumbu, Kalsel',
+    address: 'Kec. Kuranji, Tanah Bumbu, Kalsel',
+    totalAreaHa: 500,
+    clearedAreaHa: 120,
+    status: 'Aktif',
+  }
+];
 
-export const initialProjects: Project[] = [];
+export const initialProjects: Project[] = [
+  {
+    id: 'proj-1',
+    clientId: 'client-1',
+    name: 'Land Clearing Perkebunan PT. GUDANG',
+    location: 'Kec. Kuranji, Tanah Bumbu, Kalsel',
+    status: 'Aktif',
+  }
+];
 
 export const DEFAULT_WORK_ITEMS_CATALOG = [
   { name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', defaultTargetVolume: 30 },
@@ -67,11 +87,83 @@ export const DEFAULT_WORK_ITEMS_CATALOG = [
   { name: 'SALURAN TERSIER', unit: 'm³', defaultTargetVolume: 50 },
 ];
 
-export const initialBlocks: Block[] = [];
+export const initialBlocks: Block[] = [
+  {
+    id: 'blk-i33',
+    clientId: 'client-1',
+    code: 'BLOK I33',
+    name: 'Blok I33',
+    targetAreaHa: 100,
+    clearedAreaHa: 30,
+    status: 'Aktif',
+    workItems: [
+      { id: 'wi-1', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', targetVolume: 30, clearedVolume: 10 },
+      { id: 'wi-2', name: 'BATANG KUBUR', unit: 'POHON', targetVolume: 25, clearedVolume: 5 },
+      { id: 'wi-3', name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'Ha', targetVolume: 10, clearedVolume: 3 },
+    ]
+  },
+  {
+    id: 'blk-j31',
+    clientId: 'client-1',
+    code: 'BLOK J31',
+    name: 'Blok J31',
+    targetAreaHa: 100,
+    clearedAreaHa: 25,
+    status: 'Aktif',
+    workItems: [
+      { id: 'wi-4', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', targetVolume: 30, clearedVolume: 8 },
+      { id: 'wi-5', name: 'BATANG KUBUR', unit: 'POHON', targetVolume: 25, clearedVolume: 4 },
+    ]
+  },
+  {
+    id: 'blk-j34',
+    clientId: 'client-1',
+    code: 'BLOK J34',
+    name: 'Blok J34',
+    targetAreaHa: 100,
+    clearedAreaHa: 20,
+    status: 'Aktif',
+    workItems: [
+      { id: 'wi-6', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', targetVolume: 30, clearedVolume: 6 },
+    ]
+  },
+  {
+    id: 'blk-j35',
+    clientId: 'client-1',
+    code: 'BLOK J35',
+    name: 'Blok J35',
+    targetAreaHa: 100,
+    clearedAreaHa: 25,
+    status: 'Aktif',
+    workItems: [
+      { id: 'wi-7', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', targetVolume: 30, clearedVolume: 8 },
+    ]
+  },
+  {
+    id: 'blk-j36',
+    clientId: 'client-1',
+    code: 'BLOK J36',
+    name: 'Blok J36',
+    targetAreaHa: 100,
+    clearedAreaHa: 20,
+    status: 'Aktif',
+    workItems: [
+      { id: 'wi-8', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', targetVolume: 30, clearedVolume: 6 },
+    ]
+  }
+];
 
-export const initialEquipments: Equipment[] = [];
+export const initialEquipments: Equipment[] = [
+  { id: 'eq-1', name: 'Excavator Komatsu PC200-8', type: 'Excavator', clientId: 'client-1', currentHm: 1250, standardFuelRatio: 18.0, status: 'Aktif' },
+  { id: 'eq-2', name: 'Bulldozer Caterpillar D6R', type: 'Bulldozer', clientId: 'client-1', currentHm: 1100, standardFuelRatio: 22.0, status: 'Aktif' },
+  { id: 'eq-3', name: 'Excavator Kobelco SK200-10', type: 'Excavator', clientId: 'client-1', currentHm: 950, standardFuelRatio: 17.5, status: 'Aktif' },
+];
 
-export const initialWorkers: Worker[] = [];
+export const initialWorkers: Worker[] = [
+  { id: 'w-1', name: 'Hendri Gunawan', role: 'Operator', clientId: 'client-1', status: 'Aktif' },
+  { id: 'w-2', name: 'Bowo', role: 'Operator', clientId: 'client-1', status: 'Aktif' },
+  { id: 'w-3', name: 'Jaya', role: 'Mekanik', clientId: 'client-1', status: 'Aktif' },
+];
 
 export const initialInventory: InventoryItem[] = [];
 

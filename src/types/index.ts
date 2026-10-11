@@ -202,11 +202,13 @@ export interface SupportTeamMemberAssignment {
   id: string;
   role: 'Operator' | 'Mekanik' | 'Logistik' | 'Pendukung' | string;
   workerId?: string;
-  workerName: string; // e.g. "Hendri Gunawan", "Anton", "Bowo", "Jaya"
-  equipmentId?: string; // e.g. "EX-03"
-  equipmentName?: string; // e.g. "Excavator Kobelco SK200-10"
+  workerName: string;
+  equipmentId?: string;
+  equipmentName?: string;
   phone?: string;
   notes?: string;
+  startDate?: string;
+  endDate?: string;
 }
 
 export interface WorkAssignment {
@@ -220,7 +222,9 @@ export interface WorkAssignment {
   totalAreaHa?: number; // 460 Ha
 
   // Tanggal Mulai Penugasan *
-  assignedDate: string; // YYYY-MM-DD
+  assignedDate: string;
+  startDate?: string;
+  endDate?: string;
   // Status Penugasan
   status: 'Aktif' | 'Standby' | 'Selesai' | 'BKO / Bantuan';
   // Catatan / Instruksi Kerja (Opsional)

@@ -102,25 +102,23 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
     ? authUser.assignedClientId
     : (initialClientId && initialClientId !== 'ALL' ? initialClientId : (storageService.getClients()[0]?.id || 'client-1'));
 
-  const assignedBlockCodes = (isSupervisor && authUser?.assignedBlockCodes && authUser.assignedBlockCodes.length > 0 && !authUser.assignedBlockCodes[0].includes('Semua Blok'))
+  const assignedBlockCodes = (isSupervisor && authUser?.assignedBlockCodes && authUser.assignedBlockCodes.length > 0 && !authUser.assignedBlockCodes.some(c => (c || '').toLowerCase().includes('semua blok')))
     ? authUser.assignedBlockCodes
     : null;
 
   const [selectedClientId, setSelectedClientId] = useState<string>(effectiveClientId);
 
-  const [allBlocks, setAllBlocks] = useState<Block[]>(() => storageService.getBlocks());
-  const [equipments] = useState<Equipment[]>(() => storageService.getEquipments());
+  // Form State
+  const initialDate = new Date().toISOString().split('T')[0];
+  const [date, setDate] = useState<string>(initialDate);
+
+  const [allBlocks, setAllBlocks] = useState<Block[]>(() => storageService.getBlocks(undefined, authUser));
+  const [equipments, setEquipments] = useState<Equipment[]>(() => storageService.getActiveEquipmentsForDate(effectiveClientId, initialDate));
   const [allWorkers, setAllWorkers] = useState<Worker[]>(() => storageService.getWorkers());
 
-  // Filter blocks for selected client and supervisor assigned blocks
-  const clientBlocks = allBlocks.filter((b) => {
-    if (b.clientId !== selectedClientId) return false;
-    if (isSupervisor && assignedBlockCodes && !assignedBlockCodes.includes(b.code)) return false;
-    return true;
-  });
+  // Filter blocks for selected client and supervisor assigned blocks using storageService
+  const clientBlocks = storageService.getBlocks(selectedClientId, authUser);
 
-  // Form State
-  const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [reportNumber, setReportNumber] = useState<string>(
     `LC-RPT/${new Date().toISOString().slice(0, 10).replace(/-/g, '/')}-00${Math.floor(Math.random() * 80 + 10)}`
   );
@@ -133,11 +131,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
   }, [authUser?.assignedClientId, isSupervisor]);
 
   const [selectedBlockId, setSelectedBlockId] = useState<string>(() => {
-    const initBlocks = storageService.getBlocks().filter((b) => {
-      if (b.clientId !== effectiveClientId) return false;
-      if (isSupervisor && assignedBlockCodes && !assignedBlockCodes.includes(b.code)) return false;
-      return true;
-    });
+    const initBlocks = storageService.getBlocks(effectiveClientId, authUser);
     return initBlocks[0]?.id || 'blk-1';
   });
   const [weather, setWeather] = useState<WeatherCondition>('Cerah');
@@ -260,8 +254,8 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
 
   // Step 3 & 5: Equipment Work Logs & Fuel Analytics
   const [equipmentLogs, setEquipmentLogs] = useState<EquipmentWorkLog[]>(() => {
-    const savedEquips = storageService.getEquipments();
-    const initDate = new Date().toISOString().split('T')[0];
+    const savedEquips = storageService.getActiveEquipmentsForDate(effectiveClientId, date);
+    const initDate = date;
     return savedEquips.map((eq) => {
       const prevTank = getPreviousRemainingFuelForEquipment(eq.id, initDate, effectiveClientId);
       const stdLimit = eq.standardFuelRatio || 18.0;
@@ -457,7 +451,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
   const tankRemaining = tankInitial + tankInflow - totalFuelUsed;
 
   const selectedClient = clients.find((c) => c.id === selectedClientId) || clients[0];
-  const activeBlock = allBlocks.find((b) => b.id === selectedBlockId) || clientBlocks[0] || allBlocks[0];
+  const activeBlock = allBlocks.find((b) => b.id === selectedBlockId && b.clientId === selectedClientId) || clientBlocks[0] || null;
   const cumulativeAreaCalc = (activeBlock ? activeBlock.clearedAreaHa : 48.8) + (realizedAreaHa || 0);
 
   const averagePercentage = workItemEntries.length > 0
@@ -3094,7 +3088,13 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
             {currentStep < 6 ? (
               <button
                 type="button"
-                onClick={() => setCurrentStep((prev) => prev + 1)}
+                onClick={() => {
+                  if (currentStep === 1 && !activeBlock) {
+                    alert('Peringatan: Lokasi Kerja (Blok) belum dipilih atau belum tersedia untuk klien ini. Harap pilih blok yang valid terlebih dahulu!');
+                    return;
+                  }
+                  setCurrentStep((prev) => prev + 1);
+                }}
                 className="flex items-center gap-1.5 px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs shadow-md transition"
               >
                 <span>Lanjut ke Langkah {currentStep + 1}</span>

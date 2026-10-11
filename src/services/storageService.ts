@@ -827,6 +827,32 @@ export const storageService = {
   getEquipments(): Equipment[] {
     return loadFromStorage<Equipment[]>(STORAGE_KEYS.EQUIPMENTS, initialEquipments);
   },
+  getActiveEquipmentsForDate(clientId?: string, date?: string): Equipment[] {
+    const allEquips = this.getEquipments();
+    const assignments = this.getWorkAssignments(clientId);
+    if (!date || assignments.length === 0) return allEquips;
+    const activeEquipmentIds = new Set<string>();
+    let hasDateFilteredAssignment = false;
+    assignments.forEach((asg) => {
+      const asgStart = asg.startDate || asg.assignedDate;
+      const asgEnd = asg.endDate;
+      if (asg.supportTeam && asg.supportTeam.length > 0) {
+        asg.supportTeam.forEach((mem) => {
+          if (mem.equipmentId) {
+            const memStart = mem.startDate || asgStart;
+            const memEnd = mem.endDate || asgEnd;
+            const withinMemDate = (!memStart || date >= memStart) && (!memEnd || date <= memEnd);
+            if (withinMemDate) {
+              activeEquipmentIds.add(mem.equipmentId);
+              hasDateFilteredAssignment = true;
+            }
+          }
+        });
+      }
+    });
+    if (!hasDateFilteredAssignment) return allEquips;
+    return allEquips.filter((eq) => activeEquipmentIds.has(eq.id));
+  },
 
   saveEquipment(equip: Equipment): void {
     const list = this.getEquipments();
@@ -912,7 +938,11 @@ export const storageService = {
 
   // Blocks
   getBlocks(clientId?: string, authUser?: AuthUser | null): Block[] {
-    const raw = loadFromStorage<Block[]>(STORAGE_KEYS.BLOCKS, initialBlocks);
+    let raw = loadFromStorage<Block[]>(STORAGE_KEYS.BLOCKS, initialBlocks);
+    if (!raw || raw.length === 0) {
+      saveToStorage(STORAGE_KEYS.BLOCKS, initialBlocks);
+      raw = initialBlocks;
+    }
     const standardVolumeMap: Record<string, { targetVolume: number; unit: string }> = {
       'UNDERBRUSHING (SEMAK BELUKAR)': { targetVolume: 30, unit: 'Ha' },
       'BATANG KUBUR': { targetVolume: 25, unit: 'POHON' },
@@ -978,30 +1008,37 @@ export const storageService = {
 
     // Pengawas: Hanya blok untuk 1 klien tugasnya dan terbatas pada lokasi kerja (blok-blok) tugasnya
     if (authUser && authUser.role === 'supervisor') {
+      const assignedCodes = authUser.assignedBlockCodes || [];
+      const hasAllBlocks = assignedCodes.length === 0 || assignedCodes.some(c => (c || '').toLowerCase().includes('semua blok'));
+
+      if (!hasAllBlocks && assignedCodes.length > 0) {
+        const matchedByCode = all.filter((b) => {
+          return assignedCodes.some((code) => {
+            const clean = (code || '').trim().toLowerCase();
+            return (b.code && b.code.toLowerCase().includes(clean)) || (b.code && clean.includes(b.code.toLowerCase()));
+          });
+        });
+        if (matchedByCode.length > 0) return matchedByCode;
+      }
+
       const allowedClientId = authUser.assignedClientId && authUser.assignedClientId !== 'all'
         ? authUser.assignedClientId
         : clientId;
 
-      return all.filter((b) => {
+      const clientFiltered = all.filter((b) => {
         if (allowedClientId && allowedClientId !== 'ALL' && b.clientId !== allowedClientId) {
           return false;
         }
-        if (
-          authUser.assignedBlockCodes &&
-          authUser.assignedBlockCodes.length > 0 &&
-          !authUser.assignedBlockCodes[0].includes('Semua Blok')
-        ) {
-          return authUser.assignedBlockCodes.some((code) => {
-            const clean = (code || '').trim().toLowerCase();
-            return (b.code && b.code.toLowerCase().includes(clean)) || (b.code && clean.includes(b.code.toLowerCase()));
-          });
-        }
         return true;
       });
+
+      if (clientFiltered.length > 0) return clientFiltered;
+      return all.length > 0 ? all : initialBlocks;
     }
 
-    if (!clientId || clientId === 'ALL') return all;
-    return all.filter((b) => b.clientId === clientId);
+    if (!clientId || clientId === 'ALL') return all.length > 0 ? all : initialBlocks;
+    const filtered = all.filter((b) => b.clientId === clientId);
+    return filtered.length > 0 ? filtered : (all.length > 0 ? all : initialBlocks);
   },
 
   saveBlock(block: Block): Block {
@@ -1354,7 +1391,11 @@ export const storageService = {
 
   // Clients & Projects CRUD
   getClients(): Client[] {
-    const rawClients = loadFromStorage<Client[]>(STORAGE_KEYS.CLIENTS, initialClients);
+    let rawClients = loadFromStorage<Client[]>(STORAGE_KEYS.CLIENTS, initialClients);
+    if (!rawClients || rawClients.length === 0) {
+      saveToStorage(STORAGE_KEYS.CLIENTS, initialClients);
+      rawClients = initialClients;
+    }
     const rawUsers = loadFromStorage<ManagedUser[]>(STORAGE_KEYS.MANAGED_USERS, initialManagedUsers);
 
     return rawClients.map((c) => {

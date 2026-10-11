@@ -6497,6 +6497,31 @@ export const MasterDataView: React.FC = () => {
                                 )}
                               </div>
                             </div>
+                            {/* Time-Slice Allocation: Effective Date Range */}
+                            <div className="pt-2 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                              <div>
+                                <label className="block text-[9px] font-bold text-slate-500 mb-0.5">
+                                  Mulai Tanggal Berlaku (Time-Slice Start)
+                                </label>
+                                <input
+                                  type="date"
+                                  value={mem.startDate || ''}
+                                  onChange={(e) => handleSupportMemberChange(memIdx, 'startDate', e.target.value)}
+                                  className="w-full px-2.5 py-1 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium text-slate-800 focus:outline-none focus:bg-white focus:border-amber-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[9px] font-bold text-slate-500 mb-0.5">
+                                  Sampai Tanggal (Time-Slice End, Opsional)
+                                </label>
+                                <input
+                                  type="date"
+                                  value={mem.endDate || ''}
+                                  onChange={(e) => handleSupportMemberChange(memIdx, 'endDate', e.target.value)}
+                                  className="w-full px-2.5 py-1 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium text-slate-800 focus:outline-none focus:bg-white focus:border-amber-500"
+                                />
+                              </div>
+                            </div>
                           </div>
                         );
                       })}
