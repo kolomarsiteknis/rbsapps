@@ -173,16 +173,23 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
       'Status Laporan',
     ];
 
+    if (filteredReports.length === 0) {
+      alert('Tidak ada laporan yang dapat diekspor sesuai kriteria filter saat ini.');
+      return;
+    }
+
     const rows = filteredReports.map((r) => {
-      const totalEffHm = r.equipmentWorkLogs.reduce((acc, l) => acc + l.effectiveWorkHours, 0);
-      const totalDwWeather = r.equipmentWorkLogs.reduce((acc, l) => acc + l.downtimeWeatherHours, 0);
-      const totalDwBreakdown = r.equipmentWorkLogs.reduce((acc, l) => acc + l.downtimeBreakdownHours, 0);
-      const hasAlert = r.equipmentWorkLogs.some((l) => l.isFuelAlert);
+      const logs = r.equipmentWorkLogs || [];
+      const totalEffHm = logs.reduce((acc, l) => acc + (l.effectiveWorkHours || 0), 0);
+      const totalDwWeather = logs.reduce((acc, l) => acc + (l.downtimeWeatherHours || 0), 0);
+      const totalDwBreakdown = logs.reduce((acc, l) => acc + (l.downtimeBreakdownHours || 0), 0);
+      const hasAlert = logs.some((l) => l.isFuelAlert);
+      const fuelUsed = r.logistics?.fuelTankUsedLiters ?? 0;
 
       return [
         `"${r.reportNumber}"`,
         `"${r.date}"`,
-        `"${r.clientName || 'PT. A'}"`,
+        `"${r.clientName || 'PT. RBS'}"`,
         `"${r.blockCode}"`,
         `"${r.weather}"`,
         `"${r.supervisorName}"`,
@@ -190,7 +197,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
         totalEffHm.toFixed(1),
         totalDwWeather.toFixed(1),
         totalDwBreakdown.toFixed(1),
-        r.logistics.fuelTankUsedLiters,
+        fuelUsed,
         hasAlert ? 'ALERT (> Std)' : 'NORMAL',
         `"${r.status}"`,
       ].join(';');
@@ -205,6 +212,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
   };
 
   return (
@@ -1111,10 +1119,11 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                 <button
                   type="button"
                   onClick={() => onOpenPdf(viewingReport.id)}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold rounded-xl text-xs shadow transition cursor-pointer"
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs shadow transition cursor-pointer"
+                  title="Buka pratinjau dan unduh lembar PDF resmi"
                 >
-                  <Printer className="w-4 h-4" />
-                  <span>Cetak Format PDF Resmi</span>
+                  <Download className="w-4 h-4" />
+                  <span>Unduh / Cetak Dokumen PDF</span>
                 </button>
               </div>
 

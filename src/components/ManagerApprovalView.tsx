@@ -13,6 +13,7 @@ import {
   Search, 
   Eye, 
   Printer, 
+  Download,
   Calendar, 
   CheckCircle2, 
   Truck, 
@@ -1133,10 +1134,11 @@ export const ManagerApprovalView: React.FC<ManagerApprovalViewProps> = ({
               <button
                 type="button"
                 onClick={() => onOpenPdfReport(viewingReport.id)}
-                className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold rounded-xl text-xs shadow transition cursor-pointer"
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs shadow transition cursor-pointer"
+                title="Buka pratinjau dan unduh lembar PDF resmi"
               >
-                <Printer className="w-4 h-4" />
-                <span>Cetak Format PDF Resmi</span>
+                <Download className="w-4 h-4" />
+                <span>Unduh / Cetak Dokumen PDF</span>
               </button>
 
               <div className="flex items-center gap-2">

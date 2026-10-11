@@ -1158,7 +1158,11 @@ function MainApp() {
             reports={
               authUser.role === 'supervisor'
                 ? reports.filter((r) => storageService.canSupervisorAccess(r.clientId, r.blockCode, authUser))
-                : (selectedClientId === 'ALL' ? reports : reports.filter((r) => r.clientId === selectedClientId))
+                : (selectedClientId === 'ALL'
+                    ? (reports.length > 0 ? reports : storageService.getReports())
+                    : (reports.some((r) => r.clientId === selectedClientId)
+                        ? reports.filter((r) => r.clientId === selectedClientId)
+                        : storageService.getReports(selectedClientId)))
             }
             isStandaloneView={true}
             companyProfileProp={companyProfile}
@@ -1422,7 +1426,7 @@ function MainApp() {
           reports={
             authUser.role === 'supervisor'
               ? reports.filter((r) => storageService.canSupervisorAccess(r.clientId, r.blockCode, authUser))
-              : reports
+              : (reports.length > 0 ? reports : storageService.getReports())
           }
           selectedReportId={selectedReportIdForModal}
           onClose={() => setSelectedReportIdForModal(null)}

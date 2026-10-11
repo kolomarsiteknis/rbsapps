@@ -16,6 +16,7 @@ import {
   Search,
   Eye,
   Printer,
+  Download,
   Layers,
   ShieldCheck,
   TrendingUp,
@@ -805,9 +806,10 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
                         type="button"
                         onClick={() => onViewPdf(report)}
                         className="px-4 py-2.5 bg-teal-600 hover:bg-teal-500 text-white font-black rounded-xl text-xs shadow-sm transition cursor-pointer flex items-center justify-center gap-1.5"
+                        title="Buka pratinjau dan unduh lembar PDF resmi"
                       >
-                        <Printer className="w-4 h-4" />
-                        <span>Lihat &amp; Cetak PDF Resmi</span>
+                        <Download className="w-4 h-4" />
+                        <span>Unduh / Cetak Dokumen PDF</span>
                       </button>
 
                       <button

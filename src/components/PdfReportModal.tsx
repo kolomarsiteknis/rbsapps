@@ -1,5 +1,21 @@
-import React, { useState } from 'react';
-import { Printer, X, Download, AlertTriangle, CheckCircle2, ChevronDown, Calendar, Building2, MapPin } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  Printer, 
+  X, 
+  Download, 
+  AlertTriangle, 
+  CheckCircle2, 
+  ChevronDown, 
+  Calendar, 
+  Building2, 
+  MapPin,
+  FileSpreadsheet,
+  FileText,
+  Loader2,
+  ExternalLink
+} from 'lucide-react';
+import { jsPDF } from 'jspdf';
+import { toCanvas, toJpeg } from 'html-to-image';
 import { DailyReport, CompanyProfile, CompanyStaff } from '../types';
 import { storageService } from '../services/storageService';
 
@@ -21,11 +37,26 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
   const [currentId, setCurrentId] = useState<string>(
     selectedReportId || (reports.length > 0 ? reports[0].id : '')
   );
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [statusNotification, setStatusNotification] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
+
+  // Sync currentId when selectedReportId or reports change
+  useEffect(() => {
+    if (selectedReportId) {
+      setCurrentId(selectedReportId);
+    } else if (reports.length > 0 && !currentId) {
+      setCurrentId(reports[0].id);
+    }
+  }, [selectedReportId, reports]);
 
   const companyProfile = companyProfileProp || storageService.getCompanyProfile();
   const companyStaff = storageService.getCompanyStaff();
 
-  const report = reports.find((r) => r.id === currentId) || reports[0];
+  const allAvailableReports = reports && reports.length > 0 ? reports : storageService.getReports();
+  const report = allAvailableReports.find((r) => r.id === currentId) 
+    || (selectedReportId ? storageService.getReportById(selectedReportId) : undefined)
+    || (currentId ? storageService.getReportById(currentId) : undefined)
+    || allAvailableReports[0];
 
   // Match staff for signatures
   const supervisorStaff = companyStaff.find(
@@ -40,10 +71,33 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
     (s) => s.staffLevel === 'Direktur' || (s.jobRole || '').toLowerCase().includes('direktur')
   );
 
+  const showNotification = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
+    setStatusNotification({ message, type });
+    setTimeout(() => {
+      setStatusNotification(null);
+    }, 4500);
+  };
+
   if (!report) {
     return (
-      <div className="p-8 text-center bg-white rounded-xl shadow">
-        <p className="text-slate-500">Belum ada laporan harian yang tersedia.</p>
+      <div className={`${isStandaloneView ? 'py-8 px-4' : 'fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex justify-center items-center p-4'}`}>
+        <div className="bg-white max-w-md w-full p-6 rounded-2xl shadow-2xl text-center space-y-4 border border-slate-200">
+          <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto">
+            <AlertTriangle className="w-6 h-6" />
+          </div>
+          <h3 className="font-bold text-slate-900 text-lg">Dokumen Laporan Belum Tersedia</h3>
+          <p className="text-slate-500 text-xs">
+            Tidak ditemukan data laporan harian operasional untuk ditampilkan saat ini.
+          </p>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl text-xs transition cursor-pointer"
+            >
+              Tutup Jendela
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -55,18 +109,288 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
     return Number(val).toFixed(decimals);
   };
 
-  const handlePrint = () => {
-    // Focus current window/frame before printing to ensure native print dialog opens correctly in iframe previews
-    window.focus();
-    window.print();
+  // 1. UNDUH PDF RESMI (Menggunakan html-to-image + jsPDF, mendukung semua warna OKLCH modern)
+  const handleDownloadPdf = async () => {
+    const sheetElement = document.getElementById('official-pdf-sheet');
+    if (!sheetElement) {
+      showNotification('Gagal menemukan elemen lembar dokumen untuk di-generate.', 'error');
+      return;
+    }
+
+    setIsGeneratingPdf(true);
+    showNotification('Sedang memproses dokumen ke format PDF resolusi tinggi...', 'info');
+
+    try {
+      const canvas = await toCanvas(sheetElement, {
+        backgroundColor: '#ffffff',
+        pixelRatio: 2,
+        cacheBust: true,
+      });
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.98);
+      const pdf = new jsPDF({
+        orientation: 'p',
+        unit: 'mm',
+        format: 'a4',
+        compress: true,
+      });
+
+      const pdfWidth = 210; // Lebar standar A4 (mm)
+      const pdfHeight = 297; // Tinggi standar A4 (mm)
+      const pageMargin = 6;
+      const contentWidth = pdfWidth - (pageMargin * 2);
+      const contentHeight = (canvas.height * contentWidth) / canvas.width;
+
+      let heightLeft = contentHeight;
+      let position = pageMargin;
+
+      pdf.addImage(imgData, 'JPEG', pageMargin, position, contentWidth, contentHeight, undefined, 'FAST');
+      heightLeft -= (pdfHeight - pageMargin * 2);
+
+      while (heightLeft > 0) {
+        position = heightLeft - contentHeight + pageMargin;
+        pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', pageMargin, position, contentWidth, contentHeight, undefined, 'FAST');
+        heightLeft -= (pdfHeight - pageMargin * 2);
+      }
+
+      const safeReportNo = (report.reportNumber || 'LAPORAN').replace(/[\/\\:\s]/g, '_');
+      const filename = `LAPORAN_RESMI_${safeReportNo}_${report.date}.pdf`;
+      pdf.save(filename);
+
+      showNotification(`Dokumen PDF berhasil diunduh: ${filename}`, 'success');
+    } catch (err) {
+      console.error('Error creating PDF file with toCanvas, attempting toJpeg fallback:', err);
+      try {
+        const imgData = await toJpeg(sheetElement, {
+          backgroundColor: '#ffffff',
+          pixelRatio: 1.5,
+          quality: 0.95,
+        });
+        const pdf = new jsPDF({
+          orientation: 'p',
+          unit: 'mm',
+          format: 'a4',
+          compress: true,
+        });
+        const pdfWidth = 210;
+        const pdfHeight = 297;
+        const pageMargin = 6;
+        const contentWidth = pdfWidth - (pageMargin * 2);
+        const rect = sheetElement.getBoundingClientRect();
+        const contentHeight = (rect.height * contentWidth) / (rect.width || 800);
+
+        let heightLeft = contentHeight;
+        let position = pageMargin;
+
+        pdf.addImage(imgData, 'JPEG', pageMargin, position, contentWidth, contentHeight, undefined, 'FAST');
+        heightLeft -= (pdfHeight - pageMargin * 2);
+
+        while (heightLeft > 0) {
+          position = heightLeft - contentHeight + pageMargin;
+          pdf.addPage();
+          pdf.addImage(imgData, 'JPEG', pageMargin, position, contentWidth, contentHeight, undefined, 'FAST');
+          heightLeft -= (pdfHeight - pageMargin * 2);
+        }
+
+        const safeReportNo = (report.reportNumber || 'LAPORAN').replace(/[\/\\:\s]/g, '_');
+        const filename = `LAPORAN_RESMI_${safeReportNo}_${report.date}.pdf`;
+        pdf.save(filename);
+
+        showNotification(`Dokumen PDF berhasil diunduh: ${filename}`, 'success');
+      } catch (err2) {
+        console.error('Error in secondary PDF generator:', err2);
+        // Fallback: Unduh sebagai dokumen HTML Siap Cetak
+        handleDownloadHtmlFallback();
+        showNotification('PDF dialihkan ke dokumen resmi cetak mandiri.', 'info');
+      }
+    } finally {
+      setIsGeneratingPdf(false);
+    }
   };
 
+  // Fallback dokumen HTML cetak jika rendering canvas browser terhalang sandbox
+  const handleDownloadHtmlFallback = () => {
+    const sheetElement = document.getElementById('official-pdf-sheet');
+    if (!sheetElement) return;
+
+    const htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Laporan ${report.reportNumber} - ${companyProfile.officialName || 'PT. RBS GROUP'}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; margin: 20px; color: #0f172a; background: #fff; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; margin-bottom: 16px; font-size: 11px; }
+    th, td { border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; }
+    th { background: #f1f5f9; font-weight: bold; }
+    @media print {
+      @page { size: A4 portrait; margin: 8mm; }
+      body { margin: 0; padding: 0; }
+    }
+  </style>
+</head>
+<body>
+  ${sheetElement.outerHTML}
+  <script>
+    window.onload = function() { window.print(); };
+  </script>
+</body>
+</html>`;
+    const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const filename = `DOKUMEN_CETAK_${(report.reportNumber || 'LAPORAN').replace(/[\/\\:\s]/g, '_')}.html`;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  };
+
+  // 2. CETAK / PRINT DIALOG (Aman terhadap sandbox iframe)
+  const handlePrint = () => {
+    try {
+      window.focus();
+      window.print();
+    } catch (e) {
+      console.warn('Browser window.print() is restricted or sandboxed:', e);
+      // Fallback langsung unduh PDF
+      handleDownloadPdf();
+    }
+  };
+
+  // 3. UNDUH DATA TABEL EXCEL (CSV FORMAT)
+  const handleDownloadExcel = () => {
+    try {
+      const headers = [
+        'No. Dokumen',
+        'Tanggal Laporan',
+        'Klien / Pemilik Lahan',
+        'No. Kontrak SPK',
+        'Nama Proyek',
+        'Lokasi Blok',
+        'Kondisi Cuaca',
+        'Shift Kerja',
+        'Pengawas Lapangan',
+        'Status Laporan',
+        'Target Area (Ha)',
+        'Realisasi Area (Ha)',
+        'Total Kumulatif (Ha)',
+        'Persentase Capaian (%)',
+        'Catatan Capaian Fisik',
+        'Total Unit Alat Berat',
+        'Total Jam Efektif (HM)',
+        'Total Downtime Cuaca (Jam)',
+        'Total Downtime Breakdown (Jam)',
+        'Stok Awal BBM (Liter)',
+        'BBM Masuk (Liter)',
+        'BBM Terpakai (Liter)',
+        'Sisa Stok BBM (Liter)',
+      ];
+
+      const totalEffHm = (report.equipmentWorkLogs || []).reduce((acc, l) => acc + (l.effectiveWorkHours || 0), 0);
+      const totalDwWeather = (report.equipmentWorkLogs || []).reduce((acc, l) => acc + (l.downtimeWeatherHours || 0), 0);
+      const totalDwBreakdown = (report.equipmentWorkLogs || []).reduce((acc, l) => acc + (l.downtimeBreakdownHours || 0), 0);
+
+      const mainRow = [
+        `"${report.reportNumber}"`,
+        `"${report.date}"`,
+        `"${report.clientName || ''}"`,
+        `"${report.contractNumber || ''}"`,
+        `"${report.projectName || ''}"`,
+        `"${report.blockCode || ''}"`,
+        `"${report.weather || ''}"`,
+        `"${report.effectiveWorkShift || ''}"`,
+        `"${report.supervisorName || ''}"`,
+        `"${report.status || ''}"`,
+        safeNum(report.physicalProgress?.targetAreaHa, 2),
+        safeNum(report.physicalProgress?.realizedAreaHa, 2),
+        safeNum(report.physicalProgress?.cumulativeAreaHa, 2),
+        safeNum(report.physicalProgress?.progressPercentage, 2),
+        `"${(report.physicalProgress?.notes || '-').replace(/"/g, '""')}"`,
+        (report.equipmentWorkLogs || []).length,
+        totalEffHm.toFixed(1),
+        totalDwWeather.toFixed(1),
+        totalDwBreakdown.toFixed(1),
+        report.logistics?.fuelTankInitialLiters ?? 0,
+        report.logistics?.fuelTankInflowLiters ?? 0,
+        report.logistics?.fuelTankUsedLiters ?? 0,
+        report.logistics?.fuelTankRemainingLiters ?? 0,
+      ];
+
+      const eqHeaders = [
+        'KODE UNIT',
+        'JENIS & TIPE ALAT',
+        'OPERATOR',
+        'HM AWAL',
+        'HM AKHIR',
+        'TOTAL HM',
+        'DOWNTIME CUACA (JAM)',
+        'DOWNTIME BREAKDOWN (JAM)',
+        'JAM KERJA EFEKTIF (HM)',
+        'PENGISIAN BBM (LITER)',
+        'RASIO BBM (L/HM)',
+        'BATAS STANDAR (L/HM)',
+        'STATUS ALARM BBM',
+        'KETERANGAN / DOWNTIME',
+      ];
+
+      const eqRows = (report.equipmentWorkLogs || []).map((l) => [
+        `"${l.equipmentId}"`,
+        `"${l.type}"`,
+        `"${(l as any).operatorName || l.equipmentName || '-'}"`,
+        safeNum(l.hmStart),
+        safeNum(l.hmEnd),
+        safeNum(l.totalHm),
+        safeNum(l.downtimeWeatherHours),
+        safeNum(l.downtimeBreakdownHours),
+        safeNum(l.effectiveWorkHours),
+        l.fuelAddedLiters,
+        safeNum(l.fuelRatio),
+        safeNum(l.fuelStandardLimit),
+        l.isFuelAlert ? 'ALERT (> STD)' : 'NORMAL',
+        `"${(l.downtimeWeatherNote || l.downtimeBreakdownNote || '-').replace(/"/g, '""')}"`,
+      ]);
+
+      const csvContent = '\uFEFF' + [
+        `"REKAPITULASI LAPORAN OPERASIONAL - ${companyProfile.officialName || 'PT. RBS GROUP'}"`,
+        headers.join(';'),
+        mainRow.join(';'),
+        '',
+        '"OPERASIONAL ALAT BERAT & PENCATATAN DOWNTIME"',
+        eqHeaders.join(';'),
+        ...eqRows.map((r) => r.join(';')),
+      ].join('\r\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const safeReportNo = (report.reportNumber || 'LAPORAN').replace(/[\/\\:\s]/g, '_');
+      const filename = `REKAP_EXCEL_${safeReportNo}_${report.date}.csv`;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+
+      showNotification(`File spreadsheet Excel berhasil diunduh: ${filename}`, 'success');
+    } catch (err) {
+      console.error('Failed to export CSV Excel:', err);
+      showNotification('Gagal mengunduh file Excel.', 'error');
+    }
+  };
+
+  // 4. UNDUH TEKS DOKUMEN (TXT FORMAT)
   const handleDownloadTxt = () => {
-    const textReport = `====================================================================================================
+    try {
+      const textReport = `====================================================================================================
                                        ${companyProfile.officialName || 'PT. RBS GROUP'}
                            ${companyProfile.headOfficeAddress} | Telp: ${companyProfile.phone}
 ====================================================================================================
-                                Laporon Harian Operasional Land Clearing
+                                Laporan Harian Operasional Land Clearing
                                       No. Dokumen: ${report.reportNumber}
 ====================================================================================================
 
@@ -75,7 +399,7 @@ INFORMASI PROYEK & KLIEN
 Klien / Pemilik Lahan : ${report.clientName.padEnd(36)} Tanggal Laporan  : ${report.date}
 Nama Proyek           : ${report.projectName.padEnd(36)} Lokasi Kerja     : ${report.blockCode}
 No. Kontrak           : ${report.contractNumber.padEnd(36)} Kondisi Cuaca    : ${report.weather}${report.weatherStartTime ? ` (${report.weatherStartTime} - ${report.weatherEndTime || ''} WIB)` : ''}
-Pengawas Lapangan     : ${report.supervisorName} (${companyProfile.shortName || 'RBS'})    Jam Efektif Keja : ${report.effectiveWorkShift}
+Pengawas Lapangan     : ${report.supervisorName} (${companyProfile.shortName || 'RBS'})    Jam Efektif Kerja : ${report.effectiveWorkShift}
 
 ----------------------------------------------------------------------------------------------------
 I. HASIL KERJA HARIAN (CAPAIAN FISIK)
@@ -123,15 +447,25 @@ ${(report.equipmentWorkLogs || [])
       Dibuat Oleh,                      Diperiksa Oleh,                    Disetujui Oleh,
     Pengawas Lapangan                  Site Manager                           Direktur
 
-   ( ${report.signatures?.supervisor?.name || ''} )                  ( ${report.signatures?.siteManager?.name || 'Agus Wardhana'} )               ( ${report.signatures?.director?.name || 'Ir. Hendra Wijaya, M.Si'} )
+   ( ${report.signatures?.supervisor?.name || ''} )                  ( ${report.signatures?.siteManager?.name || 'Bambang Sugiarto, S.P.'} )               ( ${report.signatures?.director?.name || 'Direktur Utama'} )
 `;
-    const blob = new Blob([textReport], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${report.reportNumber.replace(/[\/\\:]/g, '_')}.txt`;
-    link.click();
-    URL.revokeObjectURL(url);
+      const blob = new Blob([textReport], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const safeReportNo = (report.reportNumber || 'LAPORAN').replace(/[\/\\:\s]/g, '_');
+      const filename = `${safeReportNo}.txt`;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+
+      showNotification(`File teks berhasil diunduh: ${filename}`, 'success');
+    } catch (err) {
+      console.error('Failed to download TXT:', err);
+      showNotification('Gagal mengunduh file teks.', 'error');
+    }
   };
 
   const totalDowntimeWeather = (report.equipmentWorkLogs || []).reduce((a, b) => a + (b.downtimeWeatherHours || 0), 0);
@@ -142,48 +476,112 @@ ${(report.equipmentWorkLogs || [])
     <div className={`${isStandaloneView ? 'py-6 px-2 sm:px-6' : 'fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm overflow-y-auto p-2 sm:p-6 flex justify-center items-start'}`}>
       <div className="bg-white w-full max-w-4xl text-slate-900 rounded-xl shadow-2xl overflow-hidden print:shadow-none print:m-0 print:p-0 print:w-full print:max-w-none">
         
+        {/* Toast Notifikasi Khusus Modal */}
+        {statusNotification && (
+          <div className="fixed top-5 right-5 z-60 max-w-md animate-fade-in shadow-2xl">
+            <div className={`px-4 py-3 rounded-xl flex items-center gap-2.5 text-xs font-bold ${
+              statusNotification.type === 'success' 
+                ? 'bg-emerald-600 text-white' 
+                : statusNotification.type === 'error'
+                ? 'bg-rose-600 text-white'
+                : 'bg-amber-500 text-slate-950'
+            }`}>
+              {statusNotification.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+              )}
+              <span>{statusNotification.message}</span>
+            </div>
+          </div>
+        )}
+
         {/* Controls Bar (Hidden during Print) */}
         <div className="print:hidden bg-slate-800 text-white px-4 py-3 flex flex-wrap items-center justify-between gap-3 border-b border-slate-700">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
             <span className="text-xs font-semibold uppercase text-slate-300">Pilih Laporan:</span>
             <div className="relative">
               <select
                 value={currentId}
                 onChange={(e) => setCurrentId(e.target.value)}
-                className="bg-slate-700 text-white text-xs font-medium pl-3 pr-8 py-1.5 rounded-lg border border-slate-600 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                className="bg-slate-700 text-white text-xs font-medium pl-3 pr-8 py-1.5 rounded-lg border border-slate-600 focus:outline-none focus:ring-1 focus:ring-amber-400 max-w-[260px] sm:max-w-sm truncate"
               >
-                {reports.map((r) => (
+                {allAvailableReports.map((r) => (
                   <option key={r.id} value={r.id}>
-                    {r.reportNumber} — {r.clientName || 'PT. A'} ({r.blockCode} • {r.date})
+                    {r.reportNumber} — {r.clientName || 'PT. RBS'} ({r.blockCode} • {r.date})
                   </option>
                 ))}
               </select>
               <ChevronDown className="w-3.5 h-3.5 absolute right-2.5 top-2.5 text-slate-400 pointer-events-none" />
             </div>
-            <span className="text-xs text-amber-400 font-bold bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/30">
-              Format Siap Cetak F4 / A4
+            <span className="text-xs text-amber-400 font-bold bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/30 hidden md:inline-block">
+              Format Standar F4 / A4
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* Action Buttons: UNDUH PDF, CETAK, EXCEL, TXT */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* 1. TOMBOL UTAMA: UNDUH DOKUMEN PDF RESMI */}
             <button
+              type="button"
+              onClick={handleDownloadPdf}
+              disabled={isGeneratingPdf}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 text-xs font-black rounded-lg shadow transition cursor-pointer disabled:opacity-60"
+              title="Unduh dokumen file PDF resmi ke perangkat Anda"
+            >
+              {isGeneratingPdf ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Memproses PDF...</span>
+                </>
+              ) : (
+                <>
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Unduh Dokumen PDF</span>
+                </>
+              )}
+            </button>
+
+            {/* 2. CETAK / PRINT LANGSUNG */}
+            <button
+              type="button"
               onClick={handlePrint}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold rounded-lg shadow transition"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 active:scale-95 text-white text-xs font-bold rounded-lg shadow transition cursor-pointer"
+              title="Buka dialog printer browser untuk cetak langsung"
             >
               <Printer className="w-3.5 h-3.5" />
-              <span>Cetak / Simpan PDF</span>
+              <span>Cetak</span>
             </button>
+
+            {/* 3. EKSPOR EXCEL (CSV) */}
             <button
-              onClick={handleDownloadTxt}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold rounded-lg transition"
+              type="button"
+              onClick={handleDownloadExcel}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 active:scale-95 text-white text-xs font-semibold rounded-lg shadow transition cursor-pointer"
+              title="Unduh data tabel laporan dalam format Excel / CSV"
             >
-              <Download className="w-3.5 h-3.5" />
-              <span>Unduh TXT</span>
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Unduh Excel</span>
             </button>
+
+            {/* 4. UNDUH TXT */}
+            <button
+              type="button"
+              onClick={handleDownloadTxt}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-700 hover:bg-slate-600 active:scale-95 text-slate-200 text-xs font-medium rounded-lg transition cursor-pointer"
+              title="Unduh teks ringkas format .txt"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">TXT</span>
+            </button>
+
+            {/* 5. TUTUP MODAL */}
             {onClose && (
               <button
+                type="button"
                 onClick={onClose}
-                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-700 transition"
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-700 transition cursor-pointer ml-1"
+                title="Tutup Jendela"
               >
                 <X className="w-4 h-4" />
               </button>

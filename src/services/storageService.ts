@@ -20,7 +20,8 @@ import {
   AuthUser,
   WorkAssignment,
   CompanyProfile,
-  CompanyStaff
+  CompanyStaff,
+  LogisticsCategory
 } from '../types';
 import { isDirectorLevel } from '../utils/auth';
 import { 
@@ -696,10 +697,10 @@ function loadFromStorage<T>(key: string, defaultValue: T): T {
 
 function saveToStorage<T>(key: string, value: T): void {
   try {
+    localStorage.setItem(key, JSON.stringify(value));
     const colName = STORAGE_TO_COLLECTION_MAP[key];
     if (colName && Array.isArray(value)) {
       setLiveCollection(colName, value);
-      syncDocWrite(colName, value);
     }
   } catch (err) {
     console.error(`Error saving storage for ${key}:`, err);

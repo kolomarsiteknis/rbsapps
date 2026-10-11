@@ -130,6 +130,12 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
     }
   }, [authUser?.assignedClientId, isSupervisor]);
 
+  // Sinkronisasi data alat berat dari modul Master Data Proyek saat client atau tanggal berubah
+  useEffect(() => {
+    const freshEquips = storageService.getActiveEquipmentsForDate(selectedClientId, date);
+    setEquipments(freshEquips.length > 0 ? freshEquips : storageService.getEquipments());
+  }, [selectedClientId, date]);
+
   const [selectedBlockId, setSelectedBlockId] = useState<string>(() => {
     const initBlocks = storageService.getBlocks(effectiveClientId, authUser);
     return initBlocks[0]?.id || 'blk-1';
@@ -206,26 +212,116 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
 
   // Helper to fetch previous remaining fuel in unit tank from earlier daily reports
   const getPreviousRemainingFuelForEquipment = useCallback(
-    (equipmentId: string, targetDate: string, clientId?: string): number => {
+    (equipmentId: string, targetDate: string, clientId?: string, equipmentName?: string): number => {
       try {
-        const allReports = storageService.getReports(clientId);
+        // Ambil semua laporan tersimpan untuk memastikan riwayat fisik alat terdeteksi
+        const allReports = storageService.getReports();
+
+        // Normalisasi tanggal ke timestamp (awal hari) agar tidak ada kesalahan komparasi string
+        const parseDateToTime = (dStr: string): number => {
+          if (!dStr) return 0;
+          const clean = dStr.split('T')[0].trim();
+          if (/^\d{1,2}[\/-]\d{1,2}[\/-]\d{4}/.test(clean)) {
+            const parts = clean.split(/[\/-]/);
+            return new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0])).getTime();
+          }
+          return new Date(clean).getTime() || 0;
+        };
+
+        const targetTime = parseDateToTime(targetDate);
+
+        // Filter: Hanya laporan dengan tanggal SEBELUM targetDate
+        // Query database terurut: TERBARU ke TERLAMA (Descending: b.time - a.time)
+        // Memastikan query TIDAK TERBALIK sehingga hari kemarin (e.g. tgl 2) diambil pertama kali
         const earlierReports = allReports
-          .filter((r) => r.date < targetDate && (!clientId || r.clientId === clientId))
-          .sort((a, b) => b.date.localeCompare(a.date));
+          .filter((r) => {
+            const rTime = parseDateToTime(r.date);
+            return rTime > 0 && targetTime > 0 && rTime < targetTime;
+          })
+          .sort((a, b) => {
+            const timeDiff = parseDateToTime(b.date) - parseDateToTime(a.date);
+            if (timeDiff !== 0) return timeDiff;
+            return (b.createdAt || '').localeCompare(a.createdAt || '');
+          });
+
+        // Helper pencocokan unit alat berat secara presisi & ketat (mencegah salah pencocokan kategori alat & nomor unit)
+        const isMatchEquipment = (logEqId: string, logEqName?: string): boolean => {
+          if (!logEqId || !equipmentId) return false;
+          const cleanLog = logEqId.trim().toUpperCase();
+          const cleanTarget = equipmentId.trim().toUpperCase();
+
+          // 1. Pencocokan langsung (case insensitive)
+          if (cleanLog === cleanTarget) return true;
+
+          // 2. Pemetaan alias unit resmi yang valid secara fisik (misal EXCA-01 dengan eq-1)
+          const EXACT_ALIASES: Record<string, string[]> = {
+            'EXCA-01': ['EQ-1'],
+            'EQ-1': ['EXCA-01'],
+            'DZ-01': ['EQ-2'],
+            'EQ-2': ['DZ-01'],
+          };
+          if (EXACT_ALIASES[cleanTarget]?.includes(cleanLog)) return true;
+
+          // 3. Validasi kategori alat: Ekskavator tidak boleh pernah cocok dengan Bulldozer
+          const isLogExca = cleanLog.includes('EXCA') || cleanLog.includes('EX-');
+          const isTargetExca = cleanTarget.includes('EXCA') || cleanTarget.includes('EX-');
+          const isLogBull = cleanLog.includes('DZ') || cleanLog.includes('BULL');
+          const isTargetBull = cleanTarget.includes('DZ') || cleanTarget.includes('BULL');
+
+          if ((isLogExca && !isTargetExca) || (isTargetExca && !isLogExca)) return false;
+          if ((isLogBull && !isTargetBull) || (isTargetBull && !isLogBull)) return false;
+
+          const extractUnitNumber = (s: string): number | null => {
+            const m = s.match(/\d+/);
+            return m ? parseInt(m[0], 10) : null;
+          };
+
+          const logNum = extractUnitNumber(cleanLog);
+          const targetNum = extractUnitNumber(cleanTarget);
+
+          if (logNum !== null && targetNum !== null) {
+            return logNum === targetNum;
+          }
+
+          return false;
+        };
 
         for (const r of earlierReports) {
-          const match = r.equipmentWorkLogs?.find((l) => l.equipmentId === equipmentId);
+          const match = r.equipmentWorkLogs?.find((l) => isMatchEquipment(l.equipmentId, l.equipmentName));
           if (match) {
-            if (typeof match.remainingTankLiters === 'number' && !isNaN(match.remainingTankLiters)) {
+            const prevTankYesterday = Number(match.previousRemainingFuelLiters) || 0;
+            const addedYesterday = Number(match.fuelAddedLiters) || 0;
+            const effHoursYesterday = Number(match.effectiveWorkHours) || 0;
+            const stdLimitYesterday = Number(match.fuelStandardLimit) || 18.0;
+
+            const consYesterday = match.fuelConsumptionLiters !== undefined && match.fuelConsumptionLiters !== null
+              ? Number(match.fuelConsumptionLiters)
+              : Number((effHoursYesterday * stdLimitYesterday).toFixed(1));
+
+            // Logika lapangan resmi:
+            // Sisa BBM ditangki = (Sisa Kemarin + Pengisian) - Konsumsi Hari Ini
+            const calculatedRemaining = Number((prevTankYesterday + addedYesterday - consYesterday).toFixed(1));
+
+            // Jika match.remainingTankLiters valid (> 0), prioritaskan
+            if (typeof match.remainingTankLiters === 'number' && !isNaN(match.remainingTankLiters) && match.remainingTankLiters > 0) {
               return match.remainingTankLiters;
             }
-            const prev = match.previousRemainingFuelLiters || 0;
-            const added = match.fuelAddedLiters || 0;
-            const cons = match.fuelConsumptionLiters || ((match.effectiveWorkHours || 0) * (match.fuelStandardLimit || 18));
-            return Math.max(0, Number((prev + added - cons).toFixed(1)));
+
+            // Jika hasil perhitungan formula fisik > 0, gunakan hasil ini
+            if (calculatedRemaining > 0) {
+              return calculatedRemaining;
+            }
+
+            if (typeof match.remainingTankLiters === 'number' && !isNaN(match.remainingTankLiters)) {
+              return Math.max(0, match.remainingTankLiters);
+            }
+
+            return Math.max(0, calculatedRemaining);
           }
         }
-      } catch {}
+      } catch (err) {
+        console.error('Error fetching previous remaining fuel:', err);
+      }
       return 0;
     },
     []
@@ -234,10 +330,21 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
   const getPreviousCumulativeVolumeForWorkItem = useCallback(
     (itemName: string, targetDate: string, blockId: string, clientId?: string): number => {
       try {
-        const allReports = storageService.getReports(clientId);
-        const earlierReports = allReports.filter(
-          (r) => r.blockId === blockId && r.date < targetDate && (r.status === 'Disetujui Direktur' || r.status === 'Disetujui Manager')
-        );
+        const allReports = storageService.getReports(clientId && clientId !== 'ALL' ? clientId : undefined);
+        const parseDateToTime = (dStr: string): number => {
+          if (!dStr) return 0;
+          const clean = dStr.split('T')[0].trim();
+          if (/^\d{1,2}[\/-]\d{1,2}[\/-]\d{4}/.test(clean)) {
+            const parts = clean.split(/[\/-]/);
+            return new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0])).getTime();
+          }
+          return new Date(clean).getTime() || 0;
+        };
+        const targetTime = parseDateToTime(targetDate);
+        const earlierReports = allReports.filter((r) => {
+          const rTime = parseDateToTime(r.date);
+          return r.blockId === blockId && rTime > 0 && targetTime > 0 && rTime < targetTime;
+        });
         let total = 0;
         earlierReports.forEach((r) => {
           const match = r.physicalProgress?.itemProgress?.find((it: any) => it.itemName === itemName);
@@ -257,8 +364,8 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
     const savedEquips = storageService.getActiveEquipmentsForDate(effectiveClientId, date);
     const initDate = date;
     return savedEquips.map((eq) => {
-      const prevTank = getPreviousRemainingFuelForEquipment(eq.id, initDate, effectiveClientId);
-      const stdLimit = eq.standardFuelRatio || 18.0;
+      const prevTankInitial = getPreviousRemainingFuelForEquipment(eq.id, initDate, effectiveClientId, eq.name);
+      const stdLimitInitial = eq.standardFuelRatio || 18.0;
       return {
         equipmentId: eq.id,
         equipmentName: eq.name,
@@ -276,17 +383,67 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
         fuelAddedLiters: 0,
         fuelHmAtRefuel: eq.currentHm || 0,
         fuelRatio: 0,
-        fuelStandardLimit: stdLimit,
+        fuelStandardLimit: stdLimitInitial,
         isFuelAlert: false,
-        previousRemainingFuelLiters: prevTank,
+        previousRemainingFuelLiters: prevTankInitial,
         fuelConsumptionLiters: 0,
-        remainingTankLiters: prevTank,
+        remainingTankLiters: prevTankInitial,
         recommendedRefuelLiters: 0,
         fuelAnalysisStatus: 'Normal',
         fuelAnalysisNote: 'Normal: Pengisian sesuai kebutuhan jam kerja efektif.',
       };
     });
   });
+
+  // Sinkronisasi otomatis equipmentLogs dari Master Data Proyek saat equipments atau date berubah
+  useEffect(() => {
+    if (equipments && equipments.length > 0) {
+      setEquipmentLogs((prev) => {
+        const existingMap = new Map(prev.map((l) => [l.equipmentId, l]));
+        return equipments.map((eq) => {
+          if (existingMap.has(eq.id)) {
+            const existing = existingMap.get(eq.id)!;
+            const prevTankVal = getPreviousRemainingFuelForEquipment(eq.id, date, selectedClientId, eq.name);
+            return {
+              ...existing,
+              equipmentName: eq.name,
+              type: eq.type,
+              fuelStandardLimit: eq.standardFuelRatio || existing.fuelStandardLimit || 18.0,
+              previousRemainingFuelLiters: prevTankVal,
+            };
+          }
+          const prevTankInitial = getPreviousRemainingFuelForEquipment(eq.id, date, selectedClientId, eq.name);
+          const stdLimitInitial = eq.standardFuelRatio || 18.0;
+          return {
+            equipmentId: eq.id,
+            equipmentName: eq.name,
+            type: eq.type,
+            hmStart: eq.currentHm || 0,
+            hmEnd: eq.currentHm || 0,
+            totalHm: 0,
+            downtimeWeatherHours: 0,
+            downtimeWeatherNote: '',
+            downtimeBreakdownHours: 0,
+            downtimeBreakdownNote: '',
+            downtimeOtherHours: 0,
+            downtimeOtherNote: '',
+            effectiveWorkHours: 0,
+            fuelAddedLiters: 0,
+            fuelHmAtRefuel: eq.currentHm || 0,
+            fuelRatio: 0,
+            fuelStandardLimit: stdLimitInitial,
+            isFuelAlert: false,
+            previousRemainingFuelLiters: prevTankInitial,
+            fuelConsumptionLiters: 0,
+            remainingTankLiters: prevTankInitial,
+            recommendedRefuelLiters: 0,
+            fuelAnalysisStatus: 'Normal',
+            fuelAnalysisNote: 'Normal: Pengisian sesuai kebutuhan jam kerja efektif.',
+          };
+        });
+      });
+    }
+  }, [equipments, date, selectedClientId, getPreviousRemainingFuelForEquipment]);
 
   // Step 4: Capaian Hasil Kerja Berdasarkan Target Harian Direktur (Master Data Proyek -> Submenu Target Harian)
   interface WorkItemProgressEntry {
@@ -353,47 +510,47 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
     setWorkItemEntries(initialItems);
   }, [selectedClientId, selectedBlockId, date, allBlocks]);
 
-  // Live synchronization of previous remaining fuel for equipments based on date & client
+  // Live synchronization of previous remaining fuel for equipments based on date, client & step
   useEffect(() => {
     setEquipmentLogs((prev) =>
       prev.map((log) => {
-        const prevFuel = getPreviousRemainingFuelForEquipment(log.equipmentId, date, selectedClientId);
-        const eqMaster = equipments.find((e) => e.id === log.equipmentId);
-        const stdLimit = log.fuelStandardLimit || eqMaster?.standardFuelRatio || 18.0;
-        const effHours = Number(log.effectiveWorkHours) || 0;
-        const cons = Number((effHours * stdLimit).toFixed(1));
-        const rec = Math.max(0, Number((cons - prevFuel).toFixed(1)));
-        const added = Number(log.fuelAddedLiters) || 0;
-        const rem = Number((prevFuel + added - cons).toFixed(1));
-        const ratio = effHours > 0 && added > 0 ? Number((added / effHours).toFixed(2)) : 0;
+        const prevFuelVal = getPreviousRemainingFuelForEquipment(log.equipmentId, date, selectedClientId, log.equipmentName);
+        const eqMaster = equipments.find((e) => e.id === log.equipmentId || e.name === log.equipmentName);
+        const stdLimitVal = log.fuelStandardLimit || eqMaster?.standardFuelRatio || 18.0;
+        const effHoursVal = Number(log.effectiveWorkHours) || 0;
+        const consVal = Number((effHoursVal * stdLimitVal).toFixed(1));
+        const recVal = Math.max(0, Number((consVal - prevFuelVal).toFixed(1)));
+        const addedVal = Number(log.fuelAddedLiters) || 0;
+        const remVal = Number((prevFuelVal + addedVal - consVal).toFixed(1));
+        const ratioVal = effHoursVal > 0 && addedVal > 0 ? Number((addedVal / effHoursVal).toFixed(2)) : 0;
 
         // Real-time validation for fuel waste / abnormal refuels:
         // 1. Refuel exceeds ideal recommendation (cons - prevFuel)
         // 2. Refuel done when unit has 0 effective work hours
         // 3. Refuel ratio per HM exceeds standard limit
-        const isWasteful = added > rec && (prevFuel > 0 || cons > 0);
-        const isZeroHmRefuel = effHours === 0 && added > 0;
-        const isHighRatio = effHours > 0 && ratio > stdLimit;
-        const isAlert = isWasteful || isZeroHmRefuel || isHighRatio;
+        const isWastefulVal = addedVal > recVal && (prevFuelVal > 0 || consVal > 0);
+        const isZeroHmRefuelVal = effHoursVal === 0 && addedVal > 0;
+        const isHighRatioVal = effHoursVal > 0 && ratioVal > stdLimitVal;
+        const isAlertVal = isWastefulVal || isZeroHmRefuelVal || isHighRatioVal;
 
-        const formattedDate = formatIndoDate(date);
+        const formattedDateVal = formatIndoDate(date);
         return {
           ...log,
-          previousRemainingFuelLiters: prevFuel,
-          fuelStandardLimit: stdLimit,
-          fuelConsumptionLiters: cons,
-          recommendedRefuelLiters: rec,
-          remainingTankLiters: rem,
-          fuelRatio: ratio,
-          isFuelAlert: isAlert,
-          fuelAnalysisStatus: isAlert ? 'Tidak Normal (Indikasi Pemborosan)' : 'Normal',
-          fuelAnalysisNote: isAlert
-            ? `terjadi indikasi pemborosan seharusnya di tgl ${formattedDate} pengisiannya bukan ${added} liter tapi sekitar ${rec}liter saja karena masih ada akumulasi total sisa BBM ditangki sejumlah ${prevFuel} liter \t\tStatus Analisis = tidak normal`
-            : `Normal: Pengisian ${added} Liter sesuai kebutuhan jam kerja efektif. Status Analisis = normal`,
+          previousRemainingFuelLiters: prevFuelVal,
+          fuelStandardLimit: stdLimitVal,
+          fuelConsumptionLiters: consVal,
+          recommendedRefuelLiters: recVal,
+          remainingTankLiters: remVal,
+          fuelRatio: ratioVal,
+          isFuelAlert: isAlertVal,
+          fuelAnalysisStatus: isAlertVal ? 'Tidak Normal (Indikasi Pemborosan)' : 'Normal',
+          fuelAnalysisNote: isAlertVal
+            ? `terjadi indikasi pemborosan seharusnya di tgl ${formattedDateVal} pengisiannya bukan ${addedVal} liter tapi sekitar ${recVal}liter saja karena masih ada akumulasi total sisa BBM ditangki sejumlah ${prevFuelVal} liter \t\tStatus Analisis = tidak normal`
+            : `Normal: Pengisian ${addedVal} Liter sesuai kebutuhan jam kerja efektif. Status Analisis = normal`,
         };
       })
     );
-  }, [date, selectedClientId, getPreviousRemainingFuelForEquipment, equipments]);
+  }, [date, selectedClientId, currentStep, getPreviousRemainingFuelForEquipment, equipments]);
 
   const handleItemRealizationChange = (itemId: string, val: number) => {
     setWorkItemEntries((prev) => {
@@ -475,9 +632,9 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
 
   // Personil yang ditugaskan di lokasi kerja ini (berdasarkan Klien & Blok yang dipilih di Langkah 1)
   const locationWorkers = laborList.filter((item) => {
-    const isClientMatch = item.assignedClientId === selectedClientId || item.assignedClientId === 'ALL';
+    const matchesWorkerClient = item.assignedClientId === selectedClientId || item.assignedClientId === 'ALL';
     const isBlockMatch = item.assignedBlockId === selectedBlockId || item.assignedBlockId === 'ALL' || !item.assignedBlockId;
-    return isClientMatch && isBlockMatch;
+    return matchesWorkerClient && isBlockMatch;
   });
 
   const baseLaborScopeList = (laborFilterScope === 'all' || locationWorkers.length === 0) ? laborList : locationWorkers;
@@ -588,55 +745,59 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
       const dwWeather = Number(row.downtimeWeatherHours) || 0;
       const dwBreak = Number(row.downtimeBreakdownHours) || 0;
       const dwOther = Number(row.downtimeOtherHours) || 0;
-      const totalDowntime = dwWeather + dwBreak + dwOther;
-      row.effectiveWorkHours = Math.max(0, Number((row.totalHm - totalDowntime).toFixed(1)));
+      const totalDowntimeVal = dwWeather + dwBreak + dwOther;
+      row.effectiveWorkHours = Math.max(0, Number((row.totalHm - totalDowntimeVal).toFixed(1)));
 
       // 3. Batas Standar (L/HM) dari Master Data Proyek
-      const eqMaster = equipments.find((e) => e.id === row.equipmentId);
+      const eqMaster = equipments.find((e) => e.id === row.equipmentId || e.name === row.equipmentName);
       if (eqMaster?.standardFuelRatio && updates.fuelStandardLimit === undefined && !row.fuelStandardLimit) {
         row.fuelStandardLimit = eqMaster.standardFuelRatio;
       }
-      const stdLimit = Number(row.fuelStandardLimit) || 18.0;
+      const unitStdLimit = Number(row.fuelStandardLimit) || 18.0;
 
       // 4. Konsumsi Hari ini (Liter) = Jam Efektif * Batas Standar
-      row.fuelConsumptionLiters = Number((row.effectiveWorkHours * stdLimit).toFixed(1));
+      row.fuelConsumptionLiters = Number((row.effectiveWorkHours * unitStdLimit).toFixed(1));
 
       // 5. Sisa BBM di tangki kemarin (Sisa Awal Tangki)
-      const prevTank = Number(row.previousRemainingFuelLiters) || 0;
+      let unitPrevTank = Number(row.previousRemainingFuelLiters) || 0;
+      if (unitPrevTank === 0) {
+        unitPrevTank = getPreviousRemainingFuelForEquipment(row.equipmentId, date, selectedClientId, row.equipmentName);
+      }
+      row.previousRemainingFuelLiters = unitPrevTank;
 
       // 6. Pengisian Hari ini (Liter)
-      const fuelAdded = Number(row.fuelAddedLiters) || 0;
+      const fuelAddedVal = Number(row.fuelAddedLiters) || 0;
 
       // 7. Rekomendasi pengisian seharusnya = Math.max(0, Konsumsi - Sisa Kemarin)
-      row.recommendedRefuelLiters = Math.max(0, Number((row.fuelConsumptionLiters - prevTank).toFixed(1)));
+      row.recommendedRefuelLiters = Math.max(0, Number((row.fuelConsumptionLiters - unitPrevTank).toFixed(1)));
 
       // 8. Sisa BBM di tangki unit hari ini = Sisa Kemarin + Pengisian - Konsumsi
-      row.remainingTankLiters = Number((prevTank + fuelAdded - row.fuelConsumptionLiters).toFixed(1));
+      row.remainingTankLiters = Number((unitPrevTank + fuelAddedVal - row.fuelConsumptionLiters).toFixed(1));
 
       // 9. Calculate Fuel Ratio (L/HM)
-      if (row.effectiveWorkHours > 0 && fuelAdded > 0) {
-        row.fuelRatio = Number((fuelAdded / row.effectiveWorkHours).toFixed(2));
+      if (row.effectiveWorkHours > 0 && fuelAddedVal > 0) {
+        row.fuelRatio = Number((fuelAddedVal / row.effectiveWorkHours).toFixed(2));
       } else {
         row.fuelRatio = 0;
       }
 
       // 10. Status Analisis Real-Time
       // Indikasi pemborosan apabila:
-      // a. Pengisian (fuelAdded) melebihi rekomendasi kebutuhan riil (Konsumsi - Sisa Kemarin)
+      // a. Pengisian (fuelAddedVal) melebihi rekomendasi kebutuhan riil (Konsumsi - Sisa Kemarin)
       // b. Pengisian dilakukan saat jam kerja efektif 0 HM
       // c. Rasio pengisian per HM melebihi batas standar efisiensi proyek
-      const isWasteful = fuelAdded > row.recommendedRefuelLiters && (prevTank > 0 || row.fuelConsumptionLiters > 0);
-      const isZeroHmRefuel = row.effectiveWorkHours === 0 && fuelAdded > 0;
-      const isHighRatio = row.effectiveWorkHours > 0 && row.fuelRatio > stdLimit;
-      const isAlert = isWasteful || isZeroHmRefuel || isHighRatio;
+      const isWastefulVal = fuelAddedVal > row.recommendedRefuelLiters && (unitPrevTank > 0 || row.fuelConsumptionLiters > 0);
+      const isZeroHmRefuelVal = row.effectiveWorkHours === 0 && fuelAddedVal > 0;
+      const isHighRatioVal = row.effectiveWorkHours > 0 && row.fuelRatio > unitStdLimit;
+      const isAlertVal = isWastefulVal || isZeroHmRefuelVal || isHighRatioVal;
 
-      row.isFuelAlert = isAlert;
-      row.fuelAnalysisStatus = isAlert ? 'Tidak Normal (Indikasi Pemborosan)' : 'Normal';
-      const formattedDate = formatIndoDate(date);
-      if (isAlert) {
-        row.fuelAnalysisNote = `terjadi indikasi pemborosan seharusnya di tgl ${formattedDate} pengisiannya bukan ${fuelAdded} liter tapi sekitar ${row.recommendedRefuelLiters}liter saja karena masih ada akumulasi total sisa BBM ditangki sejumlah ${prevTank} liter \t\tStatus Analisis = tidak normal`;
+      row.isFuelAlert = isAlertVal;
+      row.fuelAnalysisStatus = isAlertVal ? 'Tidak Normal (Indikasi Pemborosan)' : 'Normal';
+      const formattedDateStr = formatIndoDate(date);
+      if (isAlertVal) {
+        row.fuelAnalysisNote = `terjadi indikasi pemborosan seharusnya di tgl ${formattedDateStr} pengisiannya bukan ${fuelAddedVal} liter tapi sekitar ${row.recommendedRefuelLiters}liter saja karena masih ada akumulasi total sisa BBM ditangki sejumlah ${unitPrevTank} liter \t\tStatus Analisis = tidak normal`;
       } else {
-        row.fuelAnalysisNote = `Normal: Pengisian ${fuelAdded} Liter sesuai kebutuhan jam kerja efektif (${row.effectiveWorkHours} Jam × ${stdLimit} L/HM = ${row.fuelConsumptionLiters} L). Sisa BBM di tangki ${row.remainingTankLiters} Liter. Status Analisis = normal`;
+        row.fuelAnalysisNote = `Normal: Pengisian ${fuelAddedVal} Liter sesuai kebutuhan jam kerja efektif (${row.effectiveWorkHours} Jam × ${unitStdLimit} L/HM = ${row.fuelConsumptionLiters} L). Sisa BBM di tangki ${row.remainingTankLiters} Liter. Status Analisis = normal`;
       }
 
       next[index] = row;
@@ -647,12 +808,12 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
   const addEquipmentToLog = (eqId: string) => {
     const eq = equipments.find((e) => e.id === eqId);
     if (!eq || equipmentLogs.some((l) => l.equipmentId === eqId)) return;
-    const prevTank = getPreviousRemainingFuelForEquipment(eq.id, date, selectedClientId);
-    const stdLimit = eq.standardFuelRatio || 18.0;
-    const defaultEff = 8.0;
-    const cons = Number((defaultEff * stdLimit).toFixed(1));
-    const rec = Math.max(0, Number((cons - prevTank).toFixed(1)));
-    const initialAdd = rec > 0 ? rec : 100;
+    const prevTankAdded = getPreviousRemainingFuelForEquipment(eq.id, date, selectedClientId, eq.name);
+    const stdLimitAdded = eq.standardFuelRatio || 18.0;
+    const defaultEffVal = 8.0;
+    const consAdded = Number((defaultEffVal * stdLimitAdded).toFixed(1));
+    const recAdded = Math.max(0, Number((consAdded - prevTankAdded).toFixed(1)));
+    const initialAddVal = recAdded > 0 ? recAdded : 100;
 
     setEquipmentLogs((prev) => [
       ...prev,
@@ -669,16 +830,16 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
         downtimeBreakdownNote: '',
         downtimeOtherHours: 0,
         downtimeOtherNote: '',
-        effectiveWorkHours: defaultEff,
-        fuelAddedLiters: initialAdd,
+        effectiveWorkHours: defaultEffVal,
+        fuelAddedLiters: initialAddVal,
         fuelHmAtRefuel: eq.currentHm + 8.0,
-        fuelRatio: Number((initialAdd / defaultEff).toFixed(2)),
-        fuelStandardLimit: stdLimit,
+        fuelRatio: Number((initialAddVal / defaultEffVal).toFixed(2)),
+        fuelStandardLimit: stdLimitAdded,
         isFuelAlert: false,
-        previousRemainingFuelLiters: prevTank,
-        fuelConsumptionLiters: cons,
-        recommendedRefuelLiters: rec,
-        remainingTankLiters: Number((prevTank + initialAdd - cons).toFixed(1)),
+        previousRemainingFuelLiters: prevTankAdded,
+        fuelConsumptionLiters: consAdded,
+        recommendedRefuelLiters: recAdded,
+        remainingTankLiters: Number((prevTankAdded + initialAddVal - consAdded).toFixed(1)),
         fuelAnalysisStatus: 'Normal',
         fuelAnalysisNote: 'Normal: Pengisian sesuai kebutuhan jam kerja efektif.',
       },
@@ -958,11 +1119,11 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
     setWorkShift('07.00 - 17.00 WIB');
     setSupervisorName(authUser?.displayName || 'Budi Santoso');
     
-    const savedEquips = storageService.getEquipments();
-    const initDate = new Date().toISOString().split('T')[0];
-    setEquipmentLogs(savedEquips.map((eq) => {
-        const prevTank = getPreviousRemainingFuelForEquipment(eq.id, initDate, effectiveClientId);
-        const stdLimit = eq.standardFuelRatio || 18.0;
+    const savedEquipsReset = storageService.getEquipments();
+    const currentDateReset = new Date().toISOString().split('T')[0];
+    setEquipmentLogs(savedEquipsReset.map((eq) => {
+        const prevTankReset = getPreviousRemainingFuelForEquipment(eq.id, currentDateReset, effectiveClientId, eq.name);
+        const stdLimitReset = eq.standardFuelRatio || 18.0;
         return {
             equipmentId: eq.id,
             equipmentName: eq.name,
@@ -980,11 +1141,11 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
             fuelAddedLiters: 0,
             fuelHmAtRefuel: eq.currentHm || 0,
             fuelRatio: 0,
-            fuelStandardLimit: stdLimit,
+            fuelStandardLimit: stdLimitReset,
             isFuelAlert: false,
-            previousRemainingFuelLiters: prevTank,
+            previousRemainingFuelLiters: prevTankReset,
             fuelConsumptionLiters: 0,
-            remainingTankLiters: prevTank,
+            remainingTankLiters: prevTankReset,
             recommendedRefuelLiters: 0,
             fuelAnalysisStatus: 'Normal',
             fuelAnalysisNote: 'Normal: Pengisian sesuai kebutuhan jam kerja efektif.',
@@ -2601,24 +2762,23 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                   </thead>
                   <tbody>
                     {equipmentLogs.map((log, idx) => {
-                      const isAbnormal = log.isFuelAlert || log.fuelAnalysisStatus?.toLowerCase().includes('tidak normal');
-                      const prevTank = Number(log.previousRemainingFuelLiters) || 0;
-                      const stdLimit = Number(log.fuelStandardLimit) || 18;
-                      const effHours = Number(log.effectiveWorkHours) || 0;
-                      const cons = log.fuelConsumptionLiters !== undefined 
+                      const rowIsAbnormal = log.isFuelAlert || log.fuelAnalysisStatus?.toLowerCase().includes('tidak normal');
+                      const rowPrevTank = Number(log.previousRemainingFuelLiters) || 0;
+                      const rowStdLimit = Number(log.fuelStandardLimit) || 18;
+                      const rowEffHours = Number(log.effectiveWorkHours) || 0;
+                      const rowCons = log.fuelConsumptionLiters !== undefined 
                         ? log.fuelConsumptionLiters 
-                        : Number((effHours * stdLimit).toFixed(1));
-                      const rec = log.recommendedRefuelLiters !== undefined 
+                        : Number((rowEffHours * rowStdLimit).toFixed(1));
+                      const rowRec = log.recommendedRefuelLiters !== undefined 
                         ? log.recommendedRefuelLiters 
-                        : Math.max(0, Number((cons - prevTank).toFixed(1)));
-                      const rem = log.remainingTankLiters !== undefined 
-                        ? log.remainingTankLiters 
-                        : Number((prevTank + (Number(log.fuelAddedLiters) || 0) - cons).toFixed(1));
+                        : Math.max(0, Number((rowCons - rowPrevTank).toFixed(1)));
+                      // Logika lapangan resmi: Sisa BBM ditangki = (Kemarin + Isi) - Konsumsi
+                      const rowRem = Number((rowPrevTank + (Number(log.fuelAddedLiters) || 0) - rowCons).toFixed(1));
 
                       return (
                         <tr 
                           key={log.equipmentId} 
-                          className={isAbnormal ? 'bg-rose-50/80 hover:bg-rose-100/60 transition-colors' : 'hover:bg-slate-50 transition-colors'}
+                          className={rowIsAbnormal ? 'bg-rose-50/80 hover:bg-rose-100/60 transition-colors' : 'hover:bg-slate-50 transition-colors'}
                         >
                           {/* 1. Kode Alat */}
                           <td className="p-2.5 font-bold font-mono text-slate-900 border-b border-r border-slate-200">
@@ -2629,14 +2789,14 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                           {/* 2. Jam Efektif (ambil dari Submenu 3) */}
                           <td className="p-2.5 text-center font-mono font-black text-slate-900 border-b border-r border-slate-200">
                             <span className="inline-block px-2.5 py-1 bg-emerald-100/90 text-emerald-950 rounded-md font-mono font-bold text-xs border border-emerald-200">
-                              {effHours}
+                              {rowEffHours}
                             </span>
                           </td>
 
                           {/* 3. Sisa BBM Hari Sebelumnya (Liter) */}
                           <td className="p-2.5 text-center font-mono font-bold text-slate-900 border-b border-r border-slate-200 bg-amber-50/50">
                             <span className="inline-block px-2 py-1 bg-amber-100 text-amber-950 rounded-md font-mono font-black text-xs border border-amber-300">
-                              {prevTank} L
+                              {rowPrevTank} L
                             </span>
                           </td>
 
@@ -2652,19 +2812,19 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                                   updateEquipmentRow(idx, { fuelAddedLiters: parseFloat(e.target.value) || 0 })
                                 }
                                 className={`w-24 px-2 py-1.5 border-2 rounded-lg text-center font-mono font-black text-xs shadow-xs focus:outline-none ${
-                                  isAbnormal
+                                  rowIsAbnormal
                                     ? 'border-rose-400 bg-rose-50/90 text-rose-950 focus:ring-2 focus:ring-rose-500'
                                     : 'border-slate-300 bg-white text-slate-900 focus:ring-2 focus:ring-amber-500'
                                 }`}
                               />
-                              {isAbnormal && (
+                              {rowIsAbnormal && (
                                 <button
                                   type="button"
-                                  onClick={() => updateEquipmentRow(idx, { fuelAddedLiters: rec })}
+                                  onClick={() => updateEquipmentRow(idx, { fuelAddedLiters: rowRec })}
                                   className="text-[9px] font-bold text-rose-700 bg-rose-100 hover:bg-rose-200 px-1.5 py-0.5 rounded border border-rose-300 transition cursor-pointer"
                                   title="Gunakan rekomendasi kebutuhan pengisian"
                                 >
-                                  Saran: ~{rec} L
+                                  Saran: ~{rowRec} L
                                 </button>
                               )}
                             </div>
@@ -2672,33 +2832,33 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
 
                           {/* 5. Konsumsi/Hari ini (Liter) = Jam Efektif * Batas Standar */}
                           <td className="p-2.5 text-center font-mono font-bold text-slate-900 border-b border-r border-slate-200">
-                            <span className="font-black text-amber-950 text-xs">{cons}</span>
+                            <span className="font-black text-amber-950 text-xs">{rowCons}</span>
                             <span className="block text-[9px] text-slate-400 font-sans font-normal">
-                              ({effHours} × {stdLimit})
+                              ({rowEffHours} × {rowStdLimit})
                             </span>
                           </td>
 
                           {/* 6. Batas Standar (telah ditentukan) */}
                           <td className="p-2.5 text-center font-mono font-bold text-slate-700 border-b border-r border-slate-200">
                             <span className="px-2 py-0.5 bg-slate-100 rounded text-slate-800 border border-slate-200 text-xs">
-                              {stdLimit}
+                              {rowStdLimit}
                             </span>
                           </td>
 
                           {/* 7. Sisa BBM ditangki (Liter) */}
                           <td className="p-2.5 text-center font-mono font-bold border-b border-r border-slate-200">
                             <span className={`inline-block px-2.5 py-1 rounded-md text-xs font-mono font-black ${
-                              rem < 0
+                              rowRem < 0
                                 ? 'bg-rose-100 text-rose-900 border border-rose-300'
                                 : 'bg-blue-50 text-blue-950 border border-blue-200'
                             }`}>
-                              {rem}
+                              {rowRem}
                             </span>
                           </td>
 
                           {/* 8. Status Analisis */}
                           <td className="p-2.5 text-center border-b border-slate-200">
-                            {isAbnormal ? (
+                            {rowIsAbnormal ? (
                               <span className="inline-flex items-center gap-1 font-black text-rose-700 bg-rose-100 px-2.5 py-1 rounded-md text-[11px] border border-rose-300 shadow-xs uppercase tracking-tight">
                                 <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
                                 tidak normal
@@ -2718,27 +2878,27 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
               </div>
 
               {/* Alert Indikasi Pemborosan BBM Lapangan Sesuai Alur Analisis */}
-              {equipmentLogs.filter((l) => l.isFuelAlert || l.fuelAnalysisStatus?.toLowerCase().includes('tidak normal')).map((log) => {
-                const prevTank = Number(log.previousRemainingFuelLiters) || 0;
-                const stdLimit = Number(log.fuelStandardLimit) || 18;
-                const effHours = Number(log.effectiveWorkHours) || 0;
-                const cons = log.fuelConsumptionLiters !== undefined 
-                  ? log.fuelConsumptionLiters 
-                  : Number((effHours * stdLimit).toFixed(1));
-                const rec = log.recommendedRefuelLiters !== undefined 
-                  ? log.recommendedRefuelLiters 
-                  : Math.max(0, Number((cons - prevTank).toFixed(1)));
-                const excess = Number(((Number(log.fuelAddedLiters) || 0) - rec).toFixed(1));
+              {equipmentLogs.filter((l) => l.isFuelAlert || l.fuelAnalysisStatus?.toLowerCase().includes('tidak normal')).map((alertLog) => {
+                const alertPrevTank = Number(alertLog.previousRemainingFuelLiters) || 0;
+                const alertStdLimit = Number(alertLog.fuelStandardLimit) || 18;
+                const alertEffHours = Number(alertLog.effectiveWorkHours) || 0;
+                const alertCons = alertLog.fuelConsumptionLiters !== undefined 
+                  ? alertLog.fuelConsumptionLiters 
+                  : Number((alertEffHours * alertStdLimit).toFixed(1));
+                const alertRec = alertLog.recommendedRefuelLiters !== undefined 
+                  ? alertLog.recommendedRefuelLiters 
+                  : Math.max(0, Number((alertCons - alertPrevTank).toFixed(1)));
+                const alertExcess = Number(((Number(alertLog.fuelAddedLiters) || 0) - alertRec).toFixed(1));
 
                 return (
                   <div 
-                    key={log.equipmentId} 
+                    key={alertLog.equipmentId} 
                     className="p-4 bg-rose-50/90 border-2 border-rose-300 rounded-xl space-y-2.5 text-xs shadow-xs"
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-rose-200 pb-2">
                       <span className="font-black text-rose-950 flex items-center gap-2 text-xs">
                         <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                        Indikasi Pemborosan Bahan Bakar: Unit {log.equipmentId} ({log.type})
+                        Indikasi Pemborosan Bahan Bakar: Unit {alertLog.equipmentId} ({alertLog.type})
                       </span>
                       <span className="px-2.5 py-0.5 bg-rose-200 text-rose-900 rounded font-black text-[11px] border border-rose-300 uppercase w-fit">
                         Status Analisis = tidak normal
@@ -2746,7 +2906,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                     </div>
 
                     <p className="text-rose-900 font-medium leading-relaxed">
-                      terjadi indikasi pemborosan seharusnya di tgl <strong>{formatIndoDate(date)}</strong> pengisiannya bukan <strong>{log.fuelAddedLiters} liter</strong> tapi sekitar <strong>{rec}liter</strong> saja karena masih ada akumulasi total sisa BBM ditangki sejumlah <strong>{prevTank} liter</strong>. &nbsp;
+                      terjadi indikasi pemborosan seharusnya di tgl <strong>{formatIndoDate(date)}</strong> pengisiannya bukan <strong>{alertLog.fuelAddedLiters} liter</strong> tapi sekitar <strong>{alertRec}liter</strong> saja karena masih ada akumulasi total sisa BBM ditangki sejumlah <strong>{alertPrevTank} liter</strong>. &nbsp;
                       <span className="font-bold text-rose-950 font-mono">Status Analisis = tidak normal</span>
                     </p>
 
@@ -2754,14 +2914,14 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          const idx = equipmentLogs.findIndex((e) => e.equipmentId === log.equipmentId);
-                          if (idx >= 0) {
-                            updateEquipmentRow(idx, { fuelAddedLiters: rec });
+                          const targetIdx = equipmentLogs.findIndex((e) => e.equipmentId === alertLog.equipmentId);
+                          if (targetIdx >= 0) {
+                            updateEquipmentRow(targetIdx, { fuelAddedLiters: alertRec });
                           }
                         }}
                         className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black rounded-lg text-xs transition shadow-sm cursor-pointer"
                       >
-                        ✓ Sesuaikan Pengisian Menjadi {rec} Liter Saja
+                        ✓ Sesuaikan Pengisian Menjadi {alertRec} Liter Saja
                       </button>
                       <span className="text-[11px] text-rose-700 italic">
                         *Klik tombol ini untuk menerapkan pengisian ideal sesuai kebutuhan jam kerja efektif.
