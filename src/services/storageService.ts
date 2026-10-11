@@ -22,6 +22,7 @@ import {
   CompanyProfile,
   CompanyStaff
 } from '../types';
+import { isDirectorLevel } from '../utils/auth';
 import { 
   initialDailyReports, 
   initialEquipments, 
@@ -597,7 +598,7 @@ export const storageService = {
       throw new Error('Akses Ditolak: Akun Klien hanya memiliki hak akses melihat Monitoring Progress & Laporan (Read-Only).');
     }
     // Isolasi ketat: Pengawas tidak bisa CRUD data di luar penugasan proyek dan blok
-    if (authUser && authUser.role === 'supervisor') {
+    if (authUser && authUser.role === 'supervisor' && !isDirectorLevel(authUser)) {
       if (!this.canSupervisorAccess(report.clientId, report.blockCode, authUser)) {
         throw new Error(
           `Akses Ditolak: Anda hanya berwenang membuat/mengubah laporan untuk ${authUser.assignedClientName || authUser.assignedClientId} pada lokasi (${authUser.assignedBlockCodes?.join(', ')}). Tidak diizinkan CRUD di luar tugas!`
@@ -2004,7 +2005,7 @@ export const storageService = {
   },
 
   saveP2HChecklist(item: DailyP2HChecklist, authUser?: AuthUser | null): DailyP2HChecklist {
-    if (authUser && authUser.role === 'supervisor') {
+    if (authUser && authUser.role === 'supervisor' && !isDirectorLevel(authUser)) {
       if (!this.canSupervisorAccess(item.clientId, item.blockCode, authUser)) {
         throw new Error(
           `Akses Ditolak: P2H hanya dapat dicatat untuk penugasan ${authUser.assignedClientName || item.clientId} di lokasi tugas Anda!`
@@ -2077,7 +2078,7 @@ export const storageService = {
   },
 
   saveFuelBowserReceipt(receipt: FuelBowserReceipt, authUser?: AuthUser | null): FuelBowserReceipt {
-    if (authUser && authUser.role === 'supervisor') {
+    if (authUser && authUser.role === 'supervisor' && !isDirectorLevel(authUser)) {
       if (!this.canSupervisorAccess(receipt.clientId, receipt.blockCode, authUser)) {
         throw new Error(
           `Akses Ditolak: Penerimaan solar bowser hanya untuk penugasan ${authUser.assignedClientName || receipt.clientId} di lokasi tugas Anda!`
@@ -2175,7 +2176,7 @@ export const storageService = {
   },
 
   saveSoilIncident(incident: SoilHazardIncident, authUser?: AuthUser | null): SoilHazardIncident {
-    if (authUser && authUser.role === 'supervisor') {
+    if (authUser && authUser.role === 'supervisor' && !isDirectorLevel(authUser)) {
       if (!this.canSupervisorAccess(incident.clientId, incident.blockCode, authUser)) {
         throw new Error(
           `Akses Ditolak: Insiden lahan hanya untuk penugasan ${authUser.assignedClientName || incident.clientId} di lokasi tugas Anda!`

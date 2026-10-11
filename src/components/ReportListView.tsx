@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { DailyReport, UserRole, Client, Block, AuthUser } from '../types';
 import { storageService } from '../services/storageService';
+import { isDirectorLevel } from '../utils/auth';
 
 interface ReportListViewProps {
   reports: DailyReport[];
@@ -79,7 +80,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
   const [isRejectInputOpen, setIsRejectInputOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
 
-  const isDirector = userRole === 'director' || authUser?.role === 'director' || authUser?.userLevel === 'Superadmin';
+  const isDirector = isDirectorLevel(authUser);
   const isManager = userRole === 'manager' || authUser?.role === 'manager' || authUser?.userLevel === 'Site Manager' || authUser?.userLevel === 'Manager';
   const isSupervisor = userRole === 'supervisor' || authUser?.role === 'supervisor' || authUser?.userLevel === 'Pengawas';
   const isClient = userRole === 'client' || authUser?.role === 'client' || authUser?.userLevel === 'Klien';

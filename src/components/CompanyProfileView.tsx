@@ -29,6 +29,7 @@ import { CompanyProfile, CompanyStaff, AuthUser } from '../types';
 import { storageService } from '../services/storageService';
 import { createDefaultCompanyLogoSvg, createSimulatedSignatureSvg, compressSignatureDataUrl } from '../data/mockData';
 import { recordUserActivity } from '../utils/activityLogger';
+import { isDirectorLevel } from '../utils/auth';
 
 interface CompanyProfileViewProps {
   companyProfile: CompanyProfile;
@@ -46,7 +47,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
   onNavigateToUserManagement,
 }) => {
   // Strict Security Check: ONLY Direktur / Superadmin can access
-  const isDirector = authUser?.role === 'director' || authUser?.userLevel === 'Superadmin';
+  const isDirector = isDirectorLevel(authUser);
 
   const [activeSection, setActiveSection] = useState<'identity' | 'staff'>('identity');
 

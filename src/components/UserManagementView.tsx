@@ -27,6 +27,7 @@ import { ManagedUser, ManagedUserLevel, AuthUser, CompanyStaff } from '../types'
 import { storageService } from '../services/storageService';
 import { recordUserActivity } from '../utils/activityLogger';
 import { validateUserRegistrationInput, maskDatabaseError } from '../utils/security';
+import { isDirectorLevel } from '../utils/auth';
 
 interface UserManagementViewProps {
   authUser: AuthUser | null;
@@ -42,7 +43,8 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
   onClearPreloadStaff,
 }) => {
   // Strict Role Check: Superadmin ONLY
-  const isSuperadmin = authUser?.role === 'director' || authUser?.userLevel === 'Superadmin';
+  const isSuperadmin = isDirectorLevel(authUser);
+
 
   // Master Data State (Hanya User dan Master Jabatan)
   const [users, setUsers] = useState<ManagedUser[]>(() => storageService.getManagedUsers());
@@ -373,23 +375,24 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
         notes: formData.notes.trim(),
       };
 
-      storageService.saveManagedUser(updatedUser);
+      try {
+        storageService.saveManagedUser(updatedUser);
 
-      recordUserActivity({
-        userId: authUser?.id,
-        userName: authUser?.displayName || 'Superadmin',
-        userRole: 'director',
-        userEmail: authUser?.email,
-        actionCategory: 'USER_MANAGEMENT',
-        actionTitle: `Ubah Data User: ${updatedUser.fullName}`,
-        actionDescription: `Mengupdate profil dan kredensial pengguna ${updatedUser.username} (${updatedUser.jobTitle} - Level: ${updatedUser.userLevel}).`,
-        targetEntity: `${updatedUser.username} (${updatedUser.userLevel})`,
-      });
+        recordUserActivity({
+          userId: authUser?.id,
+          userName: authUser?.displayName || 'Superadmin',
+          userRole: 'director',
+          userEmail: authUser?.email,
+          actionCategory: 'USER_MANAGEMENT',
+          actionTitle: `Ubah Data User: ${updatedUser.fullName}`,
+          actionDescription: `Mengupdate profil dan kredensial pengguna ${updatedUser.username} (${updatedUser.jobTitle} - Level: ${updatedUser.userLevel}).`,
+          targetEntity: `${updatedUser.username} (${updatedUser.userLevel})`,
+        });
 
-      showToast(`Data pengguna "${updatedUser.fullName}" berhasil diperbarui!`, 'success');
-    } catch (err) {
-      showToast(maskDatabaseError(err), 'error');
-    }
+        showToast(`Data pengguna "${updatedUser.fullName}" berhasil diperbarui!`, 'success');
+      } catch (err) {
+        showToast(maskDatabaseError(err), 'error');
+      }
     } else {
       // Create new user
       try {

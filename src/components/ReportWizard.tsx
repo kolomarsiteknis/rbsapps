@@ -49,6 +49,7 @@ import {
   BlockWorkItem
 } from '../types';
 import { storageService } from '../services/storageService';
+import { isDirectorLevel } from '../utils/auth';
 import { applyWatermark, getCurrentGpsLocation } from '../utils/watermark';
 
 interface ReportWizardProps {
