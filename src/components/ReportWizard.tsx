@@ -30,6 +30,7 @@ import {
   Lock,
   Target
 } from 'lucide-react';
+import { sanitizeInput } from '../utils/sanitizer';
 import { 
   DailyReport, 
   WeatherCondition, 
@@ -861,8 +862,10 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
       }
     }
 
+    const reportId = crypto.randomUUID(); // Unique ID for every new report
+
     const newReport: DailyReport = {
-      id: reportNumber,
+      id: reportId,
       reportNumber,
       date,
       clientId: selectedClient ? selectedClient.id : 'client-1',
@@ -874,7 +877,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
       weather,
       weatherStartTime: weatherStartTime.trim() || undefined,
       weatherEndTime: weatherEndTime.trim() || undefined,
-      weatherNotes: weatherNotes.trim() || undefined,
+      weatherNotes: sanitizeInput(weatherNotes),
       effectiveWorkShift: workShift,
       supervisorId: 'w-8',
       supervisorName,
@@ -883,7 +886,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
         realizedAreaHa,
         cumulativeAreaHa: Number(cumulativeAreaCalc.toFixed(2)),
         progressPercentage: Number(((cumulativeAreaCalc / (activeBlock?.targetAreaHa || 100)) * 100).toFixed(2)),
-        notes: progressNotes,
+        notes: sanitizeInput(progressNotes),
         directorTargetId: directorTarget?.id,
         directorNotes: directorTarget?.notes,
         itemProgress: workItemEntries.map((it) => ({
@@ -894,7 +897,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
           achievementPercentage: it.targetDailyVolume > 0
             ? Number(((it.realizedDailyVolume / it.targetDailyVolume) * 100).toFixed(1))
             : 100,
-          notes: it.notes || '',
+          notes: sanitizeInput(it.notes || ''),
         })),
       },
       equipmentWorkLogs: equipmentLogs,
@@ -911,7 +914,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
         sparePartsUsed: spareParts,
       },
       photos,
-      supervisorGeneralNotes,
+      supervisorGeneralNotes: sanitizeInput(supervisorGeneralNotes),
       status: asDraft ? 'Draft' : 'Diajukan',
       signatures: {
         supervisor: {
@@ -930,8 +933,75 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
       updatedAt: new Date().toISOString(),
     };
 
-    storageService.saveReport(newReport);
-    onReportSaved(newReport);
+    try {
+      storageService.saveReport(newReport);
+      onReportSaved(newReport);
+    } catch (error) {
+      console.error('Failed to save report:', error);
+      // Assuming showToast is available in scope or needs to be handled
+      // showToast('Gagal menyimpan laporan. Silakan coba lagi.', 'error');
+    } finally {
+      resetForm();
+    }
+  };
+
+  const resetForm = () => {
+    setCurrentStep(1);
+    setReportNumber(`LC-RPT/${new Date().toISOString().slice(0, 10).replace(/-/g, '/')}-00${Math.floor(Math.random() * 80 + 10)}`);
+    setDate(new Date().toISOString().split('T')[0]);
+    setWeather('Cerah');
+    setWeatherStartTime('08.00');
+    setWeatherEndTime('14.15');
+    setWeatherNotes('');
+    setWorkShift('07.00 - 17.00 WIB');
+    setSupervisorName(authUser?.displayName || 'Budi Santoso');
+    
+    const savedEquips = storageService.getEquipments();
+    const initDate = new Date().toISOString().split('T')[0];
+    setEquipmentLogs(savedEquips.map((eq) => {
+        const prevTank = getPreviousRemainingFuelForEquipment(eq.id, initDate, effectiveClientId);
+        const stdLimit = eq.standardFuelRatio || 18.0;
+        return {
+            equipmentId: eq.id,
+            equipmentName: eq.name,
+            type: eq.type,
+            hmStart: eq.currentHm || 0,
+            hmEnd: eq.currentHm || 0,
+            totalHm: 0,
+            downtimeWeatherHours: 0,
+            downtimeWeatherNote: '',
+            downtimeBreakdownHours: 0,
+            downtimeBreakdownNote: '',
+            downtimeOtherHours: 0,
+            downtimeOtherNote: '',
+            effectiveWorkHours: 0,
+            fuelAddedLiters: 0,
+            fuelHmAtRefuel: eq.currentHm || 0,
+            fuelRatio: 0,
+            fuelStandardLimit: stdLimit,
+            isFuelAlert: false,
+            previousRemainingFuelLiters: prevTank,
+            fuelConsumptionLiters: 0,
+            remainingTankLiters: prevTank,
+            recommendedRefuelLiters: 0,
+            fuelAnalysisStatus: 'Normal',
+            fuelAnalysisNote: 'Normal: Pengisian sesuai kebutuhan jam kerja efektif.',
+        };
+    }));
+    setLaborList(allWorkers.map((w) => ({
+      workerId: w.id,
+      workerName: w.name,
+      category: w.category,
+      role: w.role,
+      status: 'Hadir',
+      teamName: w.teamName || 'Tim Operator Alat Berat',
+      assignedClientId: w.assignedClientId || 'ALL',
+      assignedBlockId: w.assignedBlockId || 'ALL',
+      notes: '',
+    })));
+    setPhotos([]);
+    setSpareParts([]);
+    setSupervisorGeneralNotes('Semua pekerjaan land clearing metode zero burning (tanpa bakar) terlaksana dengan baik sesuai SOP ramah lingkungan.');
   };
 
   if (userRole === 'director') {

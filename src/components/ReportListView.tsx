@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   FileText, 
   Search, 
@@ -102,50 +102,57 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
     : (selectedClientId === 'ALL' ? allBlocks : allBlocks.filter((b) => b.clientId === selectedClientId));
 
   // Filter logic: Klien hanya melihat SPK miliknya; Pengawas hanya mengawasi 1 Klien PT dan blok kerja yang ditugaskan
-  const filteredReports = reports.filter((r) => {
-    if (isClient) {
-      const matchId = clientAllowedIds.has(r.clientId);
-      const matchContract = r.contractNumber && clientAllowedContracts.has(r.contractNumber.trim().toLowerCase());
-      if (!matchId && !matchContract) return false;
-      if (selectedClientId !== 'ALL' && r.clientId !== selectedClientId) return false;
-    } else if (isSupervisor) {
-      if (authUser?.assignedClientId && authUser.assignedClientId !== 'all' && r.clientId !== authUser.assignedClientId) {
-        return false;
+  const filteredReports = useMemo(() => {
+    return reports.filter((r) => {
+      if (isClient) {
+        const matchId = clientAllowedIds.has(r.clientId);
+        const matchContract = r.contractNumber && clientAllowedContracts.has(r.contractNumber.trim().toLowerCase());
+        if (!matchId && !matchContract) return false;
+        if (selectedClientId !== 'ALL' && r.clientId !== selectedClientId) return false;
+      } else if (isSupervisor) {
+        if (authUser?.assignedClientId && authUser.assignedClientId !== 'all' && r.clientId !== authUser.assignedClientId) {
+          return false;
+        }
+        if (
+          authUser?.assignedBlockCodes &&
+          authUser.assignedBlockCodes.length > 0 &&
+          !authUser.assignedBlockCodes[0].includes('Semua Blok')
+        ) {
+          const matchesAssignedBlock = authUser.assignedBlockCodes.some((b) => {
+            const cleanB = (b || '').trim().toLowerCase();
+            const rBlock = (r.blockCode || '').trim().toLowerCase();
+            return cleanB && rBlock && (rBlock.includes(cleanB) || cleanB.includes(rBlock));
+          });
+          if (!matchesAssignedBlock) return false;
+        }
+      } else {
+        if (selectedClientId !== 'ALL' && r.clientId !== selectedClientId) {
+          return false;
+        }
       }
-      if (
-        authUser?.assignedBlockCodes &&
-        authUser.assignedBlockCodes.length > 0 &&
-        !authUser.assignedBlockCodes[0].includes('Semua Blok')
-      ) {
-        const matchesAssignedBlock = authUser.assignedBlockCodes.some((b) => {
-          const cleanB = (b || '').trim().toLowerCase();
-          const rBlock = (r.blockCode || '').trim().toLowerCase();
-          return cleanB && rBlock && (rBlock.includes(cleanB) || cleanB.includes(rBlock));
-        });
-        if (!matchesAssignedBlock) return false;
-      }
-    } else {
-      if (selectedClientId !== 'ALL' && r.clientId !== selectedClientId) {
-        return false;
-      }
-    }
 
-    const q = (searchTerm || '').toLowerCase();
-    const matchesSearch =
-      (r.reportNumber && r.reportNumber.toLowerCase().includes(q)) ||
-      (r.blockCode && r.blockCode.toLowerCase().includes(q)) ||
-      (r.clientName && r.clientName.toLowerCase().includes(q)) ||
-      (r.supervisorName && r.supervisorName.toLowerCase().includes(q));
+      const q = (searchTerm || '').toLowerCase();
+      const matchesSearch =
+        (r.reportNumber && r.reportNumber.toLowerCase().includes(q)) ||
+        (r.blockCode && r.blockCode.toLowerCase().includes(q)) ||
+        (r.clientName && r.clientName.toLowerCase().includes(q)) ||
+        (r.supervisorName && r.supervisorName.toLowerCase().includes(q));
 
-    const matchesBlock = filterBlock === 'ALL' || r.blockCode.includes(filterBlock) || r.blockId === filterBlock;
-    const matchesStatus = filterStatus === 'ALL' || r.status === filterStatus;
-    const hasAlert = r.equipmentWorkLogs.some((l) => l.isFuelAlert);
-    const matchesAlert = !filterAlertOnly || hasAlert;
-    const matchesStartDate = !startDate || r.date >= startDate;
-    const matchesEndDate = !endDate || r.date <= endDate;
+      const matchesBlock = filterBlock === 'ALL' || r.blockCode.includes(filterBlock) || r.blockId === filterBlock;
+      const matchesStatus = filterStatus === 'ALL' || r.status === filterStatus;
+      const hasAlert = r.equipmentWorkLogs.some((l) => l.isFuelAlert);
+      const matchesAlert = !filterAlertOnly || hasAlert;
+      const matchesStartDate = !startDate || r.date >= startDate;
+      const matchesEndDate = !endDate || r.date <= endDate;
 
-    return matchesSearch && matchesBlock && matchesStatus && matchesAlert && matchesStartDate && matchesEndDate;
-  });
+      return matchesSearch && matchesBlock && matchesStatus && matchesAlert && matchesStartDate && matchesEndDate;
+    }).sort((a, b) => {
+      const timeB = new Date(b.date || b.createdAt || 0).getTime();
+      const timeA = new Date(a.date || a.createdAt || 0).getTime();
+      if (timeB !== timeA) return timeB - timeA;
+      return (b.reportNumber || '').localeCompare(a.reportNumber || '');
+    });
+  }, [reports, isClient, clientAllowedIds, clientAllowedContracts, selectedClientId, isSupervisor, authUser, searchTerm, filterBlock, filterStatus, filterAlertOnly, startDate, endDate]);
 
   // Export to Excel / CSV with BOM
   const handleExportCsv = () => {

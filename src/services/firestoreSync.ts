@@ -978,7 +978,14 @@ export function initFirestoreSync() {
   };
 
   // Attach real-time listeners for dynamic multi-user sync
-  attachSync(FIRESTORE_COLLECTIONS.REPORTS, LOCAL_STORAGE_KEYS.REPORTS);
+  attachSync<any>(FIRESTORE_COLLECTIONS.REPORTS, LOCAL_STORAGE_KEYS.REPORTS, (docs) => {
+    return [...docs].sort((a, b) => {
+      const timeB = new Date(b.date || b.createdAt || 0).getTime();
+      const timeA = new Date(a.date || a.createdAt || 0).getTime();
+      if (timeB !== timeA) return timeB - timeA;
+      return (b.reportNumber || '').localeCompare(a.reportNumber || '');
+    });
+  });
   attachSync(FIRESTORE_COLLECTIONS.EQUIPMENTS, LOCAL_STORAGE_KEYS.EQUIPMENTS);
   attachSync(FIRESTORE_COLLECTIONS.WORKERS, LOCAL_STORAGE_KEYS.WORKERS);
   attachSync(FIRESTORE_COLLECTIONS.BLOCKS, LOCAL_STORAGE_KEYS.BLOCKS);
@@ -1010,7 +1017,9 @@ export function initFirestoreSync() {
     } catch {}
     return validCloudDocs;
   });
-  attachSync(FIRESTORE_COLLECTIONS.ACTIVITIES, LOCAL_STORAGE_KEYS.ACTIVITIES);
+  attachSync<any>(FIRESTORE_COLLECTIONS.ACTIVITIES, LOCAL_STORAGE_KEYS.ACTIVITIES, (docs) => {
+    return [...docs].sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+  });
   attachSync<any>(FIRESTORE_COLLECTIONS.COMPANY_STAFF, LOCAL_STORAGE_KEYS.COMPANY_STAFF, (docs) => {
     const deletedStaffIds = getDeletedIdsFromStorage('suryaland_deleted_staff_ids_v1');
     const validCloudDocs = docs.filter((d) => {

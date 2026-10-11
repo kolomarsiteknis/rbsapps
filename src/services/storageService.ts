@@ -514,6 +514,15 @@ export const storageService = {
   getReports(selectedClientId?: string, authUser?: AuthUser | null): DailyReport[] {
     const all = loadFromStorage<DailyReport[]>(STORAGE_KEYS.REPORTS, initialDailyReports);
 
+    const sortNewestFirst = (reportsList: DailyReport[]): DailyReport[] => {
+      return [...reportsList].sort((a, b) => {
+        const timeB = new Date(b.date || b.createdAt || 0).getTime();
+        const timeA = new Date(a.date || a.createdAt || 0).getTime();
+        if (timeB !== timeA) return timeB - timeA;
+        return (b.reportNumber || '').localeCompare(a.reportNumber || '');
+      });
+    };
+
     // Filter ketat jika pengguna adalah Klien (Hanya bisa melihat laporan sesuai SPK milik mereka)
     if (authUser && (authUser.role === 'client' || authUser.userLevel === 'Klien')) {
       const authorizedClients = this.getAuthorizedClientsForUser(authUser);
@@ -531,7 +540,7 @@ export const storageService = {
         authUser.assignedClientIds.forEach((id) => id && id !== 'all' && allowedClientIds.add(id));
       }
 
-      return all.filter((r) => {
+      const clientReports = all.filter((r) => {
         const matchId = allowedClientIds.has(r.clientId);
         const matchContract = r.contractNumber && allowedContracts.has(r.contractNumber.trim().toLowerCase());
         if (!matchId && !matchContract) return false;
@@ -540,6 +549,7 @@ export const storageService = {
         }
         return true;
       });
+      return sortNewestFirst(clientReports);
     }
 
     // Filter jika pengguna adalah Pengawas
@@ -548,7 +558,7 @@ export const storageService = {
         ? authUser.assignedClientId
         : selectedClientId;
 
-      return all.filter((r) => {
+      const spvReports = all.filter((r) => {
         // Harus sesuai dengan 1 klien PT yang ditugaskan
         if (allowedClientId && allowedClientId !== 'ALL' && r.clientId !== allowedClientId) {
           return false;
@@ -567,12 +577,13 @@ export const storageService = {
         }
         return true;
       });
+      return sortNewestFirst(spvReports);
     }
 
     if (!selectedClientId || selectedClientId === 'ALL') {
-      return all;
+      return sortNewestFirst(all);
     }
-    return all.filter((r) => r.clientId === selectedClientId);
+    return sortNewestFirst(all.filter((r) => r.clientId === selectedClientId));
   },
 
   getReportById(id: string): DailyReport | undefined {
@@ -595,43 +606,48 @@ export const storageService = {
     }
 
     const reports = loadFromStorage<DailyReport[]>(STORAGE_KEYS.REPORTS, initialDailyReports);
-    const repNo = (report.reportNumber || '').trim().toLowerCase();
-    const existingIndex = reports.findIndex(
-      (r) =>
-        r.id === report.id ||
-        (repNo && (r.reportNumber || '').trim().toLowerCase() === repNo) ||
-        (r.clientId === report.clientId && r.blockId === report.blockId && r.date === report.date && (r.effectiveWorkShift || '') === (report.effectiveWorkShift || ''))
-    );
-    let savedReport: DailyReport;
-    const targetId = existingIndex >= 0 ? reports[existingIndex].id : report.id;
 
-    if (existingIndex >= 0) {
-      savedReport = {
-        ...report,
-        id: targetId,
-        updatedAt: new Date().toISOString(),
-      };
-      reports[existingIndex] = savedReport;
-    } else {
-      savedReport = {
-        ...report,
-        id: targetId,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      reports.unshift(savedReport);
+    try {
+      if (!report.id || report.id.trim() === '') {
+        throw new Error('Invalid report ID: Cannot save report without a valid ID.');
+      }
+
+      const existingIndex = reports.findIndex((r) => r.id === report.id);
+      let savedReport: DailyReport;
+
+      if (existingIndex >= 0) {
+        // UPDATE operation
+        savedReport = {
+          ...report,
+          updatedAt: new Date().toISOString(),
+        };
+        reports[existingIndex] = savedReport;
+      } else {
+        // INSERT operation
+        // Ensure no collision (unlikely with UUID but defensive)
+        const duplicate = reports.find(r => r.id === report.id);
+        if (duplicate) {
+          throw new Error('Data collision: Report with this ID already exists.');
+        }
+        
+        savedReport = {
+          ...report,
+          createdAt: report.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        reports.unshift(savedReport);
+      }
+
+      saveToStorage(STORAGE_KEYS.REPORTS, reports);
+      syncDocWrite(FIRESTORE_COLLECTIONS.REPORTS, savedReport);
+      this.syncBlockAndEquipments(savedReport);
+      this.clearDraft();
+
+      return savedReport;
+    } catch (error) {
+      console.error('Save operation failed:', error);
+      throw error; // Rethrow to handle in the component
     }
-
-    saveToStorage(STORAGE_KEYS.REPORTS, reports);
-    syncDocWrite(FIRESTORE_COLLECTIONS.REPORTS, savedReport);
-
-    // Update block cleared area & equipments current HM
-    this.syncBlockAndEquipments(savedReport);
-
-    // Clear saved wizard draft
-    this.clearDraft();
-
-    return savedReport;
   },
 
   deleteReport(id: string, authUser?: AuthUser | null): boolean {
@@ -813,20 +829,17 @@ export const storageService = {
 
   saveEquipment(equip: Equipment): void {
     const list = this.getEquipments();
-    const cleanId = (equip.id || '').trim().toLowerCase();
-    const cleanName = (equip.name || '').trim().toLowerCase();
-    const cleanSerial = (equip.serialNumber || '').trim().toLowerCase();
+    const cleanId = (equip.id || '').trim().toUpperCase();
     const idx = list.findIndex(
-      (e) =>
-        e.id === equip.id ||
-        (cleanId && (e.id || '').trim().toLowerCase() === cleanId) ||
-        (cleanSerial && (e.serialNumber || '').trim().toLowerCase() === cleanSerial) ||
-        (cleanName && (e.name || '').trim().toLowerCase() === cleanName)
+      (e) => (e.id || '').trim().toUpperCase() === cleanId
     );
-    const targetId = idx >= 0 ? list[idx].id : equip.id;
+    const targetId = idx >= 0 ? list[idx].id : equip.id.trim().toUpperCase();
     const finalEquip = { ...equip, id: targetId };
-    if (idx >= 0) list[idx] = finalEquip;
-    else list.push(finalEquip);
+    if (idx >= 0) {
+      list[idx] = finalEquip;
+    } else {
+      list.push(finalEquip);
+    }
 
     saveToStorage(STORAGE_KEYS.EQUIPMENTS, list);
     syncDocWrite(FIRESTORE_COLLECTIONS.EQUIPMENTS, finalEquip);
@@ -869,12 +882,12 @@ export const storageService = {
 
   saveWorker(worker: Worker): void {
     const list = this.getWorkers();
+    const cleanId = (worker.id || '').trim();
     const cleanName = (worker.name || '').trim().toLowerCase();
-    const cleanCat = (worker.category || '').trim().toLowerCase();
     const idx = list.findIndex(
       (w) =>
-        w.id === worker.id ||
-        (cleanName && (w.name || '').trim().toLowerCase() === cleanName && (!cleanCat || (w.category || '').trim().toLowerCase() === cleanCat))
+        (w.id && cleanId && w.id === cleanId) ||
+        (!cleanId && cleanName && (w.name || '').trim().toLowerCase() === cleanName)
     );
     const targetId = idx >= 0 ? list[idx].id : worker.id;
     const finalWorker = { ...worker, id: targetId };
@@ -2632,7 +2645,9 @@ export const storageService = {
       }
     ];
 
-    return loadFromStorage<UserActivityLog[]>(STORAGE_KEYS.USER_ACTIVITIES, defaultActivities);
+    return loadFromStorage<UserActivityLog[]>(STORAGE_KEYS.USER_ACTIVITIES, defaultActivities).sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
   },
 
   logUserActivity(activity: Partial<UserActivityLog>): UserActivityLog {

@@ -907,16 +907,29 @@ export const MasterDataView: React.FC = () => {
 
   const handleSaveEquipment = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!equipmentForm.id || !equipmentForm.name) {
+    const cleanId = (equipmentForm.id || '').trim().toUpperCase();
+    const cleanName = (equipmentForm.name || '').trim();
+
+    if (!cleanId || !cleanName) {
       alert('Mohon lengkapi Kode Alat dan Nama Unit Alat Berat.');
       return;
     }
 
+    // Cek apakah Kode Alat sudah digunakan unit lain saat menambah data baru
+    if (!editingEquipmentId) {
+      const currentEquipments = storageService.getEquipments();
+      const isDuplicate = currentEquipments.some((eq) => (eq.id || '').trim().toUpperCase() === cleanId);
+      if (isDuplicate) {
+        alert(`Kode Alat "${cleanId}" sudah terdaftar di sistem. Gunakan kode alat unik lain (misal: ${cleanId}-02) agar data tidak tertimpa.`);
+        return;
+      }
+    }
+
     const newEquip: Equipment = {
-      id: equipmentForm.id.trim().toUpperCase(),
-      name: equipmentForm.name.trim(),
+      id: cleanId,
+      name: cleanName,
       type: (equipmentForm.type as any) || 'Excavator',
-      model: equipmentForm.model?.trim() || equipmentForm.name?.trim() || '',
+      model: equipmentForm.model?.trim() || cleanName,
       serialNumber: equipmentForm.serialNumber?.trim() || '-',
       currentHm: Number(equipmentForm.currentHm) || 0,
       standardFuelRatio: Number(equipmentForm.standardFuelRatio) || 18.0,
@@ -4867,9 +4880,19 @@ export const MasterDataView: React.FC = () => {
                     value={equipmentForm.id || ''}
                     disabled={!!editingEquipmentId}
                     onChange={(e) => setEquipmentForm({ ...equipmentForm, id: e.target.value.toUpperCase() })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono font-bold uppercase disabled:bg-slate-100"
+                    className={`w-full px-3 py-2 border rounded-xl font-mono font-bold uppercase disabled:bg-slate-100 ${
+                      !editingEquipmentId && equipmentForm.id && equipments.some((eq) => (eq.id || '').trim().toUpperCase() === (equipmentForm.id || '').trim().toUpperCase())
+                        ? 'border-rose-500 bg-rose-50/50 text-rose-900 focus:ring-rose-500'
+                        : 'border-slate-300'
+                    }`}
                   />
-                  <p className="text-[10px] text-slate-400 mt-0.5">Identitas unik unit alat di lapangan.</p>
+                  {!editingEquipmentId && equipmentForm.id && equipments.some((eq) => (eq.id || '').trim().toUpperCase() === (equipmentForm.id || '').trim().toUpperCase()) ? (
+                    <p className="text-[10px] text-rose-600 font-bold mt-0.5 flex items-center gap-1">
+                      ⚠️ Kode &quot;{(equipmentForm.id || '').trim().toUpperCase()}&quot; sudah digunakan unit lain. Gunakan kode unik agar data tidak tertimpa!
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-slate-400 mt-0.5">Identitas unik unit alat di lapangan.</p>
+                  )}
                 </div>
 
                 {/* Jenis / Tipe Alat Berat - Bisa tambah jenis baru */}

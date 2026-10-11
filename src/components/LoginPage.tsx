@@ -10,7 +10,8 @@ import {
 } from 'lucide-react';
 import { AuthUser, ManagedUser } from '../types';
 import { storageService } from '../services/storageService';
-import type { LoginDiagnosticResult } from '../App';
+import { LoginDiagnosticResult } from '../App';
+import { sanitizeInput } from '../utils/sanitizer';
 
 interface LoginPageProps {
   onLoginSuccess: (user: AuthUser) => void;
@@ -85,8 +86,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     setErrorMsg(null);
     setIsLoading(true);
 
-    const trimmedUser = username.trim().replace(/^@+/, '');
-    const trimmedPass = password.trim();
+    const trimmedUser = sanitizeInput(username).replace(/^@+/, '');
+    const trimmedPass = sanitizeInput(password);
 
     if (!trimmedUser) {
       setErrorMsg('Silakan masukkan username.');

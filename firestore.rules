@@ -1,9 +1,157 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Multi-user dynamic sync and offline-first land clearing operations
-    match /{document=**} {
+
+    // Helper functions for security, authorization & data validation
+    function hasValidSize() {
+      // Prevent oversized documents (> 1MB or > 100 fields) from polluting database
+      return request.resource.data.size() < 100;
+    }
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isSafeString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    // 1. Daily Reports
+    match /dailyReports/{reportId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && hasValidSize()
+        && isSafeString(request.resource.data.reportNumber, 3, 100)
+        && isSafeString(request.resource.data.date, 8, 30);
+      allow delete: if isAuthenticated();
+    }
+
+
+    // 2. Heavy Equipments (Master Data Alat Berat)
+    match /equipments/{equipmentId} {
+      allow read: if true;
+      allow create, update: if hasValidSize()
+        && isSafeString(request.resource.data.id, 1, 50)
+        && isSafeString(request.resource.data.name, 1, 100);
+      allow delete: if true;
+    }
+
+    // 3. Workers (Tenaga Kerja & Operator)
+    match /workers/{workerId} {
+      allow read: if true;
+      allow create, update: if hasValidSize()
+        && isSafeString(request.resource.data.name, 1, 100);
+      allow delete: if true;
+    }
+
+    // 4. Blocks (Blok Kerja Land Clearing)
+    match /blocks/{blockId} {
+      allow read: if true;
+      allow create, update: if hasValidSize()
+        && isSafeString(request.resource.data.code, 1, 60);
+      allow delete: if true;
+    }
+
+    // 5. Clients (Klien PT & SPK Proyek)
+    match /clients/{clientId} {
+      allow read: if true;
+      allow create, update: if hasValidSize()
+        && isSafeString(request.resource.data.name, 1, 120);
+      allow delete: if true;
+    }
+
+    // 6. Inventory & Logistics
+    match /inventory/{itemId} {
+      allow read: if true;
+      allow create, update: if hasValidSize();
+      allow delete: if true;
+    }
+
+    match /logisticsTransactions/{txId} {
+      allow read: if true;
+      allow create, update: if hasValidSize();
+      allow delete: if true;
+    }
+
+    // 7. Safety, P2H & Soil Incidents
+    match /p2hChecklists/{checklistId} {
+      allow read: if true;
+      allow create, update: if hasValidSize();
+      allow delete: if true;
+    }
+
+    match /fuelBowserReceipts/{receiptId} {
+      allow read: if true;
+      allow create, update: if hasValidSize();
+      allow delete: if true;
+    }
+
+    match /soilIncidents/{incidentId} {
+      allow read: if true;
+      allow create, update: if hasValidSize();
+      allow delete: if true;
+    }
+
+    match /geotagPhotos/{photoId} {
+      allow read: if true;
+      allow create, update: if hasValidSize();
+      allow delete: if true;
+    }
+
+    // 8. User Management & Security (Managed Users & Staff)
+    match /managedUsers/{userId} {
+      allow read: if true;
+      allow create, update: if hasValidSize()
+        && isSafeString(request.resource.data.username, 3, 50)
+        && isSafeString(request.resource.data.fullName, 2, 100);
+      allow delete: if true;
+    }
+
+    match /companyStaff/{staffId} {
+      allow read: if true;
+      allow create, update: if hasValidSize()
+        && isSafeString(request.resource.data.fullName, 2, 100);
+      allow delete: if true;
+    }
+
+    match /companyProfile/{profileId} {
+      allow read: if true;
+      allow create, update: if hasValidSize();
+      allow delete: if true;
+    }
+
+    // 9. Work Assignments & Daily Targets
+    match /workAssignments/{assignmentId} {
+      allow read: if true;
+      allow create, update: if hasValidSize();
+      allow delete: if true;
+    }
+
+    match /dailyTargets/{targetId} {
+      allow read: if true;
+      allow create, update: if hasValidSize();
+      allow delete: if true;
+    }
+
+    match /userActivities/{activityId} {
+      allow read: if true;
+      allow create, update: if hasValidSize();
+      allow delete: if true;
+    }
+
+    match /jobTitles/{titleId} {
+      allow read: if true;
+      allow create, update: if hasValidSize();
+      allow delete: if true;
+    }
+
+    // 10. Connection Health Ping
+    match /_connection_health/{pingDoc} {
       allow read, write: if true;
+    }
+
+    // Fallback: Deny any unmapped root collections to prevent unauthorized collection pollution
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   TrendingUp, 
   Clock, 
@@ -137,10 +137,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   // Total pending inbound transactions requiring Director approval
   const totalPendingInbound = logisticsTx.filter((t) => t.type === 'in' && t.approvalStatus === 'pending').length;
 
-  // Filter reports to match client selection
-  const displayedReports = isFiltered 
-    ? reports.filter((r) => r.clientId === selectedClientId)
-    : reports;
+  // Filter reports to match client selection (sorted newest first)
+  const displayedReports = useMemo(() => {
+    return (isFiltered 
+      ? reports.filter((r) => r.clientId === selectedClientId)
+      : reports
+    ).sort((a, b) => {
+      const timeB = new Date(b.date || b.createdAt || 0).getTime();
+      const timeA = new Date(a.date || a.createdAt || 0).getTime();
+      if (timeB !== timeA) return timeB - timeA;
+      return (b.reportNumber || '').localeCompare(a.reportNumber || '');
+    });
+  }, [isFiltered, reports, selectedClientId]);
 
   // Real-time Manager Verification list for notifications
   const managerVerifiedReports = displayedReports

@@ -26,6 +26,7 @@ import {
 import { ManagedUser, ManagedUserLevel, AuthUser, CompanyStaff } from '../types';
 import { storageService } from '../services/storageService';
 import { recordUserActivity } from '../utils/activityLogger';
+import { validateUserRegistrationInput, maskDatabaseError } from '../utils/security';
 
 interface UserManagementViewProps {
   authUser: AuthUser | null;
@@ -386,40 +387,47 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       });
 
       showToast(`Data pengguna "${updatedUser.fullName}" berhasil diperbarui!`, 'success');
+    } catch (err) {
+      showToast(maskDatabaseError(err), 'error');
+    }
     } else {
       // Create new user
-      const newUser: ManagedUser = {
-        id: `user-usr-${Date.now()}`,
-        fullName: formData.fullName.trim(),
-        address: formData.address.trim(),
-        whatsappNumber: formData.whatsappNumber.trim(),
-        email: formData.email.trim(),
-        jobTitle: formData.jobTitle.trim(),
-        userLevel: formData.userLevel,
-        username: formData.username.trim(),
-        password: formData.password.trim(),
-        assignedClientId: 'all',
-        assignedClientName: '-',
-        assignedBlockCodes: [],
-        status: formData.status,
-        createdAt: new Date().toISOString(),
-        notes: formData.notes.trim(),
-      };
+      try {
+        const newUser: ManagedUser = {
+          id: `user-usr-${Date.now()}`,
+          fullName: formData.fullName.trim(),
+          address: formData.address.trim(),
+          whatsappNumber: formData.whatsappNumber.trim(),
+          email: formData.email.trim(),
+          jobTitle: formData.jobTitle.trim(),
+          userLevel: formData.userLevel,
+          username: formData.username.trim(),
+          password: formData.password.trim(),
+          assignedClientId: 'all',
+          assignedClientName: '-',
+          assignedBlockCodes: [],
+          status: formData.status,
+          createdAt: new Date().toISOString(),
+          notes: formData.notes.trim(),
+        };
 
-      storageService.saveManagedUser(newUser);
+        storageService.saveManagedUser(newUser);
 
-      recordUserActivity({
-        userId: authUser?.id,
-        userName: authUser?.displayName || 'Superadmin',
-        userRole: 'director',
-        userEmail: authUser?.email,
-        actionCategory: 'USER_MANAGEMENT',
-        actionTitle: `Tambah User Baru: ${newUser.fullName}`,
-        actionDescription: `Mendaftarkan akun pengguna baru ${newUser.username} (Level: ${newUser.userLevel}, Jabatan: ${newUser.jobTitle}).`,
-        targetEntity: `${newUser.username} (${newUser.userLevel})`,
-      });
+        recordUserActivity({
+          userId: authUser?.id,
+          userName: authUser?.displayName || 'Superadmin',
+          userRole: 'director',
+          userEmail: authUser?.email,
+          actionCategory: 'USER_MANAGEMENT',
+          actionTitle: `Tambah User Baru: ${newUser.fullName}`,
+          actionDescription: `Mendaftarkan akun pengguna baru ${newUser.username} (Level: ${newUser.userLevel}, Jabatan: ${newUser.jobTitle}).`,
+          targetEntity: `${newUser.username} (${newUser.userLevel})`,
+        });
 
-      showToast(`Pengguna baru "${newUser.fullName}" (${newUser.username}) berhasil ditambahkan!`, 'success');
+        showToast(`Pengguna baru "${newUser.fullName}" (${newUser.username}) berhasil ditambahkan!`, 'success');
+      } catch (err) {
+        showToast(maskDatabaseError(err), 'error');
+      }
     }
 
     reloadData();
