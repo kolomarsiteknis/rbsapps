@@ -531,6 +531,7 @@ export const LogisticsInventoryView: React.FC<LogisticsInventoryViewProps> = ({
             </p>
           </div>
 
+
           {/* Action Buttons */}
           <div className="flex flex-wrap items-center gap-2.5">
             {/* Input Stok Masuk (Bisa oleh Pengawas) */}

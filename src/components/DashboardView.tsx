@@ -637,7 +637,7 @@ _Pesan ini dikirim resmi melalui Sistem RBS APPS — Executive Monitoring & Aler
                 </>
               ) : (
                 <>
-                  <span>Konsolidasi: <strong className="text-amber-300">{metrics.targetAreaTotal} Ha</strong> di berbagai perkebunan</span>
+                  <span>Konsolidasi: <strong className="text-amber-300">{metrics.targetAreaTotal.toFixed(3)} Ha</strong> di berbagai perkebunan</span>
                   <span className="text-slate-600">·</span>
                   <span>Pelaksana Utama: <strong className="text-slate-200">PT. RBS GROUP</strong></span>
                 </>

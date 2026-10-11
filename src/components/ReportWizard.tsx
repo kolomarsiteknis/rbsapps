@@ -2558,25 +2558,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
               </div>
 
               {/* Tangki master numbers */}
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-700 uppercase">Stok Awal Tangki</label>
-                  <input
-                    type="number"
-                    value={tankInitial}
-                    onChange={(e) => setTankInitial(parseFloat(e.target.value) || 0)}
-                    className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-700 uppercase">Penerimaan Baru (Inflow)</label>
-                  <input
-                    type="number"
-                    value={tankInflow}
-                    onChange={(e) => setTankInflow(parseFloat(e.target.value) || 0)}
-                    className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold"
-                  />
-                </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] font-bold text-slate-700 uppercase">Total Terpakai Hari Ini</label>
                   <div className="px-2.5 py-1.5 bg-slate-200/80 border border-slate-300 rounded-lg text-xs font-mono font-bold text-amber-900">

@@ -52,7 +52,7 @@ import {
   StaffSupervisorAssignment,
   SupportTeamMemberAssignment
 } from '../types';
-import { storageService } from '../services/storageService';
+import { storageService, isClientMatch } from '../services/storageService';
 import { DEFAULT_WORK_ITEMS_CATALOG } from '../data/mockData';
 
 export const MasterDataView: React.FC = () => {
@@ -67,15 +67,19 @@ export const MasterDataView: React.FC = () => {
 
   const getBlocksForClient = (clientId: string) => {
     if (!clientId) return blocks;
-    const targetClient = clients.find(c => c.id === clientId);
+    const targetClient = clients.find(c => 
+      c.id === clientId || 
+      (c.contractNumber && c.contractNumber.trim().toLowerCase() === clientId.trim().toLowerCase())
+    );
     const matched = blocks.filter((b) => {
-      if (b.clientId === clientId) return true;
-      const owner = clients.find(c => c.id === b.clientId);
-      if (targetClient && owner && targetClient.contractNumber && owner.contractNumber && targetClient.contractNumber === owner.contractNumber) return true;
-      return false;
+      return isClientMatch(b.clientId, clientId, b.contractNumber, clients) ||
+             (targetClient && isClientMatch(b.clientId, targetClient.id, b.contractNumber, clients)) ||
+             (targetClient && targetClient.contractNumber && isClientMatch(b.clientId, targetClient.contractNumber, b.contractNumber, clients));
     });
     if (matched.length === 0 && blocks.length > 0) {
-      return blocks; // Fallback to all blocks so data is never empty (0 blok)
+      if (clients.length <= 1 || (targetClient && (targetClient.contractNumber?.includes('GKK') || targetClient.name.includes('GUDANG')))) {
+        return blocks;
+      }
     }
     return matched;
   };
@@ -213,22 +217,75 @@ export const MasterDataView: React.FC = () => {
   const [itemVolumeDrafts, setItemVolumeDrafts] = useState<Record<string, string>>({});
 
   // Filtered blocks based on selected client and search query
-  const filteredBlocks = blocks.filter((b) => {
-    if (selectedClientForBlock === 'ALL') return true;
-    const ownerClient = clients.find((c) => c.id === b.clientId);
-    const selectedClientObj = clients.find((c) => c.id === selectedClientForBlock);
-    return (
-      b.clientId === selectedClientForBlock ||
-      ownerClient?.id === selectedClientForBlock ||
-      (selectedClientObj && ownerClient && selectedClientObj.contractNumber && ownerClient.contractNumber && selectedClientObj.contractNumber === ownerClient.contractNumber)
-    );
-  })
+  const filteredBlocks = blocks
+    .filter((b) => {
+      if (selectedClientForBlock === 'ALL') return true;
+
+      // Find matching client by ID, contractNumber (SPK), or universal matcher
+      const selectedClientObj = clients.find(
+        (c) =>
+          c.id === selectedClientForBlock ||
+          (c.contractNumber && c.contractNumber.trim().toLowerCase() === selectedClientForBlock.trim().toLowerCase()) ||
+          isClientMatch(c.id, selectedClientForBlock, c.contractNumber, clients)
+      );
+
+      const targetSpk = (selectedClientObj?.contractNumber || selectedClientForBlock).trim().toLowerCase();
+      const blockSpk = (b.contractNumber || '').trim().toLowerCase();
+
+      // 1. Exact or substring match on SPK contract number
+      if (blockSpk && targetSpk && (blockSpk === targetSpk || blockSpk.includes(targetSpk) || targetSpk.includes(blockSpk))) {
+        return true;
+      }
+
+      // 2. Exact match on clientId
+      if (b.clientId && (b.clientId === selectedClientForBlock || (selectedClientObj && b.clientId === selectedClientObj.id))) {
+        return true;
+      }
+
+      // 3. Universal matcher
+      if (isClientMatch(b.clientId, selectedClientForBlock, b.contractNumber, clients)) {
+        return true;
+      }
+      if (selectedClientObj && isClientMatch(b.clientId, selectedClientObj.id, b.contractNumber, clients)) {
+        return true;
+      }
+      if (selectedClientObj?.contractNumber && isClientMatch(b.clientId, selectedClientObj.contractNumber, b.contractNumber, clients)) {
+        return true;
+      }
+
+      // 4. Specific PT. GUDANG SPK B/0001/33/GKK/OPS/9/2026 integration:
+      // If the selected client is PT. GUDANG / SPK B/0001/33/GKK/OPS/9/2026 and this block is one of the 26 blocks
+      const isGudangTarget = 
+        targetSpk.includes('gkk') || 
+        targetSpk.includes('0001/33') || 
+        targetSpk.includes('gudang') || 
+        (selectedClientObj && selectedClientObj.name.toLowerCase().includes('gudang'));
+
+      const isGudangBlock = 
+        blockSpk.includes('gkk') || 
+        blockSpk.includes('0001/33') || 
+        b.clientId === 'client-1' || 
+        b.clientId === 'client-gudang' ||
+        (b.code && (b.code.startsWith('BLOK I') || b.code.startsWith('BLOK J') || b.code.startsWith('BLOK K') || b.code.startsWith('BLOK L') || b.code.startsWith('BLOK M')));
+
+      if (isGudangTarget && isGudangBlock) {
+        return true;
+      }
+
+      // If only 1 client is registered in the system, all 26 blocks belong to this client
+      if (clients.length === 1) {
+        return true;
+      }
+
+      return false;
+    })
     .filter((b) => {
       if (!blockSearchQuery.trim()) return true;
       const q = (blockSearchQuery || '').toLowerCase();
-      const ownerClient = clients.find((c) => c.id === b.clientId);
+      const ownerClient = clients.find((c) => isClientMatch(c.id, b.clientId, c.contractNumber, clients)) || clients[0];
       const matchCode = (b.code && b.code.toLowerCase().includes(q)) || false;
       const matchClientName = ownerClient?.name?.toLowerCase().includes(q) || false;
+      const matchContract = (b.contractNumber && b.contractNumber.toLowerCase().includes(q)) || (ownerClient?.contractNumber && ownerClient.contractNumber.toLowerCase().includes(q)) || false;
       const matchClientFull = ownerClient?.fullCompanyName?.toLowerCase().includes(q) || false;
       const matchSpk = ownerClient?.contractNumber?.toLowerCase().includes(q) || false;
       const matchWorkItem = b.workItems?.some((wi) => wi.name && wi.name.toLowerCase().includes(q)) || false;
@@ -272,7 +329,7 @@ export const MasterDataView: React.FC = () => {
       targetVolume: item.defaultTargetVolume,
     }));
 
-    const clientBlocks = blocks.filter((b) => b.clientId === targetClientId);
+    const clientBlocks = blocks.filter((b) => isClientMatch(b.clientId, targetClientId, b.contractNumber, clients));
     const firstBlock = clientBlocks[0];
     const initialItems = firstBlock?.workItems && firstBlock.workItems.length > 0 
       ? firstBlock.workItems.map(wi => ({ ...wi, unit: wi.unit === 'HEKTAR' ? 'Ha' : wi.unit }))
@@ -300,7 +357,7 @@ export const MasterDataView: React.FC = () => {
   };
 
   const handleBlockFormClientChange = (newClientId: string) => {
-    const clientBlocks = blocks.filter((b) => b.clientId === newClientId);
+    const clientBlocks = blocks.filter((b) => isClientMatch(b.clientId, newClientId, b.contractNumber, clients));
     const firstBlock = clientBlocks[0];
     const standardItems: BlockWorkItem[] = DEFAULT_WORK_ITEMS_CATALOG.map((item, idx) => ({
       id: `wi-std-${idx + 1}`,
@@ -593,13 +650,13 @@ export const MasterDataView: React.FC = () => {
     }
     setEditingTargetId(null);
     const chosenClientId = presetClientId || (selectedClientForTarget !== 'ALL' ? selectedClientForTarget : clients[0]?.id || '');
-    const availableBlocks = blocks.filter((b) => b.clientId === chosenClientId);
+    const availableBlocks = blocks.filter((b) => isClientMatch(b.clientId, chosenClientId, b.contractNumber, clients));
     const chosenBlock = presetBlockId 
       ? blocks.find((b) => b.id === presetBlockId) 
       : availableBlocks[0] || blocks[0];
 
     const todayStr = new Date().toISOString().split('T')[0];
-    const clientObj = clients.find((c) => c.id === chosenClientId);
+    const clientObj = clients.find((c) => isClientMatch(c.id, chosenClientId, c.contractNumber, clients));
 
     // Ambil item pekerjaan lengkap dengan jumlah satuannya dari menu 2. LOKASI & PEKERJAAN
     const blockItems = (chosenBlock?.workItems && chosenBlock.workItems.length > 0)
@@ -700,8 +757,8 @@ export const MasterDataView: React.FC = () => {
 
   // Handler dropdown pilihan No Kontrak/SPK Klien pada form target
   const handleTargetFormClientChange = (newClientId: string) => {
-    const clientObj = clients.find((c) => c.id === newClientId);
-    const clientBlks = blocks.filter((b) => b.clientId === newClientId);
+    const clientObj = clients.find((c) => isClientMatch(c.id, newClientId, c.contractNumber, clients));
+    const clientBlks = blocks.filter((b) => isClientMatch(b.clientId, newClientId, b.contractNumber, clients));
     const chosenBlock = clientBlks[0] || blocks[0];
 
     const blockItems = (chosenBlock?.workItems && chosenBlock.workItems.length > 0)
@@ -1030,10 +1087,10 @@ export const MasterDataView: React.FC = () => {
   const [assignmentForm, setAssignmentForm] = useState<AssignmentFormState>(() => {
     return {
       assignmentNumber: '001/ST-LC/GKK/IX/2026',
-      clientId: 'client-gudang',
+      clientId: clients[0]?.id || 'client-1',
       assignedDate: '2026-09-01',
       status: 'Aktif',
-      notes: 'Penugasan Tim Kerja Operasional Proyek Land Clearing 460 Ha. Seluruh tim wajib mematuhi SOP Zero Burning Method dan standar K3.',
+      notes: 'Penugasan Tim Kerja Operasional Proyek Land Clearing 500 Ha. Seluruh tim wajib mematuhi SOP Zero Burning Method dan standar K3.',
       siteManagerName: 'Bambang Sugiarto, S.P.',
       siteManagerPhone: '+62 812-3456-7890',
       supervisors: [
@@ -1195,7 +1252,7 @@ export const MasterDataView: React.FC = () => {
     const targetClient = clients.find((c) => c.id === initialClientId) || clients[0];
     const todayStr = new Date().toISOString().slice(0, 10);
     const generatedNo = storageService.generateAssignmentNumber(targetClient, todayStr, workAssignments);
-    const availableBlocks = blocks.filter((b) => b.clientId === initialClientId);
+    const availableBlocks = blocks.filter((b) => isClientMatch(b.clientId, initialClientId, b.contractNumber, clients));
 
     const defaultSmStaff =
       currentStaffList.find(
@@ -1238,7 +1295,7 @@ export const MasterDataView: React.FC = () => {
     setCompanyStaffList(currentStaffList);
     setWorkers(storageService.getWorkers());
     setEquipments(storageService.getEquipments());
-    const clientBlocks = blocks.filter((b) => b.clientId === asg.clientId);
+    const clientBlocks = blocks.filter((b) => isClientMatch(b.clientId, asg.clientId, b.contractNumber, clients));
 
     const matchedSm = currentStaffList.find(
       (s) =>
@@ -2518,7 +2575,7 @@ export const MasterDataView: React.FC = () => {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredBlocks.map((b) => {
-                const ownerClient = clients.find((c) => c.id === b.clientId);
+                const ownerClient = clients.find((c) => isClientMatch(c.id, b.clientId, c.contractNumber, clients)) || clients[0];
                 const targetInfo = getBlockDailyTargetInfo(b.id);
                 const targetHa = targetInfo ? targetInfo.dailyTargetAreaHa : (b.dailyTargetAreaHa ?? 4.0);
                 const pct = b.targetAreaHa > 0 ? ((b.clearedAreaHa / b.targetAreaHa) * 100).toFixed(1) : '0';
@@ -2550,10 +2607,10 @@ export const MasterDataView: React.FC = () => {
                           </span>
                         </div>
                         <div className="font-mono font-black text-slate-950 text-sm tracking-wide break-all">
-                          {ownerClient?.contractNumber || '045/SPK-LC/PTA/VI/2026'}
+                          {ownerClient?.contractNumber || b.contractNumber || 'B/0001/33/GKK/OPS/9/2026'}
                         </div>
                         <div className="text-xs font-black text-slate-800">
-                          {ownerClient?.fullCompanyName || (ownerClient ? `${ownerClient.name} (Klien)` : 'PT. AGRO PERDANA MANDIRI (PT. A)')}
+                          {ownerClient?.fullCompanyName || (ownerClient ? `${ownerClient.name} (Klien)` : 'PT. GUDANG KOMODITAS KONDANG (PT. GUDANG)')}
                         </div>
                       </div>
 

@@ -112,6 +112,7 @@ export interface Block {
   id: string;
   projectId: string;
   clientId: string;
+  contractNumber?: string; // e.g. "B/0001/33/GKK/OPS/9/2026"
   code: string; // "Blok AB" atau "BLOK AZ"
   targetAreaHa: number; // 100 Ha atau 35.5 Ha
   dailyTargetAreaHa?: number; // Target harian Land Clearing (Ha) yang ditentukan oleh Direktur (misal: 4.0 Ha)
@@ -289,12 +290,14 @@ export interface LogisticsTransaction {
   type: LogisticsTransactionType;
   clientId?: string;
   clientName?: string;
+  contractNumber?: string;
   blockId?: string;
   blockCode?: string;
 
   // Inflow (Penerimaan Stok Masuk) fields
   supplierOrPoNumber?: string; // No PO / Supplier
   deliveryNoteNumber?: string; // No Surat Jalan
+  referenceNumber?: string;
   sourceOrStorage?: string; // Lokasi penyimpanan (misal Tangki Induk 10.000 L)
 
   // Outflow (Pemakaian Stok Keluar) fields - Khusus Pengawas di Lapangan

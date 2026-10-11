@@ -60,6 +60,9 @@ export const initialClients: Client[] = [
     contractNumber: 'B/0001/33/GKK/OPS/9/2026',
     location: 'Kec. Kuranji, Tanah Bumbu, Kalsel',
     address: 'Kec. Kuranji, Tanah Bumbu, Kalsel',
+    contactPerson: 'Bapak Direktur',
+    phone: '081122334455',
+    projectName: 'Land Clearing Perkebunan PT. GUDANG',
     totalAreaHa: 500,
     clearedAreaHa: 120,
     status: 'Aktif',
@@ -72,7 +75,10 @@ export const initialProjects: Project[] = [
     clientId: 'client-1',
     name: 'Land Clearing Perkebunan PT. GUDANG',
     location: 'Kec. Kuranji, Tanah Bumbu, Kalsel',
-    status: 'Aktif',
+    totalTargetHa: 500,
+    startDate: '2026-09-01',
+    targetCompletionDate: '2026-12-31',
+    method: 'Zero Burning',
   }
 ];
 
@@ -87,96 +93,282 @@ export const DEFAULT_WORK_ITEMS_CATALOG = [
   { name: 'SALURAN TERSIER', unit: 'm³', defaultTargetVolume: 50 },
 ];
 
-export const initialBlocks: Block[] = [
-  {
-    id: 'blk-i33',
-    clientId: 'client-1',
-    code: 'BLOK I33',
-    name: 'Blok I33',
-    targetAreaHa: 100,
-    clearedAreaHa: 30,
-    status: 'Aktif',
-    workItems: [
-      { id: 'wi-1', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', targetVolume: 30, clearedVolume: 10 },
-      { id: 'wi-2', name: 'BATANG KUBUR', unit: 'POHON', targetVolume: 25, clearedVolume: 5 },
-      { id: 'wi-3', name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'Ha', targetVolume: 10, clearedVolume: 3 },
-    ]
-  },
-  {
-    id: 'blk-j31',
-    clientId: 'client-1',
-    code: 'BLOK J31',
-    name: 'Blok J31',
-    targetAreaHa: 100,
-    clearedAreaHa: 25,
-    status: 'Aktif',
-    workItems: [
-      { id: 'wi-4', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', targetVolume: 30, clearedVolume: 8 },
-      { id: 'wi-5', name: 'BATANG KUBUR', unit: 'POHON', targetVolume: 25, clearedVolume: 4 },
-    ]
-  },
-  {
-    id: 'blk-j34',
-    clientId: 'client-1',
-    code: 'BLOK J34',
-    name: 'Blok J34',
-    targetAreaHa: 100,
-    clearedAreaHa: 20,
-    status: 'Aktif',
-    workItems: [
-      { id: 'wi-6', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', targetVolume: 30, clearedVolume: 6 },
-    ]
-  },
-  {
-    id: 'blk-j35',
-    clientId: 'client-1',
-    code: 'BLOK J35',
-    name: 'Blok J35',
-    targetAreaHa: 100,
-    clearedAreaHa: 25,
-    status: 'Aktif',
-    workItems: [
-      { id: 'wi-7', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', targetVolume: 30, clearedVolume: 8 },
-    ]
-  },
-  {
-    id: 'blk-j36',
-    clientId: 'client-1',
-    code: 'BLOK J36',
-    name: 'Blok J36',
-    targetAreaHa: 100,
-    clearedAreaHa: 20,
-    status: 'Aktif',
-    workItems: [
-      { id: 'wi-8', name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', targetVolume: 30, clearedVolume: 6 },
-    ]
-  }
+// 26 Lokasi Blok Kerja Resmi PT. GUDANG (No SPK: B/0001/33/GKK/OPS/9/2026)
+const BLOCK_CODES_26 = [
+  'BLOK I31', 'BLOK I32', 'BLOK I33', 'BLOK I34', 'BLOK I35', 'BLOK I36',
+  'BLOK J31', 'BLOK J32', 'BLOK J33', 'BLOK J34', 'BLOK J35', 'BLOK J36',
+  'BLOK K31', 'BLOK K32', 'BLOK K33', 'BLOK K34', 'BLOK K35', 'BLOK K36',
+  'BLOK L31', 'BLOK L32', 'BLOK L33', 'BLOK L34', 'BLOK L35', 'BLOK L36',
+  'BLOK M31', 'BLOK M32'
 ];
 
+export const initialBlocks: Block[] = BLOCK_CODES_26.map((code, idx) => {
+  const slug = code.toLowerCase().replace(/\s+/g, '-');
+  const targetArea = (code === 'BLOK M31' || code === 'BLOK M32') ? 10 : 20;
+  // Progress realistis (Total target 500 Ha, Total cleared 120 Ha)
+  const clearedAreaMap: Record<string, number> = {
+    'BLOK I31': 14,
+    'BLOK I32': 12,
+    'BLOK I33': 10,
+    'BLOK I34': 8,
+    'BLOK I35': 6,
+    'BLOK I36': 4,
+    'BLOK J31': 16,
+    'BLOK J32': 14,
+    'BLOK J33': 11,
+    'BLOK J34': 8,
+    'BLOK J35': 7,
+    'BLOK J36': 5,
+    'BLOK K31': 4,
+    'BLOK K32': 1,
+  };
+  const clearedArea = clearedAreaMap[code] ?? 0;
+  const status: Block['status'] = clearedArea >= targetArea 
+    ? 'Selesai' 
+    : clearedArea > 0 
+      ? 'Dalam Pengerjaan' 
+      : 'Belum Dimulai';
+
+  return {
+    id: `blk-${slug.replace('blok-', '')}`,
+    projectId: 'proj-1',
+    clientId: 'client-1',
+    contractNumber: 'B/0001/33/GKK/OPS/9/2026',
+    code,
+    targetAreaHa: targetArea,
+    dailyTargetAreaHa: (code.startsWith('BLOK J') || code.startsWith('BLOK I')) ? 4.0 : 3.5,
+    clearedAreaHa: clearedArea,
+    status,
+    workItems: [
+      { id: `${slug}-wi-1`, name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', targetVolume: targetArea, completedVolume: clearedArea },
+      { id: `${slug}-wi-2`, name: 'BATANG KUBUR', unit: 'POHON', targetVolume: Math.round(targetArea * 0.8), completedVolume: Math.round(clearedArea * 0.7) },
+      { id: `${slug}-wi-3`, name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'Ha', targetVolume: Math.round(targetArea * 0.6), completedVolume: Math.round(clearedArea * 0.5) },
+      { id: `${slug}-wi-4`, name: 'MAINROAD', unit: 'm', targetVolume: 250, completedVolume: clearedArea > 5 ? 120 : 0 },
+      { id: `${slug}-wi-5`, name: 'COLLECTION ROAD', unit: 'm', targetVolume: 100, completedVolume: clearedArea > 5 ? 50 : 0 },
+      { id: `${slug}-wi-6`, name: 'SALURAN PRIMER', unit: 'm³', targetVolume: 50, completedVolume: 0 },
+      { id: `${slug}-wi-7`, name: 'SALURAN SEKUNDER', unit: 'm³', targetVolume: 50, completedVolume: 0 },
+      { id: `${slug}-wi-8`, name: 'SALURAN TERSIER', unit: 'm³', targetVolume: 50, completedVolume: 0 },
+    ],
+  };
+});
+
 export const initialEquipments: Equipment[] = [
-  { id: 'eq-1', name: 'Excavator Komatsu PC200-8', type: 'Excavator', clientId: 'client-1', currentHm: 1250, standardFuelRatio: 18.0, status: 'Aktif' },
-  { id: 'eq-2', name: 'Bulldozer Caterpillar D6R', type: 'Bulldozer', clientId: 'client-1', currentHm: 1100, standardFuelRatio: 22.0, status: 'Aktif' },
-  { id: 'eq-3', name: 'Excavator Kobelco SK200-10', type: 'Excavator', clientId: 'client-1', currentHm: 950, standardFuelRatio: 17.5, status: 'Aktif' },
+  { id: 'eq-1', name: 'Excavator Komatsu PC200-8', type: 'Excavator', model: 'PC200-8', serialNumber: 'PC200-8-1001', currentHm: 1250, standardFuelRatio: 18.0, status: 'Operasional', operatorName: 'Hendri Gunawan' },
+  { id: 'eq-2', name: 'Bulldozer Caterpillar D6R', type: 'Bulldozer', model: 'D6R', serialNumber: 'D6R-2002', currentHm: 1100, standardFuelRatio: 22.0, status: 'Operasional', operatorName: 'Bowo' },
+  { id: 'eq-3', name: 'Excavator Kobelco SK200-10', type: 'Excavator', model: 'SK200-10', serialNumber: 'SK200-3003', currentHm: 950, standardFuelRatio: 17.5, status: 'Operasional', operatorName: 'Agus Santoso' },
 ];
 
 export const initialWorkers: Worker[] = [
-  { id: 'w-1', name: 'Hendri Gunawan', role: 'Operator', clientId: 'client-1', status: 'Aktif' },
-  { id: 'w-2', name: 'Bowo', role: 'Operator', clientId: 'client-1', status: 'Aktif' },
-  { id: 'w-3', name: 'Jaya', role: 'Mekanik', clientId: 'client-1', status: 'Aktif' },
+  { id: 'w-1', name: 'Hendri Gunawan', role: 'Operator', category: 'Operator', phone: '081234567890', status: 'Hadir' },
+  { id: 'w-2', name: 'Bowo', role: 'Operator', category: 'Operator', phone: '081234567891', status: 'Hadir' },
+  { id: 'w-3', name: 'Jaya', role: 'Mekanik', category: 'Mekanik', phone: '081234567892', status: 'Hadir' },
+  { id: 'w-4', name: 'Agus Santoso', role: 'Operator', category: 'Operator', phone: '081234567893', status: 'Hadir' },
 ];
 
-export const initialInventory: InventoryItem[] = [];
+export const initialInventory: InventoryItem[] = [
+  { id: 'inv-1', code: 'BBM-SOL', name: 'Solar Industri B50', category: 'BBM', stockQuantity: 4650, unit: 'Liter', minThreshold: 1000 },
+  { id: 'inv-2', code: 'LUB-OLI', name: 'Pelumas & Oli Unit', category: 'Oli', stockQuantity: 0, unit: 'Liter', minThreshold: 100 },
+  { id: 'inv-3', code: 'LUB-GRS', name: 'Grease Pelumas', category: 'Grease', stockQuantity: 0, unit: 'Kg', minThreshold: 10 },
+  { id: 'inv-4', code: 'PRT-FLT', name: 'Spare Part / Filter Solar', category: 'Spare Part', stockQuantity: 20, unit: 'Pcs', minThreshold: 5 },
+];
+
+// Target Harian Resmi (Ritme Kerja) per Lokasi Blok Kerja SPK B/0001/33/GKK/OPS/9/2026
+const todayDateString = new Date().toISOString().split('T')[0];
+
+export const initialDailyTargets: DailyLocationTarget[] = [
+  {
+    id: 'dt-gkk-today-j31',
+    clientId: 'client-1',
+    contractNumber: 'B/0001/33/GKK/OPS/9/2026',
+    clientName: 'PT. GUDANG',
+    blockId: 'blk-j31',
+    blockCode: 'BLOK J31',
+    date: todayDateString,
+    shift: 'Siang (07:00 - 17:00)',
+    dailyTargetAreaHa: 4.0,
+    assignmentNumbers: ['001/ST-LC/GKK/IX/2026'],
+    itemTargets: [
+      { name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', totalVolume: 20, dailyTargetVolume: 4.0, calculatedDays: 5 },
+      { name: 'BATANG KUBUR', unit: 'POHON', totalVolume: 16, dailyTargetVolume: 3.5, calculatedDays: 5 },
+      { name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'Ha', totalVolume: 12, dailyTargetVolume: 2.5, calculatedDays: 5 },
+      { name: 'MAINROAD', unit: 'm', totalVolume: 250, dailyTargetVolume: 50, calculatedDays: 5 },
+    ],
+    notes: 'Prioritaskan rintisan jalur underbrushing dan pembuatan parit batas blok.',
+    status: 'Terjadwal',
+    createdAt: '2026-09-23T16:00:00Z',
+  },
+  {
+    id: 'dt-gkk-today-i33',
+    clientId: 'client-1',
+    contractNumber: 'B/0001/33/GKK/OPS/9/2026',
+    clientName: 'PT. GUDANG',
+    blockId: 'blk-i33',
+    blockCode: 'BLOK I33',
+    date: todayDateString,
+    shift: 'Siang (07:00 - 17:00)',
+    dailyTargetAreaHa: 4.0,
+    assignmentNumbers: ['001/ST-LC/GKK/IX/2026'],
+    itemTargets: [
+      { name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', totalVolume: 20, dailyTargetVolume: 4.0, calculatedDays: 5 },
+      { name: 'BATANG KUBUR', unit: 'POHON', totalVolume: 15, dailyTargetVolume: 3.0, calculatedDays: 5 },
+      { name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'Ha', totalVolume: 10, dailyTargetVolume: 2.0, calculatedDays: 5 },
+    ],
+    notes: 'Patuhi standar Zero Burning Method. Hindari penumpukan kayu dekat tebing.',
+    status: 'Terjadwal',
+    createdAt: '2026-09-23T16:00:00Z',
+  },
+  {
+    id: 'dt-gkk-2026-09-24-j31',
+    clientId: 'client-1',
+    contractNumber: 'B/0001/33/GKK/OPS/9/2026',
+    clientName: 'PT. GUDANG',
+    blockId: 'blk-j31',
+    blockCode: 'BLOK J31',
+    date: '2026-09-24',
+    shift: 'Siang (07:00 - 17:00)',
+    dailyTargetAreaHa: 4.0,
+    assignmentNumbers: ['001/ST-LC/GKK/IX/2026'],
+    itemTargets: [
+      { name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', totalVolume: 20, dailyTargetVolume: 4.0, calculatedDays: 5 },
+      { name: 'BATANG KUBUR', unit: 'POHON', totalVolume: 16, dailyTargetVolume: 3.5, calculatedDays: 5 },
+      { name: 'MECHANICAL STACKING / PRUNNING RUMPUK MEKANIS', unit: 'Ha', totalVolume: 12, dailyTargetVolume: 2.5, calculatedDays: 5 },
+    ],
+    notes: 'Prioritaskan rintisan jalur underbrushing dan pembuatan parit batas blok.',
+    status: 'Terjadwal',
+    createdAt: '2026-09-23T16:00:00Z',
+  },
+  {
+    id: 'dt-gkk-2026-09-24-i33',
+    clientId: 'client-1',
+    contractNumber: 'B/0001/33/GKK/OPS/9/2026',
+    clientName: 'PT. GUDANG',
+    blockId: 'blk-i33',
+    blockCode: 'BLOK I33',
+    date: '2026-09-24',
+    shift: 'Siang (07:00 - 17:00)',
+    dailyTargetAreaHa: 4.0,
+    assignmentNumbers: ['001/ST-LC/GKK/IX/2026'],
+    itemTargets: [
+      { name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', totalVolume: 20, dailyTargetVolume: 4.0, calculatedDays: 5 },
+      { name: 'BATANG KUBUR', unit: 'POHON', totalVolume: 15, dailyTargetVolume: 3.0, calculatedDays: 5 },
+    ],
+    notes: 'Patuhi standar Zero Burning Method. Hindari penumpukan kayu dekat tebing.',
+    status: 'Terjadwal',
+    createdAt: '2026-09-23T16:00:00Z',
+  },
+  {
+    id: 'dt-gkk-2026-09-25-i31',
+    clientId: 'client-1',
+    contractNumber: 'B/0001/33/GKK/OPS/9/2026',
+    clientName: 'PT. GUDANG',
+    blockId: 'blk-i31',
+    blockCode: 'BLOK I31',
+    date: '2026-09-25',
+    shift: 'Siang (07:00 - 17:00)',
+    dailyTargetAreaHa: 4.0,
+    assignmentNumbers: ['001/ST-LC/GKK/IX/2026'],
+    itemTargets: [
+      { name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', totalVolume: 20, dailyTargetVolume: 4.0, calculatedDays: 5 },
+      { name: 'COLLECTION ROAD', unit: 'm', totalVolume: 100, dailyTargetVolume: 25, calculatedDays: 4 },
+    ],
+    notes: 'Percepat perintisan jalan koleksi.',
+    status: 'Terjadwal',
+    createdAt: '2026-09-24T16:00:00Z',
+  },
+  {
+    id: 'dt-gkk-2026-09-26-j34',
+    clientId: 'client-1',
+    contractNumber: 'B/0001/33/GKK/OPS/9/2026',
+    clientName: 'PT. GUDANG',
+    blockId: 'blk-j34',
+    blockCode: 'BLOK J34',
+    date: '2026-09-26',
+    shift: 'Siang (07:00 - 17:00)',
+    dailyTargetAreaHa: 3.5,
+    assignmentNumbers: ['001/ST-LC/GKK/IX/2026'],
+    itemTargets: [
+      { name: 'UNDERBRUSHING (SEMAK BELUKAR)', unit: 'Ha', totalVolume: 20, dailyTargetVolume: 3.5, calculatedDays: 6 },
+      { name: 'SALURAN PRIMER', unit: 'm³', totalVolume: 50, dailyTargetVolume: 15, calculatedDays: 4 },
+    ],
+    notes: 'Penggalian saluran primer harus memperhatikan kontur kemiringan air.',
+    status: 'Terjadwal',
+    createdAt: '2026-09-25T16:00:00Z',
+  },
+];
 
 export const initialDailyReports: DailyReport[] = [];
 
-export const initialLogisticsTransactions: LogisticsTransaction[] = [];
-
-export const initialDailyTargets: DailyLocationTarget[] = [];
+export const initialLogisticsTransactions: LogisticsTransaction[] = [
+  {
+    id: 'lt-001',
+    clientId: 'client-1',
+    clientName: 'PT. GUDANG',
+    contractNumber: 'B/0001/33/GKK/OPS/9/2026',
+    date: '2026-09-24',
+    timestamp: '24/09/2026 08:00 WIB',
+    category: 'BBM',
+    itemName: 'Solar Industri B50',
+    type: 'in',
+    quantity: 5000,
+    unit: 'Liter',
+    sourceOrStorage: 'Tangki Induk Basecamp',
+    referenceNumber: 'DO-PERTAMINA-99812',
+    approvalStatus: 'approved',
+    submittedByRole: 'supervisor',
+    submittedByName: 'Ahmad Noor',
+    approvedByDirectorName: 'Direktur Utama',
+    approvedByRole: 'director',
+    approvedAt: '24/09/2026 09:00 WIB',
+    notes: 'Penerimaan Solar B50 resmi dari armada tangki PT. Pertamina Patra Niaga (Driver: Suwandi).',
+  },
+  {
+    id: 'lt-002',
+    clientId: 'client-1',
+    clientName: 'PT. GUDANG',
+    contractNumber: 'B/0001/33/GKK/OPS/9/2026',
+    date: '2026-09-24',
+    timestamp: '24/09/2026 08:30 WIB',
+    category: 'Oli',
+    itemName: 'Pelumas & Oli Unit',
+    type: 'in',
+    quantity: 600,
+    unit: 'Liter',
+    sourceOrStorage: 'Gudang Logistik Basecamp',
+    referenceNumber: 'DO-LUB-001',
+    approvalStatus: 'approved',
+    submittedByRole: 'supervisor',
+    submittedByName: 'Ahmad Noor',
+    approvedByDirectorName: 'Direktur Utama',
+    approvedByRole: 'director',
+    approvedAt: '24/09/2026 09:10 WIB',
+    notes: 'Penerimaan Oli Mesin & Hidrolik.',
+  },
+  {
+    id: 'lt-003',
+    clientId: 'client-1',
+    clientName: 'PT. GUDANG',
+    contractNumber: 'B/0001/33/GKK/OPS/9/2026',
+    date: '2026-09-24',
+    timestamp: '24/09/2026 08:45 WIB',
+    category: 'Grease',
+    itemName: 'Grease Pelumas',
+    type: 'in',
+    quantity: 45,
+    unit: 'Kg',
+    sourceOrStorage: 'Gudang Logistik Basecamp',
+    referenceNumber: 'DO-GRS-001',
+    approvalStatus: 'approved',
+    submittedByRole: 'supervisor',
+    submittedByName: 'Ahmad Noor',
+    approvedByDirectorName: 'Direktur Utama',
+    approvedByRole: 'director',
+    approvedAt: '24/09/2026 09:15 WIB',
+    notes: 'Penerimaan Grease untuk pin & bushing.',
+  },
+];
 
 export const initialP2HChecklists: any[] = [];
-
 export const initialFuelBowserReceipts: any[] = [];
-
 export const initialSoilIncidents: any[] = [];
 
 export const initialJobTitles: string[] = [
@@ -268,7 +460,82 @@ export const defaultCleanSuperAdminUser: ManagedUser = DEFAULT_SECRET_DEV_ACCOUN
 
 export const initialManagedUsers: ManagedUser[] = [];
 
-export const initialWorkAssignments: WorkAssignment[] = [];
+export const initialWorkAssignments: WorkAssignment[] = [
+  {
+    id: 'asg-gkk-001',
+    assignmentNumber: '001/ST-LC/GKK/IX/2026',
+    clientId: 'client-1',
+    clientName: 'PT. GUDANG',
+    contractNumber: 'B/0001/33/GKK/OPS/9/2026',
+    totalAreaHa: 500,
+    assignedDate: '2026-09-01',
+    startDate: '2026-09-01',
+    status: 'Aktif',
+    notes: 'Penugasan Tim Kerja Operasional Proyek Land Clearing 500 Ha (26 Blok). Seluruh tim wajib mematuhi SOP Zero Burning Method dan standar K3.',
+    siteManagerName: 'Bambang Sugiarto, S.P.',
+    siteManagerPhone: '+62 812-3456-7890',
+    supervisors: [
+      {
+        id: 'spv-1',
+        name: 'Ahmad Noor',
+        phone: '+62 813-1122-3344',
+        coverageType: 'CUSTOM',
+        assignedBlockIds: [
+          'blk-i31', 'blk-i32', 'blk-i33', 'blk-i34', 'blk-i35', 'blk-i36',
+          'blk-j31', 'blk-j32', 'blk-j33', 'blk-j34'
+        ],
+        assignedBlockCodes: [
+          'BLOK I31', 'BLOK I32', 'BLOK I33', 'BLOK I34', 'BLOK I35', 'BLOK I36',
+          'BLOK J31', 'BLOK J32', 'BLOK J33', 'BLOK J34'
+        ],
+      },
+      {
+        id: 'spv-2',
+        name: 'Dedi Kurniawan',
+        phone: '+62 813-5566-7788',
+        coverageType: 'CUSTOM',
+        assignedBlockIds: [
+          'blk-j35', 'blk-j36', 'blk-k31', 'blk-k32', 'blk-k33', 'blk-k34', 'blk-k35', 'blk-k36',
+          'blk-l31', 'blk-l32', 'blk-l33', 'blk-l34', 'blk-l35', 'blk-l36', 'blk-m31', 'blk-m32'
+        ],
+        assignedBlockCodes: [
+          'BLOK J35', 'BLOK J36', 'BLOK K31', 'BLOK K32', 'BLOK K33', 'BLOK K34', 'BLOK K35', 'BLOK K36',
+          'BLOK L31', 'BLOK L32', 'BLOK L33', 'BLOK L34', 'BLOK L35', 'BLOK L36', 'BLOK M31', 'BLOK M32'
+        ],
+      },
+    ],
+    supportTeam: [
+      {
+        id: 'sup-1',
+        role: 'Operator',
+        workerName: 'Hendri Gunawan',
+        equipmentId: 'eq-3',
+        equipmentName: 'Excavator Kobelco SK200-10 (EX-04)',
+      },
+      {
+        id: 'sup-2',
+        role: 'Operator',
+        workerName: 'Bowo',
+        equipmentId: 'eq-1',
+        equipmentName: 'Excavator Komatsu PC200-8 (EX-01)',
+      },
+      {
+        id: 'sup-3',
+        role: 'Operator',
+        workerName: 'Agus Santoso',
+        equipmentId: 'eq-2',
+        equipmentName: 'Bulldozer Caterpillar D6R (DZ-02)',
+      },
+      {
+        id: 'sup-4',
+        role: 'Mekanik',
+        workerName: 'Jaya',
+        equipmentName: 'Service Truck Lapangan',
+      },
+    ],
+    createdAt: '2026-09-01T08:00:00.000Z',
+  },
+];
 
 export function compressSignatureDataUrl(dataUrl: string, maxWidth = 480, maxHeight = 220): Promise<string> {
   return new Promise((resolve) => {

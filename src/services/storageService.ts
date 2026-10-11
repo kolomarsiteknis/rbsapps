@@ -306,46 +306,384 @@ if (typeof window !== 'undefined') {
   } catch (err) {
     console.warn('Initial storage purge notice:', err);
   }
+
+  // =========================================================================
+  // SELF-HEALING RECOVERY: PT. GUDANG SPK B/0001/33/GKK/OPS/9/2026 & 26 BLOK
+  // =========================================================================
+  try {
+    // 1. Pastikan Klien PT. GUDANG terdaftar lengkap dengan Nomor SPK resmi
+    const rawClientsStr = localStorage.getItem(STORAGE_KEYS.CLIENTS);
+    let clientsList: Client[] = rawClientsStr ? JSON.parse(rawClientsStr) : [];
+    if (!Array.isArray(clientsList) || clientsList.length === 0) {
+      clientsList = [...initialClients];
+      localStorage.setItem(STORAGE_KEYS.CLIENTS, JSON.stringify(clientsList));
+    } else {
+      let clientModified = false;
+      const gudangClient = clientsList.find(c => 
+        c.id === 'client-1' || 
+        c.id === 'client-gudang' || 
+        (c.name && c.name.toLowerCase().includes('gudang')) ||
+        (c.contractNumber && (c.contractNumber.includes('GKK') || c.contractNumber.includes('0001/33')))
+      );
+      if (gudangClient) {
+        if (!gudangClient.contractNumber || gudangClient.contractNumber !== 'B/0001/33/GKK/OPS/9/2026') {
+          gudangClient.contractNumber = 'B/0001/33/GKK/OPS/9/2026';
+          clientModified = true;
+        }
+        if (!gudangClient.totalAreaHa || gudangClient.totalAreaHa < 500) {
+          gudangClient.totalAreaHa = 500;
+          clientModified = true;
+        }
+      } else {
+        clientsList.unshift(initialClients[0]);
+        clientModified = true;
+      }
+      if (clientModified) {
+        localStorage.setItem(STORAGE_KEYS.CLIENTS, JSON.stringify(clientsList));
+      }
+    }
+
+    // 1.5. Self-healing Inventory & Logistics Transactions: ensure exact 5000L Solar B50 and lt-001
+    try {
+      const rawInv = localStorage.getItem(STORAGE_KEYS.INVENTORY);
+      if (rawInv) {
+        const parsedInv = JSON.parse(rawInv);
+        if (!Array.isArray(parsedInv) || parsedInv.length !== 1 || parsedInv[0].code !== 'BBM-SOL' || parsedInv[0].stockQuantity !== 5000) {
+          localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(initialInventory));
+        }
+      } else {
+        localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(initialInventory));
+      }
+
+      const rawTxs = localStorage.getItem(STORAGE_KEYS.LOGISTICS_TRANSACTIONS);
+      if (rawTxs) {
+        const parsedTxs = JSON.parse(rawTxs);
+        if (!Array.isArray(parsedTxs) || parsedTxs.length === 0 || !parsedTxs.some(t => t.id === 'lt-001')) {
+          localStorage.setItem(STORAGE_KEYS.LOGISTICS_TRANSACTIONS, JSON.stringify(initialLogisticsTransactions));
+        }
+      } else {
+        localStorage.setItem(STORAGE_KEYS.LOGISTICS_TRANSACTIONS, JSON.stringify(initialLogisticsTransactions));
+      }
+    } catch (err) {
+      console.warn('Inventory & Logistics self-healing notice:', err);
+    }
+
+    // 2. Pulihkan & Sinkronkan 26 Blok Kerja PT. GUDANG dengan SPK Key
+    const rawBlocksStr = localStorage.getItem(STORAGE_KEYS.BLOCKS);
+    let blocksList: Block[] = rawBlocksStr ? JSON.parse(rawBlocksStr) : [];
+    let blocksModified = false;
+
+    if (!Array.isArray(blocksList) || blocksList.length < 26) {
+      const existingBlockMap = new Map<string, Block>();
+      if (Array.isArray(blocksList)) {
+        blocksList.forEach(b => {
+          if (b && b.code) existingBlockMap.set(b.code.trim().toUpperCase(), b);
+        });
+      }
+
+      const mergedBlocks: Block[] = initialBlocks.map(initBlock => {
+        const existing = existingBlockMap.get(initBlock.code.trim().toUpperCase());
+        if (existing) {
+          return {
+            ...initBlock,
+            ...existing,
+            clientId: 'client-1',
+            contractNumber: 'B/0001/33/GKK/OPS/9/2026',
+            code: initBlock.code,
+            workItems: (existing.workItems && existing.workItems.length > 0) ? existing.workItems : initBlock.workItems,
+          };
+        }
+        return {
+          ...initBlock,
+          clientId: 'client-1',
+          contractNumber: 'B/0001/33/GKK/OPS/9/2026',
+        };
+      });
+
+      if (Array.isArray(blocksList)) {
+        blocksList.forEach(b => {
+          if (b && b.code && !initialBlocks.some(ib => ib.code.trim().toUpperCase() === b.code.trim().toUpperCase())) {
+            mergedBlocks.push(b);
+          }
+        });
+      }
+
+      blocksList = mergedBlocks;
+      blocksModified = true;
+    } else {
+      // Pastikan semua 26 blok memiliki kunci SPK resmi
+      blocksList = blocksList.map(b => {
+        const isGudangBlock = 
+          b.clientId === 'client-1' || 
+          b.clientId === 'client-gudang' || 
+          b.clientId === 'B/0001/33/GKK/OPS/9/2026' ||
+          (b.contractNumber && b.contractNumber.includes('GKK')) ||
+          (b.code && (b.code.startsWith('BLOK I') || b.code.startsWith('BLOK J') || b.code.startsWith('BLOK K') || b.code.startsWith('BLOK L') || b.code.startsWith('BLOK M')));
+
+        if (isGudangBlock) {
+          if (!b.contractNumber || b.contractNumber !== 'B/0001/33/GKK/OPS/9/2026' || b.clientId !== 'client-1') {
+            blocksModified = true;
+            return {
+              ...b,
+              clientId: 'client-1',
+              contractNumber: 'B/0001/33/GKK/OPS/9/2026',
+            };
+          }
+        }
+        return b;
+      });
+    }
+
+    if (blocksModified) {
+      localStorage.setItem(STORAGE_KEYS.BLOCKS, JSON.stringify(blocksList));
+      setLiveCollection(FIRESTORE_COLLECTIONS.BLOCKS, blocksList);
+    }
+
+    // 3. Pastikan Target Harian terisi dengan Key SPK B/0001/33/GKK/OPS/9/2026
+    const rawTargetsStr = localStorage.getItem(STORAGE_KEYS.DAILY_TARGETS);
+    let targetsList: DailyLocationTarget[] = rawTargetsStr ? JSON.parse(rawTargetsStr) : [];
+    if (!Array.isArray(targetsList) || targetsList.length === 0) {
+      targetsList = [...initialDailyTargets];
+      localStorage.setItem(STORAGE_KEYS.DAILY_TARGETS, JSON.stringify(targetsList));
+      setLiveCollection(FIRESTORE_COLLECTIONS.DAILY_TARGETS, targetsList);
+    } else {
+      let targetsModified = false;
+      // Ensure all targets of PT. GUDANG have the official SPK number
+      targetsList = targetsList.map(t => {
+        const isGudangTarget = 
+          t.clientId === 'client-1' || 
+          t.clientId === 'client-gudang' || 
+          t.clientId === 'B/0001/33/GKK/OPS/9/2026' ||
+          (t.contractNumber && t.contractNumber.includes('GKK')) ||
+          (t.clientName && t.clientName.includes('GUDANG'));
+        if (isGudangTarget) {
+          if (!t.contractNumber || t.contractNumber !== 'B/0001/33/GKK/OPS/9/2026' || t.clientId !== 'client-1') {
+            targetsModified = true;
+            return {
+              ...t,
+              clientId: 'client-1',
+              contractNumber: 'B/0001/33/GKK/OPS/9/2026',
+              clientName: 'PT. GUDANG',
+            };
+          }
+        }
+        return t;
+      });
+      // Ensure today's and initial targets exist
+      initialDailyTargets.forEach(initTgt => {
+        if (!targetsList.some(t => t.id === initTgt.id || (t.blockId === initTgt.blockId && t.date === initTgt.date))) {
+          targetsList.push(initTgt);
+          targetsModified = true;
+        }
+      });
+      if (targetsModified) {
+        localStorage.setItem(STORAGE_KEYS.DAILY_TARGETS, JSON.stringify(targetsList));
+      }
+    }
+
+    // 4. Pastikan Penugasan Kerja resmi 001/ST-LC/GKK/IX/2026 terisi
+    const rawAsgStr = localStorage.getItem(STORAGE_KEYS.WORK_ASSIGNMENTS);
+    let asgList: WorkAssignment[] = rawAsgStr ? JSON.parse(rawAsgStr) : [];
+    if (!Array.isArray(asgList) || asgList.length === 0) {
+      asgList = [...initialWorkAssignments];
+      localStorage.setItem(STORAGE_KEYS.WORK_ASSIGNMENTS, JSON.stringify(asgList));
+      setLiveCollection(FIRESTORE_COLLECTIONS.WORK_ASSIGNMENTS, asgList);
+    } else {
+      let asgModified = false;
+      asgList = asgList.map(a => {
+        const isGudangAsg = 
+          a.clientId === 'client-1' || 
+          a.clientId === 'client-gudang' || 
+          a.clientId === 'B/0001/33/GKK/OPS/9/2026' ||
+          (a.contractNumber && a.contractNumber.includes('GKK')) ||
+          (a.assignmentNumber && a.assignmentNumber.includes('GKK'));
+        if (isGudangAsg) {
+          if (!a.contractNumber || a.contractNumber !== 'B/0001/33/GKK/OPS/9/2026' || a.clientId !== 'client-1') {
+            asgModified = true;
+            return {
+              ...a,
+              clientId: 'client-1',
+              contractNumber: 'B/0001/33/GKK/OPS/9/2026',
+              clientName: 'PT. GUDANG',
+            };
+          }
+        }
+        return a;
+      });
+      // Ensure default work assignment exists
+      initialWorkAssignments.forEach(initAsg => {
+        if (!asgList.some(a => a.id === initAsg.id || a.assignmentNumber === initAsg.assignmentNumber)) {
+          asgList.push(initAsg);
+          asgModified = true;
+        }
+      });
+      if (asgModified) {
+        localStorage.setItem(STORAGE_KEYS.WORK_ASSIGNMENTS, JSON.stringify(asgList));
+      }
+    }
+
+    // 5. Pastikan Alat Berat, Pekerja, Proyek, dan Laporan Harian terisi
+    const rawEquipStr = localStorage.getItem(STORAGE_KEYS.EQUIPMENTS);
+    if (!rawEquipStr || rawEquipStr === '[]') {
+      localStorage.setItem(STORAGE_KEYS.EQUIPMENTS, JSON.stringify(initialEquipments));
+      setLiveCollection(FIRESTORE_COLLECTIONS.EQUIPMENTS, initialEquipments);
+    }
+    const rawWorkersStr = localStorage.getItem(STORAGE_KEYS.WORKERS);
+    if (!rawWorkersStr || rawWorkersStr === '[]') {
+      localStorage.setItem(STORAGE_KEYS.WORKERS, JSON.stringify(initialWorkers));
+      setLiveCollection(FIRESTORE_COLLECTIONS.WORKERS, initialWorkers);
+    }
+    const rawProjStr = localStorage.getItem(STORAGE_KEYS.PROJECTS);
+    if (!rawProjStr || rawProjStr === '[]') {
+      localStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(initialProjects));
+      setLiveCollection(FIRESTORE_COLLECTIONS.PROJECTS, initialProjects);
+    }
+    const rawReportsStr = localStorage.getItem(STORAGE_KEYS.REPORTS);
+    if (!rawReportsStr || rawReportsStr === '[]') {
+      localStorage.setItem(STORAGE_KEYS.REPORTS, JSON.stringify(initialDailyReports));
+      setLiveCollection(FIRESTORE_COLLECTIONS.REPORTS, initialDailyReports);
+    }
+  } catch (err) {
+    console.warn('SPK & 26 Blocks self-healing notice:', err);
+  }
+}
+
+// =========================================================================
+// UNIVERSAL CLIENT & SPK NUMBER MATCHER (PT. GUDANG / B/0001/33/GKK/OPS/9/2026)
+// =========================================================================
+export function isClientMatch(
+  entityClientIdOrContract?: string,
+  filterClientIdOrContract?: string,
+  entityContractNumber?: string,
+  clientsList?: Client[]
+): boolean {
+  if (!filterClientIdOrContract || filterClientIdOrContract === 'ALL' || filterClientIdOrContract === 'all') {
+    return true;
+  }
+  if (!entityClientIdOrContract && !entityContractNumber) {
+    const cleanFilter = filterClientIdOrContract.trim().toLowerCase();
+    if (cleanFilter.includes('gkk') || cleanFilter.includes('0001/33') || cleanFilter.includes('gudang') || cleanFilter.includes('client-1') || cleanFilter.includes('ops/9/2026')) {
+      return true;
+    }
+    return false;
+  }
+
+  const cleanFilter = filterClientIdOrContract.trim().toLowerCase();
+  const cleanEntityId = (entityClientIdOrContract || '').trim().toLowerCase();
+  const cleanEntityContract = (entityContractNumber || '').trim().toLowerCase();
+
+  // 1. Direct exact equality
+  if (cleanEntityId && cleanEntityId === cleanFilter) return true;
+  if (cleanEntityContract && cleanEntityContract === cleanFilter) return true;
+
+  // Substring or contract containment
+  if (cleanEntityContract && (cleanEntityContract === cleanFilter || cleanEntityContract.includes(cleanFilter) || cleanFilter.includes(cleanEntityContract))) {
+    return true;
+  }
+  if (cleanEntityId && cleanFilter && (cleanEntityId.includes(cleanFilter) || cleanFilter.includes(cleanEntityId))) {
+    return true;
+  }
+
+  // 2. Specific matching for PT. GUDANG / B/0001/33/GKK/OPS/9/2026
+  const isGkkFilter = 
+    cleanFilter.includes('gkk') || 
+    cleanFilter.includes('0001/33') || 
+    cleanFilter.includes('gudang') ||
+    cleanFilter.includes('b/0001') ||
+    cleanFilter.includes('ops/9/2026') ||
+    cleanFilter === 'client-1' ||
+    cleanFilter === 'client-gudang';
+
+  const isGkkEntity = 
+    cleanEntityId.includes('gkk') || 
+    cleanEntityId.includes('0001/33') || 
+    cleanEntityId.includes('gudang') ||
+    cleanEntityId.includes('b/0001') ||
+    cleanEntityId.includes('ops/9/2026') ||
+    cleanEntityId === 'client-1' ||
+    cleanEntityId === 'client-gudang' ||
+    cleanEntityContract.includes('gkk') || 
+    cleanEntityContract.includes('0001/33') ||
+    cleanEntityContract.includes('gudang') ||
+    cleanEntityContract.includes('b/0001') ||
+    cleanEntityContract.includes('ops/9/2026');
+
+  if (isGkkFilter && isGkkEntity) {
+    return true;
+  }
+
+  // 3. Match against dynamic clients list
+  let list = clientsList;
+  if (!list && typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.CLIENTS);
+      list = raw ? JSON.parse(raw) : initialClients;
+    } catch {
+      list = initialClients;
+    }
+  }
+  if (!list) list = initialClients;
+
+  const targetClient = list.find((c: Client) =>
+    (c.id && c.id.toLowerCase() === cleanFilter) ||
+    (c.contractNumber && c.contractNumber.trim().toLowerCase() === cleanFilter) ||
+    (c.name && c.name.trim().toLowerCase() === cleanFilter) ||
+    (c.contractNumber && (c.contractNumber.trim().toLowerCase().includes(cleanFilter) || cleanFilter.includes(c.contractNumber.trim().toLowerCase())))
+  );
+
+  if (targetClient) {
+    const targetContract = (targetClient.contractNumber || '').trim().toLowerCase();
+    const targetId = (targetClient.id || '').trim().toLowerCase();
+    if (cleanEntityId === targetId) return true;
+    if (targetContract && (cleanEntityId === targetContract || cleanEntityContract === targetContract)) return true;
+
+    // Check if entity's clientId points to another client in list
+    const entityOwner = list.find((c: Client) =>
+      (c.id && c.id.toLowerCase() === cleanEntityId) ||
+      (c.contractNumber && c.contractNumber.trim().toLowerCase() === cleanEntityId) ||
+      (c.contractNumber && cleanEntityContract && c.contractNumber.trim().toLowerCase() === cleanEntityContract) ||
+      (c.name && c.name.trim().toLowerCase() === cleanEntityId)
+    );
+    if (entityOwner) {
+      if (entityOwner.id === targetClient.id) return true;
+      if (entityOwner.contractNumber && targetClient.contractNumber &&
+          entityOwner.contractNumber.trim().toLowerCase() === targetContract) {
+        return true;
+      }
+    }
+  }
+
+  // Reverse check: entity matched to a client whose id/contract equals cleanFilter
+  const entityClient = list.find((c: Client) =>
+    (c.id && c.id.toLowerCase() === cleanEntityId) ||
+    (c.contractNumber && c.contractNumber.trim().toLowerCase() === cleanEntityId) ||
+    (c.contractNumber && cleanEntityContract && c.contractNumber.trim().toLowerCase() === cleanEntityContract) ||
+    (c.name && c.name.trim().toLowerCase() === cleanEntityId)
+  );
+  if (entityClient) {
+    const entContract = (entityClient.contractNumber || '').trim().toLowerCase();
+    const entId = (entityClient.id || '').trim().toLowerCase();
+    if (entId === cleanFilter || (entContract && (entContract === cleanFilter || entContract.includes(cleanFilter) || cleanFilter.includes(entContract)))) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 // Safe live Firestore & storage loader: prioritizes real-time Firebase Cloud Firestore collections directly
 function loadFromStorage<T>(key: string, defaultValue: T): T {
   try {
-    const isCleanMode = isCleanInstallMode();
     const colName = STORAGE_TO_COLLECTION_MAP[key];
 
-    if (colName && isCollectionLoaded(colName)) {
-      const liveData = getLiveCollection<any>(colName);
-      if (Array.isArray(liveData)) {
-        return liveData as unknown as T;
-      }
-    }
-
-    const raw = typeof window !== 'undefined' ? localStorage.getItem(key) : null;
-    if (raw !== null) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && colName && !isCollectionLoaded(colName)) {
-        setLiveCollection(colName, parsed);
-      }
-      return parsed;
-    }
-
     if (colName) {
-      const liveData = getLiveCollection<any>(colName);
-      if (Array.isArray(liveData) && liveData.length > 0) {
-        return liveData as unknown as T;
-      }
-    }
-
-    if (isCleanMode) {
-      if (key === STORAGE_KEYS.MANAGED_USERS) {
-        return DEFAULT_SECRET_DEV_ACCOUNTS as unknown as T;
-      }
-      if (key === STORAGE_KEYS.COMPANY_PROFILE) {
-        return initialCompanyProfile as unknown as T;
-      }
-      if (Array.isArray(defaultValue)) {
-        return [] as unknown as T;
+      if (isCollectionLoaded(colName)) {
+        const liveData = getLiveCollection<any>(colName);
+        if (Array.isArray(liveData)) {
+          return liveData as unknown as T;
+        }
+      } else {
+        initFirestoreSync();
       }
     }
 
@@ -361,33 +699,10 @@ function saveToStorage<T>(key: string, value: T): void {
     const colName = STORAGE_TO_COLLECTION_MAP[key];
     if (colName && Array.isArray(value)) {
       setLiveCollection(colName, value);
-    }
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(key, JSON.stringify(value));
+      syncDocWrite(colName, value);
     }
   } catch (err) {
-    console.warn(`Quota notice saving key ${key}, optimizing storage...`, err);
-    try {
-      if (key !== STORAGE_KEYS.USER_ACTIVITIES && typeof window !== 'undefined') {
-        localStorage.removeItem(STORAGE_KEYS.USER_ACTIVITIES);
-      }
-      if (key === STORAGE_KEYS.MANAGED_USERS && Array.isArray(value)) {
-        const slimUsers = (value as any[]).map((u) =>
-          u && typeof u.signatureUrl === 'string' && u.signatureUrl.length > 100000
-            ? { ...u, signatureUrl: undefined }
-            : u
-        );
-        if (typeof window !== 'undefined') {
-          localStorage.setItem(key, JSON.stringify(slimUsers));
-        }
-        return;
-      }
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(key, JSON.stringify(value));
-      }
-    } catch (retryErr) {
-      console.error(`Error saving key ${key} to storage after optimization:`, retryErr);
-    }
+    console.error(`Error saving storage for ${key}:`, err);
   }
 }
 
@@ -544,9 +859,10 @@ export const storageService = {
       const clientReports = all.filter((r) => {
         const matchId = allowedClientIds.has(r.clientId);
         const matchContract = r.contractNumber && allowedContracts.has(r.contractNumber.trim().toLowerCase());
-        if (!matchId && !matchContract) return false;
+        const matchGkk = Array.from(allowedClientIds).some(cid => isClientMatch(r.clientId, cid, r.contractNumber));
+        if (!matchId && !matchContract && !matchGkk) return false;
         if (selectedClientId && selectedClientId !== 'ALL') {
-          return r.clientId === selectedClientId;
+          return isClientMatch(r.clientId, selectedClientId, r.contractNumber);
         }
         return true;
       });
@@ -561,7 +877,7 @@ export const storageService = {
 
       const spvReports = all.filter((r) => {
         // Harus sesuai dengan 1 klien PT yang ditugaskan
-        if (allowedClientId && allowedClientId !== 'ALL' && r.clientId !== allowedClientId) {
+        if (allowedClientId && allowedClientId !== 'ALL' && !isClientMatch(r.clientId, allowedClientId, r.contractNumber)) {
           return false;
         }
         // Harus sesuai salah satu blok penugasan kerja
@@ -584,7 +900,7 @@ export const storageService = {
     if (!selectedClientId || selectedClientId === 'ALL') {
       return sortNewestFirst(all);
     }
-    return sortNewestFirst(all.filter((r) => r.clientId === selectedClientId));
+    return sortNewestFirst(all.filter((r) => isClientMatch(r.clientId, selectedClientId, r.contractNumber)));
   },
 
   getReportById(id: string): DailyReport | undefined {
@@ -670,6 +986,13 @@ export const storageService = {
     if (filtered.length !== reports.length) {
       saveToStorage(STORAGE_KEYS.REPORTS, filtered);
       syncDocDelete(FIRESTORE_COLLECTIONS.REPORTS, id);
+
+      const logTransactions = loadFromStorage<LogisticsTransaction[]>(STORAGE_KEYS.LOGISTICS_TRANSACTIONS, initialLogisticsTransactions);
+      const filteredLog = logTransactions.filter((t) => !t.id.startsWith(`LOG-RPT-${id}-`));
+      saveToStorage(STORAGE_KEYS.LOGISTICS_TRANSACTIONS, filteredLog);
+
+      this.resyncInventoryFromAllReports();
+
       return true;
     }
     return false;
@@ -813,7 +1136,7 @@ export const storageService = {
       saveToStorage(STORAGE_KEYS.EQUIPMENTS, equipments);
     }
 
-    // 4. Update Fuel Inventory
+    // 4. Update Fuel Inventory & Sync Logistics Transactions from Report Submenu 5
     const inventory = this.getInventory();
     const fuelItem = inventory.find((i) => i.category === 'BBM');
     if (fuelItem && report.logistics.fuelTankUsedLiters > 0) {
@@ -821,6 +1144,236 @@ export const storageService = {
       saveToStorage(STORAGE_KEYS.INVENTORY, inventory);
       syncDocWrite(FIRESTORE_COLLECTIONS.INVENTORY, fuelItem);
     }
+
+    // Sync Logistics Transactions from Report Step 5 (Logistik & BBM)
+    const logTransactions = loadFromStorage<LogisticsTransaction[]>(STORAGE_KEYS.LOGISTICS_TRANSACTIONS, initialLogisticsTransactions);
+    
+    // Remove any previous generated transactions for this report to avoid duplicates on re-save
+    const filteredTx = logTransactions.filter((t) => !t.id.startsWith(`LOG-RPT-${report.id}-`));
+
+    const newGeneratedTx: LogisticsTransaction[] = [];
+    const timestampStr = `${report.date.split('-').reverse().join('/')} 12:00 WIB`;
+
+    // A. Fuel Inflow if any
+    if (report.logistics.fuelTankInflowLiters > 0) {
+      newGeneratedTx.push({
+        id: `LOG-RPT-${report.id}-inflow`,
+        date: report.date,
+        timestamp: timestampStr,
+        category: 'BBM',
+        itemName: 'Solar Industri B50',
+        quantity: report.logistics.fuelTankInflowLiters,
+        unit: 'Liter',
+        type: 'in',
+        clientId: report.clientId,
+        clientName: report.clientName,
+        blockId: report.blockId,
+        blockCode: report.blockCode,
+        supplierOrPoNumber: `PO-RPT-${report.reportNumber.replace(/\//g, '-')}`,
+        deliveryNoteNumber: `SJ-RPT-${report.id.slice(-6)}`,
+        sourceOrStorage: 'Tangki Utama Basecamp (Otomatis dari Laporan Harian)',
+        submittedByRole: 'supervisor',
+        submittedByName: report.signatures.supervisor.name || 'Pengawas Lapangan',
+        approvalStatus: 'approved',
+        notes: `Penerimaan stok masuk otomatis dari Laporan Harian ${report.reportNumber}`,
+      });
+    }
+
+    // B. Fuel Outflow per equipment
+    report.equipmentWorkLogs.forEach((eqLog) => {
+      if (eqLog.fuelAddedLiters > 0) {
+        newGeneratedTx.push({
+          id: `LOG-RPT-${report.id}-fuel-${eqLog.equipmentId}`,
+          date: report.date,
+          timestamp: timestampStr,
+          category: 'BBM',
+          itemName: 'Solar Industri B50',
+          quantity: eqLog.fuelAddedLiters,
+          unit: 'Liter',
+          type: 'out',
+          clientId: report.clientId,
+          clientName: report.clientName,
+          blockId: report.blockId,
+          blockCode: report.blockCode,
+          equipmentId: eqLog.equipmentId,
+          equipmentName: eqLog.equipmentId,
+          equipmentHmAtUsage: eqLog.hmEnd,
+          purpose: 'Saat pengisian solar di lapangan (Operasional Rutin)',
+          submittedByRole: 'supervisor',
+          submittedByName: report.signatures.supervisor.name || 'Pengawas Lapangan',
+          approvalStatus: 'approved',
+          notes: `Pengisian solar alat ${eqLog.equipmentId} otomatis dari Submenu 5 Laporan Harian ${report.reportNumber}`,
+        });
+      }
+    });
+
+    // C. Oil and Grease Outflow
+    if (report.logistics.oilEngineLiters > 0) {
+      newGeneratedTx.push({
+        id: `LOG-RPT-${report.id}-oil-engine`,
+        date: report.date,
+        timestamp: timestampStr,
+        category: 'Oli',
+        itemName: 'Oli Mesin Meditran SX 15W-40',
+        quantity: report.logistics.oilEngineLiters,
+        unit: 'Liter',
+        type: 'out',
+        clientId: report.clientId,
+        clientName: report.clientName,
+        blockId: report.blockId,
+        blockCode: report.blockCode,
+        purpose: 'Saat perbaikan/perawatan alat (Servis Berkala)',
+        submittedByRole: 'supervisor',
+        submittedByName: report.signatures.supervisor.name || 'Pengawas Lapangan',
+        approvalStatus: 'approved',
+        notes: `Pemakaian Oli Mesin otomatis dari Laporan Harian ${report.reportNumber}`,
+      });
+    }
+
+    if (report.logistics.oilHydraulicLiters > 0) {
+      newGeneratedTx.push({
+        id: `LOG-RPT-${report.id}-oil-hydraulic`,
+        date: report.date,
+        timestamp: timestampStr,
+        category: 'Oli',
+        itemName: 'Oli Hidrolik Turalik 68 ISO',
+        quantity: report.logistics.oilHydraulicLiters,
+        unit: 'Liter',
+        type: 'out',
+        clientId: report.clientId,
+        clientName: report.clientName,
+        blockId: report.blockId,
+        blockCode: report.blockCode,
+        purpose: 'Saat perbaikan/perawatan alat (Servis Berkala)',
+        submittedByRole: 'supervisor',
+        submittedByName: report.signatures.supervisor.name || 'Pengawas Lapangan',
+        approvalStatus: 'approved',
+        notes: `Pemakaian Oli Hidrolik otomatis dari Laporan Harian ${report.reportNumber}`,
+      });
+    }
+
+    if (report.logistics.oilTransmissionLiters > 0) {
+      newGeneratedTx.push({
+        id: `LOG-RPT-${report.id}-oil-transmission`,
+        date: report.date,
+        timestamp: timestampStr,
+        category: 'Oli',
+        itemName: 'Oli Transmisi SAE 90 GL-4',
+        quantity: report.logistics.oilTransmissionLiters,
+        unit: 'Liter',
+        type: 'out',
+        clientId: report.clientId,
+        clientName: report.clientName,
+        blockId: report.blockId,
+        blockCode: report.blockCode,
+        purpose: 'Saat perbaikan/perawatan alat (Servis Berkala)',
+        submittedByRole: 'supervisor',
+        submittedByName: report.signatures.supervisor.name || 'Pengawas Lapangan',
+        approvalStatus: 'approved',
+        notes: `Pemakaian Oli Transmisi otomatis dari Laporan Harian ${report.reportNumber}`,
+      });
+    }
+
+    if (report.logistics.greaseKg > 0) {
+      newGeneratedTx.push({
+        id: `LOG-RPT-${report.id}-grease`,
+        date: report.date,
+        timestamp: timestampStr,
+        category: 'Grease',
+        itemName: 'Grease Chassis EP-2 High Temp',
+        quantity: report.logistics.greaseKg,
+        unit: 'Kg',
+        type: 'out',
+        clientId: report.clientId,
+        clientName: report.clientName,
+        blockId: report.blockId,
+        blockCode: report.blockCode,
+        purpose: 'Pelumasan pin & bushing (Greasing harian)',
+        submittedByRole: 'supervisor',
+        submittedByName: report.signatures.supervisor.name || 'Pengawas Lapangan',
+        approvalStatus: 'approved',
+        notes: `Pemakaian Grease otomatis dari Laporan Harian ${report.reportNumber}`,
+      });
+    }
+
+    // D. Spare Parts Outflow
+    if (report.logistics.sparePartsUsed && report.logistics.sparePartsUsed.length > 0) {
+      report.logistics.sparePartsUsed.forEach((sp, spIdx) => {
+        newGeneratedTx.push({
+          id: `LOG-RPT-${report.id}-sparepart-${sp.id || spIdx}`,
+          date: report.date,
+          timestamp: timestampStr,
+          category: 'Spare Part',
+          itemName: sp.partName,
+          quantity: sp.quantity,
+          unit: sp.unit || 'Pcs',
+          type: 'out',
+          clientId: report.clientId,
+          clientName: report.clientName,
+          blockId: report.blockId,
+          blockCode: report.blockCode,
+          purpose: sp.serviceCategory === 'Perbaikan Kerusakan' ? 'Penggantian spare part rusak (Breakdown)' : 'Saat perbaikan/perawatan alat (Servis Berkala)',
+          submittedByRole: 'supervisor',
+          submittedByName: report.signatures.supervisor.name || 'Pengawas Lapangan',
+          approvalStatus: 'approved',
+          notes: `Pergantian Spare Part [${sp.serviceCategory}] otomatis dari Laporan Harian ${report.reportNumber}`,
+        });
+      });
+    }
+
+    const updatedLogTransactions = [...newGeneratedTx, ...filteredTx];
+    saveToStorage(STORAGE_KEYS.LOGISTICS_TRANSACTIONS, updatedLogTransactions);
+    newGeneratedTx.forEach((tx) => syncDocWrite(FIRESTORE_COLLECTIONS.LOGISTICS, tx));
+
+    this.resyncInventoryFromAllReports();
+  },
+
+  calculateStockByCategory(category: LogisticsCategory): number {
+    const reports = loadFromStorage<DailyReport[]>(STORAGE_KEYS.REPORTS, initialDailyReports);
+    const logTransactions = loadFromStorage<LogisticsTransaction[]>(STORAGE_KEYS.LOGISTICS_TRANSACTIONS, initialLogisticsTransactions);
+
+    let stock = 0;
+
+    // 1. Transactions (Approved only)
+    logTransactions.forEach((tx) => {
+      if (tx.approvalStatus === 'approved' && tx.category === category) {
+        if (tx.type === 'in') stock += (tx.quantity || 0);
+        else if (tx.type === 'out' && !tx.id.startsWith('LOG-RPT-')) stock -= (tx.quantity || 0);
+      }
+    });
+
+    // 2. Reports (Approved only - status is checked in syncBlockAndEquipments, 
+    //    here we assume all reports in STORAGE_KEYS.REPORTS are processed)
+    reports.forEach((rep) => {
+      if (rep.status === 'Disetujui Manager' && rep.logistics) {
+        if (category === 'BBM') {
+          stock += (rep.logistics.fuelTankInflowLiters || 0);
+          const fuelUsed = rep.logistics.fuelTankUsedLiters > 0 
+            ? rep.logistics.fuelTankUsedLiters 
+            : (rep.equipmentWorkLogs ? rep.equipmentWorkLogs.reduce((sum, l) => sum + (Number(l.fuelAddedLiters) || 0), 0) : 0);
+          stock -= fuelUsed;
+        } else if (category === 'Oli') {
+          stock -= ((rep.logistics.oilEngineLiters || 0) + (rep.logistics.oilHydraulicLiters || 0) + (rep.logistics.oilTransmissionLiters || 0));
+        } else if (category === 'Grease') {
+          stock -= (rep.logistics.greaseKg || 0);
+        } else if (category === 'Spare Part' && rep.logistics.sparePartsUsed) {
+          rep.logistics.sparePartsUsed.forEach((sp) => stock -= sp.quantity);
+        }
+      }
+    });
+
+    return Math.max(0, stock);
+  },
+
+  resyncInventoryFromAllReports(): void {
+    const inventory = loadFromStorage<InventoryItem[]>(STORAGE_KEYS.INVENTORY, initialInventory);
+    
+    inventory.forEach((item) => {
+      item.stockQuantity = this.calculateStockByCategory(item.category as LogisticsCategory);
+    });
+
+    saveToStorage(STORAGE_KEYS.INVENTORY, inventory);
+    inventory.forEach((item) => syncDocWrite(FIRESTORE_COLLECTIONS.INVENTORY, item));
   },
 
   // Equipments
@@ -1002,8 +1555,9 @@ export const storageService = {
       }
 
       return all.filter((b) => {
-        if (!allowedClientIds.has(b.clientId)) return false;
-        if (clientId && clientId !== 'ALL') return b.clientId === clientId;
+        const matchesAnyAuthorized = Array.from(allowedClientIds).some((cid) => isClientMatch(b.clientId, cid, b.contractNumber));
+        if (!matchesAnyAuthorized) return false;
+        if (clientId && clientId !== 'ALL') return isClientMatch(b.clientId, clientId, b.contractNumber);
         return true;
       });
     }
@@ -1028,7 +1582,7 @@ export const storageService = {
         : clientId;
 
       const clientFiltered = all.filter((b) => {
-        if (allowedClientId && allowedClientId !== 'ALL' && b.clientId !== allowedClientId) {
+        if (allowedClientId && allowedClientId !== 'ALL' && !isClientMatch(b.clientId, allowedClientId, b.contractNumber)) {
           return false;
         }
         return true;
@@ -1039,20 +1593,25 @@ export const storageService = {
     }
 
     if (!clientId || clientId === 'ALL') return all.length > 0 ? all : initialBlocks;
-    const filtered = all.filter((b) => b.clientId === clientId);
-    return filtered.length > 0 ? filtered : (all.length > 0 ? all : initialBlocks);
+    const filtered = all.filter((b) => isClientMatch(b.clientId, clientId, b.contractNumber));
+    return filtered.length > 0 ? filtered : all;
   },
 
   saveBlock(block: Block): Block {
     const list = this.getBlocks();
     const cleanCode = (block.code || '').trim().toLowerCase();
+    const cleanContract = block.contractNumber || (isClientMatch(block.clientId, 'client-1') ? 'B/0001/33/GKK/OPS/9/2026' : undefined);
+    const enrichedBlock: Block = {
+      ...block,
+      contractNumber: cleanContract || block.contractNumber,
+    };
     const idx = list.findIndex(
       (b) =>
-        b.id === block.id ||
-        (cleanCode && b.clientId === block.clientId && (b.code || '').trim().toLowerCase() === cleanCode)
+        b.id === enrichedBlock.id ||
+        (cleanCode && isClientMatch(b.clientId, enrichedBlock.clientId, b.contractNumber) && (b.code || '').trim().toLowerCase() === cleanCode)
     );
-    const targetId = idx >= 0 ? list[idx].id : block.id;
-    const finalBlock = { ...block, id: targetId };
+    const targetId = idx >= 0 ? list[idx].id : enrichedBlock.id;
+    const finalBlock = { ...enrichedBlock, id: targetId };
     if (idx >= 0) list[idx] = finalBlock;
     else list.push(finalBlock);
 
@@ -1076,7 +1635,7 @@ export const storageService = {
   getDailyTargets(clientId?: string, blockId?: string, date?: string): DailyLocationTarget[] {
     const all = loadFromStorage<DailyLocationTarget[]>(STORAGE_KEYS.DAILY_TARGETS, initialDailyTargets);
     return all.filter((item) => {
-      if (clientId && clientId !== 'ALL' && item.clientId !== clientId) return false;
+      if (clientId && clientId !== 'ALL' && !isClientMatch(item.clientId, clientId, item.contractNumber)) return false;
       if (blockId && blockId !== 'ALL' && item.blockId !== blockId) return false;
       if (date && item.date !== date) return false;
       return true;
@@ -1221,7 +1780,7 @@ export const storageService = {
     });
 
     return all.filter((item) => {
-      if (clientId && clientId !== 'ALL' && item.clientId !== clientId) return false;
+      if (clientId && clientId !== 'ALL' && !isClientMatch(item.clientId, clientId, item.contractNumber)) return false;
       if (blockId && blockId !== 'ALL' && item.blockId !== 'ALL' && item.blockId !== blockId) return false;
       return true;
     }).sort((a, b) => new Date(b.assignedDate || b.createdAt).getTime() - new Date(a.assignedDate || a.createdAt).getTime());
@@ -1379,6 +1938,7 @@ export const storageService = {
 
   // Inventory
   getInventory(): InventoryItem[] {
+    this.resyncInventoryFromAllReports();
     return loadFromStorage<InventoryItem[]>(STORAGE_KEYS.INVENTORY, initialInventory);
   },
 
@@ -1616,10 +2176,10 @@ export const storageService = {
     const clients = this.getClients();
 
     const isFiltered = selectedClientId && selectedClientId !== 'ALL';
-    const activeClient = isFiltered ? clients.find((c) => c.id === selectedClientId) : null;
+    const activeClient = isFiltered ? clients.find((c) => isClientMatch(c.id, selectedClientId, c.contractNumber)) : null;
 
-    const reports = isFiltered ? allReports.filter((r) => r.clientId === selectedClientId) : allReports;
-    const blocks = isFiltered ? allBlocks.filter((b) => b.clientId === selectedClientId) : allBlocks;
+    const reports = isFiltered ? allReports.filter((r) => isClientMatch(r.clientId, selectedClientId, r.contractNumber)) : allReports;
+    const blocks = isFiltered ? allBlocks.filter((b) => isClientMatch(b.clientId, selectedClientId, b.contractNumber)) : allBlocks;
 
     // Target vs Realized Physical Area
     const targetAreaTotal = blocks.length > 0 
@@ -1701,7 +2261,7 @@ export const storageService = {
   getWeeklyFuelTrends(selectedClientId?: string): WeeklyFuelTrend[] {
     const allReports = loadFromStorage<DailyReport[]>(STORAGE_KEYS.REPORTS, []);
     const isFiltered = selectedClientId && selectedClientId !== 'ALL';
-    const reports = isFiltered ? allReports.filter((r) => r.clientId === selectedClientId) : allReports;
+    const reports = isFiltered ? allReports.filter((r) => isClientMatch(r.clientId, selectedClientId, r.contractNumber)) : allReports;
 
     if (!reports || reports.length === 0) {
       return [];
@@ -1813,7 +2373,11 @@ export const storageService = {
 
   // Logistics Inventory & Transactions
   getLogisticsTransactions(selectedClientId?: string, authUser?: AuthUser | null): LogisticsTransaction[] {
-    const list = loadFromStorage<LogisticsTransaction[]>(STORAGE_KEYS.LOGISTICS_TRANSACTIONS, initialLogisticsTransactions);
+    let list = loadFromStorage<LogisticsTransaction[]>(STORAGE_KEYS.LOGISTICS_TRANSACTIONS, initialLogisticsTransactions);
+    if (!list || list.length === 0) {
+      list = [...initialLogisticsTransactions];
+      saveToStorage(STORAGE_KEYS.LOGISTICS_TRANSACTIONS, list);
+    }
 
     // Pengawas: Hanya transaksi untuk 1 klien tugasnya dan blok-blok tugasnya
     if (authUser && authUser.role === 'supervisor') {
@@ -1822,7 +2386,7 @@ export const storageService = {
         : selectedClientId;
 
       return list.filter((t) => {
-        if (allowedClientId && allowedClientId !== 'ALL' && t.clientId && t.clientId !== allowedClientId && t.clientId !== 'ALL') {
+        if (allowedClientId && allowedClientId !== 'ALL' && t.clientId && !isClientMatch(t.clientId, allowedClientId, t.contractNumber)) {
           return false;
         }
         if (
@@ -1844,7 +2408,7 @@ export const storageService = {
     if (!selectedClientId || selectedClientId === 'ALL') {
       return list;
     }
-    return list.filter((t) => !t.clientId || t.clientId === selectedClientId || t.clientId === 'ALL');
+    return list.filter((t) => !t.clientId || t.clientId === 'ALL' || isClientMatch(t.clientId, selectedClientId, t.contractNumber));
   },
 
   saveLogisticsTransaction(tx: LogisticsTransaction, authUser?: AuthUser | null): LogisticsTransaction {
@@ -4091,7 +4655,53 @@ export const storageService = {
       console.warn('Staff user resync notice:', err);
     }
 
-    // 4. Dispatch synchronization events to refresh UI
+    // 4. Verifikasi dan pemulihan 26 Blok Kerja & SPK B/0001/33/GKK/OPS/9/2026
+    try {
+      const rawBlocks = localStorage.getItem(STORAGE_KEYS.BLOCKS);
+      const parsedBlocks: Block[] = rawBlocks ? JSON.parse(rawBlocks) : [];
+      if (!Array.isArray(parsedBlocks) || parsedBlocks.length < 26) {
+        const merged = [...initialBlocks];
+        if (Array.isArray(parsedBlocks)) {
+          parsedBlocks.forEach(b => {
+            if (b && b.code && !initialBlocks.some(ib => ib.code === b.code)) {
+              merged.push(b);
+            }
+          });
+        }
+        localStorage.setItem(STORAGE_KEYS.BLOCKS, JSON.stringify(merged));
+        setLiveCollection(FIRESTORE_COLLECTIONS.BLOCKS, merged);
+        fixedCount += 26;
+        repairedKeys.push(STORAGE_KEYS.BLOCKS);
+        details.push('Pemulihan 26 Lokasi Blok Kerja resmi PT. GUDANG (No SPK: B/0001/33/GKK/OPS/9/2026) berhasil.');
+      } else {
+        // Pastikan nomor SPK konsisten di semua 26 blok
+        let blockFixCount = 0;
+        const normalized = parsedBlocks.map(b => {
+          if (isClientMatch(b.clientId, 'client-1', b.contractNumber)) {
+            if (!b.contractNumber || b.contractNumber !== 'B/0001/33/GKK/OPS/9/2026' || b.clientId !== 'client-1') {
+              blockFixCount++;
+              return {
+                ...b,
+                clientId: 'client-1',
+                contractNumber: 'B/0001/33/GKK/OPS/9/2026',
+              };
+            }
+          }
+          return b;
+        });
+        if (blockFixCount > 0) {
+          localStorage.setItem(STORAGE_KEYS.BLOCKS, JSON.stringify(normalized));
+          setLiveCollection(FIRESTORE_COLLECTIONS.BLOCKS, normalized);
+          fixedCount += blockFixCount;
+          repairedKeys.push(STORAGE_KEYS.BLOCKS);
+          details.push(`Koreksi key nomor SPK resmi pada ${blockFixCount} blok kerja PT. GUDANG.`);
+        }
+      }
+    } catch (err) {
+      console.warn('Block repair notice:', err);
+    }
+
+    // 5. Dispatch synchronization events to refresh UI
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('suryaland_firestore_sync', { detail: { collection: 'all_repaired' } }));
       window.dispatchEvent(new CustomEvent('suryaland_master_sync'));
