@@ -979,24 +979,59 @@ export function initFirestoreSync() {
 
   // Attach real-time listeners for dynamic multi-user sync
   attachSync<any>(FIRESTORE_COLLECTIONS.REPORTS, LOCAL_STORAGE_KEYS.REPORTS, (docs) => {
-    return [...docs].sort((a, b) => {
+    const deletedIds = getDeletedIdsFromStorage('suryaland_deleted_report_ids_v1');
+    const valid = docs.filter((d) => !deletedIds.includes(d.id));
+    return [...valid].sort((a, b) => {
       const timeB = new Date(b.date || b.createdAt || 0).getTime();
       const timeA = new Date(a.date || a.createdAt || 0).getTime();
       if (timeB !== timeA) return timeB - timeA;
       return (b.reportNumber || '').localeCompare(a.reportNumber || '');
     });
   });
-  attachSync(FIRESTORE_COLLECTIONS.EQUIPMENTS, LOCAL_STORAGE_KEYS.EQUIPMENTS);
-  attachSync(FIRESTORE_COLLECTIONS.WORKERS, LOCAL_STORAGE_KEYS.WORKERS);
-  attachSync(FIRESTORE_COLLECTIONS.BLOCKS, LOCAL_STORAGE_KEYS.BLOCKS);
-  attachSync(FIRESTORE_COLLECTIONS.CLIENTS, LOCAL_STORAGE_KEYS.CLIENTS);
-  attachSync(FIRESTORE_COLLECTIONS.PROJECTS, LOCAL_STORAGE_KEYS.PROJECTS);
-  attachSync(FIRESTORE_COLLECTIONS.INVENTORY, LOCAL_STORAGE_KEYS.INVENTORY);
-  attachSync(FIRESTORE_COLLECTIONS.LOGISTICS, LOCAL_STORAGE_KEYS.LOGISTICS);
-  attachSync(FIRESTORE_COLLECTIONS.P2H, LOCAL_STORAGE_KEYS.P2H);
-  attachSync(FIRESTORE_COLLECTIONS.BOWSER, LOCAL_STORAGE_KEYS.BOWSER);
-  attachSync(FIRESTORE_COLLECTIONS.SOIL, LOCAL_STORAGE_KEYS.SOIL);
-  attachSync(FIRESTORE_COLLECTIONS.GEOTAG, LOCAL_STORAGE_KEYS.GEOTAG);
+  attachSync(FIRESTORE_COLLECTIONS.EQUIPMENTS, LOCAL_STORAGE_KEYS.EQUIPMENTS, (docs) => {
+    const deletedIds = getDeletedIdsFromStorage('suryaland_deleted_equipment_ids_v1');
+    return docs.filter((d) => !deletedIds.includes(d.id));
+  });
+  attachSync(FIRESTORE_COLLECTIONS.WORKERS, LOCAL_STORAGE_KEYS.WORKERS, (docs) => {
+    const deletedIds = getDeletedIdsFromStorage('suryaland_deleted_worker_ids_v1');
+    return docs.filter((d) => !deletedIds.includes(d.id));
+  });
+  attachSync(FIRESTORE_COLLECTIONS.BLOCKS, LOCAL_STORAGE_KEYS.BLOCKS, (docs) => {
+    const deletedIds = getDeletedIdsFromStorage('suryaland_deleted_block_ids_v1');
+    return docs.filter((d) => !deletedIds.includes(d.id));
+  });
+  attachSync(FIRESTORE_COLLECTIONS.CLIENTS, LOCAL_STORAGE_KEYS.CLIENTS, (docs) => {
+    const deletedIds = getDeletedIdsFromStorage('suryaland_deleted_client_ids_v1');
+    return docs.filter((d) => !deletedIds.includes(d.id));
+  });
+  attachSync(FIRESTORE_COLLECTIONS.PROJECTS, LOCAL_STORAGE_KEYS.PROJECTS, (docs) => {
+    const deletedIds = getDeletedIdsFromStorage('suryaland_deleted_project_ids_v1');
+    return docs.filter((d) => !deletedIds.includes(d.id));
+  });
+  attachSync(FIRESTORE_COLLECTIONS.INVENTORY, LOCAL_STORAGE_KEYS.INVENTORY, (docs) => {
+    const deletedIds = getDeletedIdsFromStorage('suryaland_deleted_inventory_ids_v1');
+    return docs.filter((d) => !deletedIds.includes(d.id));
+  });
+  attachSync(FIRESTORE_COLLECTIONS.LOGISTICS, LOCAL_STORAGE_KEYS.LOGISTICS, (docs) => {
+    const deletedIds = getDeletedIdsFromStorage('suryaland_deleted_logistics_ids_v1');
+    return docs.filter((d) => !deletedIds.includes(d.id));
+  });
+  attachSync(FIRESTORE_COLLECTIONS.P2H, LOCAL_STORAGE_KEYS.P2H, (docs) => {
+    const deletedIds = getDeletedIdsFromStorage('suryaland_deleted_p2h_ids_v1');
+    return docs.filter((d) => !deletedIds.includes(d.id));
+  });
+  attachSync(FIRESTORE_COLLECTIONS.BOWSER, LOCAL_STORAGE_KEYS.BOWSER, (docs) => {
+    const deletedIds = getDeletedIdsFromStorage('suryaland_deleted_bowser_ids_v1');
+    return docs.filter((d) => !deletedIds.includes(d.id));
+  });
+  attachSync(FIRESTORE_COLLECTIONS.SOIL, LOCAL_STORAGE_KEYS.SOIL, (docs) => {
+    const deletedIds = getDeletedIdsFromStorage('suryaland_deleted_soil_ids_v1');
+    return docs.filter((d) => !deletedIds.includes(d.id));
+  });
+  attachSync(FIRESTORE_COLLECTIONS.GEOTAG, LOCAL_STORAGE_KEYS.GEOTAG, (docs) => {
+    const deletedIds = getDeletedIdsFromStorage('suryaland_deleted_geotag_ids_v1');
+    return docs.filter((d) => !deletedIds.includes(d.id));
+  });
   attachSync<any>(FIRESTORE_COLLECTIONS.USERS, LOCAL_STORAGE_KEYS.USERS, (docs) => {
     const deletedUserIds = getDeletedIdsFromStorage('suryaland_deleted_user_ids_v1');
     const validCloudDocs = docs.filter((d) => {
@@ -1040,8 +1075,14 @@ export function initFirestoreSync() {
     } catch {}
     return validCloudDocs;
   });
-  attachSync(FIRESTORE_COLLECTIONS.WORK_ASSIGNMENTS, LOCAL_STORAGE_KEYS.WORK_ASSIGNMENTS);
-  attachSync(FIRESTORE_COLLECTIONS.DAILY_TARGETS, LOCAL_STORAGE_KEYS.DAILY_TARGETS);
+  attachSync(FIRESTORE_COLLECTIONS.WORK_ASSIGNMENTS, LOCAL_STORAGE_KEYS.WORK_ASSIGNMENTS, (docs) => {
+    const deletedIds = getDeletedIdsFromStorage('suryaland_deleted_assignment_ids_v1');
+    return docs.filter((d) => !deletedIds.includes(d.id));
+  });
+  attachSync(FIRESTORE_COLLECTIONS.DAILY_TARGETS, LOCAL_STORAGE_KEYS.DAILY_TARGETS, (docs) => {
+    const deletedIds = getDeletedIdsFromStorage('suryaland_deleted_target_ids_v1');
+    return docs.filter((d) => !deletedIds.includes(d.id));
+  });
 
   // Company Profile single doc listener
   try {
@@ -1051,6 +1092,16 @@ export function initFirestoreSync() {
         const profileData = snap.data();
         firestoreCompanyProfile = profileData;
         try {
+          const localRaw = localStorage.getItem(LOCAL_STORAGE_KEYS.COMPANY_PROFILE);
+          if (localRaw) {
+            const localProfile = JSON.parse(localRaw);
+            const localTime = new Date(localProfile.updatedAt || 0).getTime();
+            const cloudTime = new Date(profileData.updatedAt || 0).getTime();
+            if (localTime > cloudTime) {
+              return; // Keep newer local profile data
+            }
+          }
+
           localStorage.setItem(LOCAL_STORAGE_KEYS.COMPANY_PROFILE, JSON.stringify(profileData));
           if (typeof window !== 'undefined') {
             window.dispatchEvent(

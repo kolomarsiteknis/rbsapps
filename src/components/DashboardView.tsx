@@ -45,6 +45,14 @@ import {
   LayoutDashboard,
   HardDrive
 } from 'lucide-react';
+import { 
+  PieChart, 
+  Pie, 
+  Cell, 
+  Tooltip, 
+  ResponsiveContainer, 
+  Legend 
+} from 'recharts';
 import { DailyReport, Equipment, UserRole, Client, AuthUser } from '../types';
 import { storageService } from '../services/storageService';
 import { WeeklyFuelRatioChart } from './WeeklyFuelRatioChart';
@@ -72,6 +80,42 @@ interface DashboardViewProps {
   onRefreshData?: () => void;
   showToast?: (message: string, type?: 'success' | 'warning' | 'info' | 'error') => void;
 }
+
+const StorageAnalyticsChart = () => {
+  const data = [
+    { name: 'Laporan Harian', value: 450, color: '#f59e0b' },
+    { name: 'P2H', value: 300, color: '#3b82f6' },
+    { name: 'Inventaris', value: 250, color: '#10b981' },
+  ];
+
+  return (
+    <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+      <h3 className="text-sm font-black text-slate-900 mb-4 flex items-center gap-2">
+        <HardDrive className="w-4 h-4 text-slate-500" />
+        Storage Analytics (GB)
+      </h3>
+      <div className="h-64">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={data}
+              innerRadius={60}
+              outerRadius={80}
+              paddingAngle={5}
+              dataKey="value"
+            >
+              {data.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={entry.color} />
+              ))}
+            </Pie>
+            <Tooltip />
+            <Legend />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+};
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
   reports,
@@ -904,6 +948,14 @@ _Pesan ini dikirim resmi melalui Sistem RBS APPS — Executive Monitoring & Aler
               />
             </div>
           </div>
+
+          {/* Storage Analytics Tile */}
+          <div className="lg:col-span-2">
+             <StorageAnalyticsChart />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-6">
 
           {/* Card 2: Jam Efektif Kerja */}
           <div className="bg-slate-800/90 border border-slate-700/80 rounded-xl p-4 flex flex-col justify-between">

@@ -27,6 +27,8 @@ import {
 } from 'lucide-react';
 import { CompanyProfile, CompanyStaff, AuthUser } from '../types';
 import { storageService } from '../services/storageService';
+import { saveImageFallback } from '../services/indexedDbService'; // Add this import
+import { getStorage, ref, uploadBytes, getDownloadURL } from '../services/firebase';
 import { createDefaultCompanyLogoSvg, createSimulatedSignatureSvg, compressSignatureDataUrl } from '../data/mockData';
 import { recordUserActivity } from '../utils/activityLogger';
 import { isDirectorLevel } from '../utils/auth';
@@ -85,6 +87,22 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
   // Keep profileForm in sync if companyProfile changes externally
   useEffect(() => {
     setProfileForm(companyProfile);
+    
+    // Fallback load logo from IndexedDB if missing or default
+    if (!companyProfile.logoUrl || companyProfile.logoUrl === '/logo-rbs.jpg') {
+      import('../services/indexedDbService').then(({ getImageFallback }) => {
+        getImageFallback('company-logo').then(blob => {
+          if (blob) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+              const dataUrl = e.target?.result as string;
+              setProfileForm(prev => ({ ...prev, logoUrl: dataUrl }));
+            };
+            reader.readAsDataURL(blob);
+          }
+        });
+      });
+    }
   }, [companyProfile]);
 
   // Guard: Access Denied for non-director
@@ -124,7 +142,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
 
       // Resize / compress via canvas to avoid giant payload
       const img = new Image();
-      img.onload = () => {
+      img.onload = async () => {
         const canvas = document.createElement('canvas');
         const maxDim = 400;
         let width = img.width;
@@ -144,8 +162,29 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
         if (ctx) {
           ctx.drawImage(img, 0, 0, width, height);
           const compressedDataUrl = canvas.toDataURL('image/png', 0.9);
-          setProfileForm((prev) => ({ ...prev, logoUrl: compressedDataUrl }));
-          showToast('Logo perusahaan berhasil diunggah! Logo ini otomatis diterapkan ke seluruh aplikasi.', 'success');
+          
+          // Save to Firebase Storage
+          try {
+            const blob = await fetch(compressedDataUrl).then(r => r.blob());
+            const storage = getStorage();
+            const logoRef = ref(storage, `logos/company-logo-${Date.now()}`);
+            await uploadBytes(logoRef, blob);
+            const downloadUrl = await getDownloadURL(logoRef);
+            setProfileForm((prev) => ({ ...prev, logoUrl: downloadUrl }));
+            showToast('Logo perusahaan berhasil diunggah ke Firebase Storage!', 'success');
+          } catch (err) {
+            console.error('Failed to upload logo to Firebase Storage:', err);
+            // Fallback to IndexedDB
+            try {
+              const blob = await fetch(compressedDataUrl).then(r => r.blob());
+              await saveImageFallback('company-logo', blob);
+              setProfileForm((prev) => ({ ...prev, logoUrl: compressedDataUrl }));
+              showToast('Logo berhasil disimpan di penyimpanan lokal (fallback).', 'warning');
+            } catch (errFallback) {
+              console.error('Failed to save logo to IndexedDB:', errFallback);
+              showToast('Gagal menyimpan logo.', 'error');
+            }
+          }
         }
       };
       img.src = result;
@@ -153,22 +192,29 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
     reader.readAsDataURL(file);
   };
 
-  // Reset logo to generated SVG
+  // Reset logo to default official logo
   const handleResetToDefaultLogo = () => {
-    const newSvg = createDefaultCompanyLogoSvg(profileForm.shortName || 'RBS', profileForm.officialName || 'PT. RBS GROUP');
-    setProfileForm((prev) => ({ ...prev, logoUrl: newSvg }));
-    showToast('Logo dikembalikan ke format logo resmi vektor.', 'info');
+    setProfileForm((prev) => ({ ...prev, logoUrl: '/logo-rbs.jpg' }));
+    showToast('Logo dikembalikan ke logo resmi PT RBS GROUP.', 'info');
   };
 
   // Save Company Profile Changes
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!profileForm.officialName.trim()) {
+    if (!profileForm.officialName?.trim()) {
       showToast('Nama Resmi Perusahaan wajib diisi.', 'warning');
       return;
     }
-    if (!profileForm.shortName.trim()) {
+    if (!profileForm.shortName?.trim()) {
       showToast('Nama Singkat Perusahaan wajib diisi (contoh: RBS).', 'warning');
+      return;
+    }
+    if (profileForm.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profileForm.email)) {
+      showToast('Format email tidak valid.', 'warning');
+      return;
+    }
+    if (profileForm.phone && !/^[0-9+\-\s()]{7,15}$/.test(profileForm.phone)) {
+      showToast('Format nomor telepon tidak valid.', 'warning');
       return;
     }
 
@@ -607,7 +653,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                       type="text"
                       required
                       placeholder="Contoh: RBS"
-                      value={profileForm.shortName}
+                      value={profileForm.shortName || ''}
                       onChange={(e) => setProfileForm({ ...profileForm, shortName: e.target.value.toUpperCase() })}
                       className="w-full px-3.5 py-2.5 bg-white border border-amber-300 rounded-xl font-black text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
                     />
@@ -625,7 +671,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                       type="text"
                       required
                       placeholder="Contoh: PT. RIAU BARA SAMUDRA"
-                      value={profileForm.officialName}
+                      value={profileForm.officialName || ''}
                       onChange={(e) => setProfileForm({ ...profileForm, officialName: e.target.value })}
                       className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-900 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                     />
@@ -642,7 +688,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                     <input
                       type="text"
                       placeholder="Contoh: Heavy Equipment & Plantation Land Clearing Contractor • Zero Burning Method"
-                      value={profileForm.tagline}
+                      value={profileForm.tagline || ''}
                       onChange={(e) => setProfileForm({ ...profileForm, tagline: e.target.value })}
                       className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                     />
@@ -657,7 +703,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                     <input
                       type="text"
                       placeholder="01.234.567.8-216.000"
-                      value={profileForm.npwp}
+                      value={profileForm.npwp || ''}
                       onChange={(e) => setProfileForm({ ...profileForm, npwp: e.target.value })}
                       className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                     />
@@ -671,7 +717,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                     <input
                       type="text"
                       placeholder="9120304561234"
-                      value={profileForm.nib}
+                      value={profileForm.nib || ''}
                       onChange={(e) => setProfileForm({ ...profileForm, nib: e.target.value })}
                       className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                     />
@@ -686,7 +732,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                     <input
                       type="text"
                       placeholder="(0761) 554321"
-                      value={profileForm.phone}
+                      value={profileForm.phone || ''}
                       onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
                       className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                     />
@@ -700,7 +746,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                     <input
                       type="text"
                       placeholder="0812-7654-3210"
-                      value={profileForm.whatsapp}
+                      value={profileForm.whatsapp || ''}
                       onChange={(e) => setProfileForm({ ...profileForm, whatsapp: e.target.value })}
                       className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                     />
@@ -715,7 +761,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                     <input
                       type="email"
                       placeholder="corporate@suryaland.co.id"
-                      value={profileForm.email}
+                      value={profileForm.email || ''}
                       onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
                       className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                     />
@@ -745,7 +791,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                     <textarea
                       rows={2}
                       placeholder="Jl. Jenderal Sudirman Kav. 88, Gedung Surya Graha Lt. 4, Pekanbaru, Riau"
-                      value={profileForm.headOfficeAddress}
+                      value={profileForm.headOfficeAddress || ''}
                       onChange={(e) => setProfileForm({ ...profileForm, headOfficeAddress: e.target.value })}
                       className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
                     />
@@ -759,7 +805,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                     <textarea
                       rows={2}
                       placeholder="Basecamp Proyek Land Clearing Estate Siak & Pelalawan, Riau"
-                      value={profileForm.siteOfficeAddress}
+                      value={profileForm.siteOfficeAddress || ''}
                       onChange={(e) => setProfileForm({ ...profileForm, siteOfficeAddress: e.target.value })}
                       className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
                     />
@@ -778,6 +824,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({
                       className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                     />
                   </div>
+
                 </div>
 
                 <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-3">

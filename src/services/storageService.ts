@@ -23,6 +23,9 @@ import {
   CompanyStaff,
   LogisticsCategory
 } from '../types';
+import { saveImageFallback } from './indexedDbService';
+import { uploadImageWithFallback, saveImageToIndexedDB } from './imageManager';
+import { dataURLtoBlob } from '../utils/watermark';
 import { isDirectorLevel } from '../utils/auth';
 import { 
   initialDailyReports, 
@@ -87,6 +90,44 @@ const STORAGE_KEYS = {
   DELETED_STAFF_IDS: 'suryaland_deleted_staff_ids_v1',
   DELETED_USER_IDS: 'suryaland_deleted_user_ids_v1',
 };
+
+const DELETED_KEYS = {
+  reports: 'suryaland_deleted_report_ids_v1',
+  equipments: 'suryaland_deleted_equipment_ids_v1',
+  workers: 'suryaland_deleted_worker_ids_v1',
+  blocks: 'suryaland_deleted_block_ids_v1',
+  clients: 'suryaland_deleted_client_ids_v1',
+  projects: 'suryaland_deleted_project_ids_v1',
+  inventory: 'suryaland_deleted_inventory_ids_v1',
+  logistics: 'suryaland_deleted_logistics_ids_v1',
+  targets: 'suryaland_deleted_target_ids_v1',
+  assignments: 'suryaland_deleted_assignment_ids_v1',
+  p2h: 'suryaland_deleted_p2h_ids_v1',
+  bowser: 'suryaland_deleted_bowser_ids_v1',
+  soil: 'suryaland_deleted_soil_ids_v1',
+  geotag: 'suryaland_deleted_geotag_ids_v1',
+};
+
+function getDeletedIds(key: string): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function recordDeletedId(key: string, id: string): void {
+  if (typeof window === 'undefined' || !id) return;
+  try {
+    const list = getDeletedIds(key);
+    if (!list.includes(id)) {
+      list.push(id);
+      saveToStorage(key, list);
+    }
+  } catch {}
+}
 
 const STORAGE_TO_COLLECTION_MAP: Record<string, string> = {
   [STORAGE_KEYS.REPORTS]: FIRESTORE_COLLECTIONS.REPORTS,
@@ -829,7 +870,8 @@ export const storageService = {
 
   // Reports
   getReports(selectedClientId?: string, authUser?: AuthUser | null): DailyReport[] {
-    const all = loadFromStorage<DailyReport[]>(STORAGE_KEYS.REPORTS, initialDailyReports);
+    const deletedIds = getDeletedIds(DELETED_KEYS.reports);
+    const all = loadFromStorage<DailyReport[]>(STORAGE_KEYS.REPORTS, initialDailyReports).filter((r) => !deletedIds.includes(r.id));
 
     const sortNewestFirst = (reportsList: DailyReport[]): DailyReport[] => {
       return [...reportsList].sort((a, b) => {
@@ -909,7 +951,7 @@ export const storageService = {
     return reports.find((r) => r.id === id);
   },
 
-  saveReport(report: DailyReport, authUser?: AuthUser | null): DailyReport {
+  async saveReport(report: DailyReport, authUser?: AuthUser | null): Promise<DailyReport> {
     // Isolasi ketat: Klien hanya memiliki akses baca (read-only)
     if (authUser && (authUser.role === 'client' || authUser.userLevel === 'Klien')) {
       throw new Error('Akses Ditolak: Akun Klien hanya memiliki hak akses melihat Monitoring Progress & Laporan (Read-Only).');
@@ -957,7 +999,33 @@ export const storageService = {
       }
 
       saveToStorage(STORAGE_KEYS.REPORTS, reports);
-      syncDocWrite(FIRESTORE_COLLECTIONS.REPORTS, savedReport);
+
+      // Upload photos to Firebase Storage
+      for (let i = 0; i < savedReport.photos.length; i++) {
+        if (savedReport.photos[i].dataUrl.startsWith('data:image')) {
+          try {
+            savedReport.photos[i].dataUrl = await uploadImageWithFallback(
+              savedReport.photos[i].dataUrl, 
+              `reports/${savedReport.id}/${savedReport.photos[i].id}`
+            );
+          } catch (err) {
+            console.error('Failed to process photo', err);
+          }
+        }
+      }
+
+      try {
+        await syncDocWrite(FIRESTORE_COLLECTIONS.REPORTS, savedReport);
+      } catch (err) {
+        console.warn('Firestore sync failed, triggering IndexedDB fallback', err);
+        // Fallback: save photos to IndexedDB
+        for (const photo of savedReport.photos) {
+          if (photo.dataUrl.startsWith('data:image')) {
+            await saveImageToIndexedDB(photo.id, photo.dataUrl);
+          }
+        }
+      }
+
       this.syncBlockAndEquipments(savedReport);
       this.clearDraft();
 
@@ -986,6 +1054,7 @@ export const storageService = {
     const filtered = reports.filter((r) => r.id !== id);
     if (filtered.length !== reports.length) {
       saveToStorage(STORAGE_KEYS.REPORTS, filtered);
+      recordDeletedId(DELETED_KEYS.reports, id);
       syncDocDelete(FIRESTORE_COLLECTIONS.REPORTS, id);
 
       const logTransactions = loadFromStorage<LogisticsTransaction[]>(STORAGE_KEYS.LOGISTICS_TRANSACTIONS, initialLogisticsTransactions);
@@ -1379,7 +1448,8 @@ export const storageService = {
 
   // Equipments
   getEquipments(): Equipment[] {
-    return loadFromStorage<Equipment[]>(STORAGE_KEYS.EQUIPMENTS, initialEquipments);
+    const deletedIds = getDeletedIds(DELETED_KEYS.equipments);
+    return loadFromStorage<Equipment[]>(STORAGE_KEYS.EQUIPMENTS, initialEquipments).filter((e) => !deletedIds.includes(e.id));
   },
   getActiveEquipmentsForDate(clientId?: string, date?: string): Equipment[] {
     const allEquips = this.getEquipments();
@@ -1424,6 +1494,9 @@ export const storageService = {
 
     saveToStorage(STORAGE_KEYS.EQUIPMENTS, list);
     syncDocWrite(FIRESTORE_COLLECTIONS.EQUIPMENTS, finalEquip);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('master-data-updated'));
+    }
   },
 
   deleteEquipment(equipmentId: string): boolean {
@@ -1431,7 +1504,11 @@ export const storageService = {
     const filtered = list.filter((e) => e.id !== equipmentId);
     if (filtered.length !== list.length) {
       saveToStorage(STORAGE_KEYS.EQUIPMENTS, filtered);
+      recordDeletedId(DELETED_KEYS.equipments, equipmentId);
       syncDocDelete(FIRESTORE_COLLECTIONS.EQUIPMENTS, equipmentId);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('master-data-updated'));
+      }
       return true;
     }
     return false;
@@ -3346,7 +3423,13 @@ export const storageService = {
     // Merge active CompanyStaff credentials so Staff & ManagedUsers are NEVER out of sync
     const rawStaff = loadFromStorage<CompanyStaff[]>(STORAGE_KEYS.COMPANY_STAFF, initialCompanyStaff);
     const validStaff = Array.isArray(rawStaff)
-      ? rawStaff.filter((s) => s && !isObsoleteHendraRecord(s) && !deletedStaffIds.includes(s.id))
+      ? rawStaff.filter((s) => {
+          if (!s || isObsoleteHendraRecord(s) || deletedStaffIds.includes(s.id)) return false;
+          if (s.linkedUserId && deletedIds.includes(s.linkedUserId)) return false;
+          const derivedUserId = `user-usr-${(s.id || '').replace(/^staff-/, '')}`;
+          if (deletedIds.includes(derivedUserId)) return false;
+          return true;
+        })
       : [];
 
     const activeStaffUserIds = new Set<string>();
@@ -3695,7 +3778,9 @@ export const storageService = {
       cleanUser.userLevel === 'Site Manager' || cleanUser.userLevel === 'Manager' || jobLower.includes('manager');
 
     const safeSignatureUrl =
-      cleanUser.signatureUrl && cleanUser.signatureUrl.length > 120000 ? undefined : cleanUser.signatureUrl;
+      cleanUser.signatureUrl && cleanUser.signatureUrl.length > 500000 
+        ? (idx >= 0 ? list[idx].signatureUrl : undefined) 
+        : cleanUser.signatureUrl;
 
     const targetId = idx >= 0 ? list[idx].id : cleanUser.id;
 
@@ -3770,6 +3855,19 @@ export const storageService = {
       saveToStorage(STORAGE_KEYS.DELETED_USER_IDS, [...deletedIds, userId]);
     }
 
+    const staffList = loadFromStorage<CompanyStaff[]>(STORAGE_KEYS.COMPANY_STAFF, initialCompanyStaff);
+    const matchedStaff = staffList.find(
+      (s) => s.linkedUserId === userId || `user-usr-${s.id.replace(/^staff-/, '')}` === userId
+    );
+    if (matchedStaff) {
+      const deletedStaffIds = loadFromStorage<string[]>(STORAGE_KEYS.DELETED_STAFF_IDS, []);
+      if (!deletedStaffIds.includes(matchedStaff.id)) {
+        saveToStorage(STORAGE_KEYS.DELETED_STAFF_IDS, [...deletedStaffIds, matchedStaff.id]);
+      }
+      saveToStorage(STORAGE_KEYS.COMPANY_STAFF, staffList.filter((s) => s.id !== matchedStaff.id));
+      syncDocDelete(FIRESTORE_COLLECTIONS.COMPANY_STAFF, matchedStaff.id);
+    }
+
     const list = loadFromStorage<ManagedUser[]>(STORAGE_KEYS.MANAGED_USERS, initialManagedUsers);
     const filtered = list.filter((u) => u.id !== userId);
     saveToStorage(STORAGE_KEYS.MANAGED_USERS, filtered);
@@ -3842,7 +3940,7 @@ export const storageService = {
         ...profile,
         officialName: 'PT. RBS GROUP',
         shortName: 'RBS',
-        logoUrl: createDefaultCompanyLogoSvg('RBS', 'PT. RBS GROUP'),
+        logoUrl: '/logo-rbs.jpg',
         email: profile.email?.replace(/suryaland\.co\.id/g, 'rbsgroup.co.id') || 'corporate@rbsgroup.co.id',
         website: profile.website?.replace(/suryaland\.co\.id/g, 'rbsgroup.co.id') || 'https://rbsgroup.co.id',
         bankAccountInfo: profile.bankAccountInfo?.replace(/SURYALAND/g, 'RBS') || 'Bank Mandiri Cabang Pekanbaru: 108-00-1234567-8 a/n PT. RBS GROUP',
@@ -4032,7 +4130,9 @@ export const storageService = {
         username: payloadUserLower,
         password: payload.password,
         signatureUrl:
-          payload.signatureUrl && payload.signatureUrl.length <= 100000 ? payload.signatureUrl : undefined,
+          payload.signatureUrl && payload.signatureUrl.length <= 500000 
+            ? payload.signatureUrl 
+            : (existingUser?.signatureUrl || undefined),
         employeeIdNumber: payload.employeeIdNumber,
         assignedClientId: payload.assignedClientId || 'all',
         assignedClientName: payload.assignedClientName || 'Semua Proyek',
@@ -4056,7 +4156,7 @@ export const storageService = {
 
     saveToStorage(STORAGE_KEYS.COMPANY_STAFF, rawList);
 
-    if (payload.signatureUrl && payload.signatureUrl.length > 100000) {
+    if (payload.signatureUrl && payload.signatureUrl.length > 200000) {
       compressSignatureDataUrl(payload.signatureUrl).then((compressedSig) => {
         const compressedPayload: CompanyStaff = { ...payload, signatureUrl: compressedSig };
         const currentList = loadFromStorage<CompanyStaff[]>(STORAGE_KEYS.COMPANY_STAFF, []);
@@ -4066,6 +4166,14 @@ export const storageService = {
           saveToStorage(STORAGE_KEYS.COMPANY_STAFF, currentList);
         }
         syncDocWrite(FIRESTORE_COLLECTIONS.COMPANY_STAFF, compressedPayload);
+
+        const users = loadFromStorage<ManagedUser[]>(STORAGE_KEYS.MANAGED_USERS, []);
+        const uIdx = users.findIndex((u) => u.id === compressedPayload.linkedUserId || normalizeUsername(u.username) === normalizeUsername(compressedPayload.username));
+        if (uIdx >= 0) {
+          users[uIdx].signatureUrl = compressedSig;
+          saveToStorage(STORAGE_KEYS.MANAGED_USERS, users);
+          syncDocWrite(FIRESTORE_COLLECTIONS.USERS, users[uIdx]);
+        }
       });
     } else {
       syncDocWrite(FIRESTORE_COLLECTIONS.COMPANY_STAFF, payload);

@@ -973,7 +973,7 @@ export const initialCompanyProfile: CompanyProfile = {
   officialName: 'PT. RBS GROUP',
   shortName: 'RBS',
   tagline: 'Heavy Equipment & Plantation Land Clearing Contractor • Zero Burning Method',
-  logoUrl: createDefaultCompanyLogoSvg('RBS', 'PT. RBS GROUP'),
+  logoUrl: '/logo-rbs.jpg',
   npwp: '01.234.567.8-216.000',
   nib: '9120304561234',
   phone: '(0761) 554321',

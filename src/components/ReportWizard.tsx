@@ -113,7 +113,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
   const [date, setDate] = useState<string>(initialDate);
 
   const [allBlocks, setAllBlocks] = useState<Block[]>(() => storageService.getBlocks(undefined, authUser));
-  const [equipments, setEquipments] = useState<Equipment[]>(() => storageService.getActiveEquipmentsForDate(effectiveClientId, initialDate));
+  const [equipments, setEquipments] = useState<Equipment[]>(() => storageService.getEquipments());
   const [allWorkers, setAllWorkers] = useState<Worker[]>(() => storageService.getWorkers());
 
   // Filter blocks for selected client and supervisor assigned blocks using storageService
@@ -130,10 +130,19 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
     }
   }, [authUser?.assignedClientId, isSupervisor]);
 
-  // Sinkronisasi data alat berat dari modul Master Data Proyek saat client atau tanggal berubah
+  // Sinkronisasi data alat berat dari modul Master Data Proyek secara reaktif saat client, tanggal, atau update master data berubah
   useEffect(() => {
-    const freshEquips = storageService.getActiveEquipmentsForDate(selectedClientId, date);
-    setEquipments(freshEquips.length > 0 ? freshEquips : storageService.getEquipments());
+    const freshEquips = storageService.getEquipments();
+    setEquipments(freshEquips);
+    const handleMasterUpdate = () => {
+      setEquipments(storageService.getEquipments());
+    };
+    window.addEventListener('master-data-updated', handleMasterUpdate);
+    window.addEventListener('storage', handleMasterUpdate);
+    return () => {
+      window.removeEventListener('master-data-updated', handleMasterUpdate);
+      window.removeEventListener('storage', handleMasterUpdate);
+    };
   }, [selectedClientId, date]);
 
   const [selectedBlockId, setSelectedBlockId] = useState<string>(() => {
@@ -259,18 +268,12 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
             'EQ-1': ['EXCA-01'],
             'DZ-01': ['EQ-2'],
             'EQ-2': ['DZ-01'],
+            'EXCA-02': ['EQ-3'],
+            'EQ-3': ['EXCA-02'],
           };
           if (EXACT_ALIASES[cleanTarget]?.includes(cleanLog)) return true;
 
-          // 3. Validasi kategori alat: Ekskavator tidak boleh pernah cocok dengan Bulldozer
-          const isLogExca = cleanLog.includes('EXCA') || cleanLog.includes('EX-');
-          const isTargetExca = cleanTarget.includes('EXCA') || cleanTarget.includes('EX-');
-          const isLogBull = cleanLog.includes('DZ') || cleanLog.includes('BULL');
-          const isTargetBull = cleanTarget.includes('DZ') || cleanTarget.includes('BULL');
-
-          if ((isLogExca && !isTargetExca) || (isTargetExca && !isLogExca)) return false;
-          if ((isLogBull && !isTargetBull) || (isTargetBull && !isLogBull)) return false;
-
+          // Ekstraksi nomor unit (misal EXCA-01 -> 1, EXCA-02 -> 2)
           const extractUnitNumber = (s: string): number | null => {
             const m = s.match(/\d+/);
             return m ? parseInt(m[0], 10) : null;
@@ -279,8 +282,23 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
           const logNum = extractUnitNumber(cleanLog);
           const targetNum = extractUnitNumber(cleanTarget);
 
-          if (logNum !== null && targetNum !== null) {
-            return logNum === targetNum;
+          // 3. ATURAN KETAT: Jika nomor unit berbeda (misal 1 vs 2), MUTLAK TIDAK BOLEH COCOK meskipun model/nama sama
+          if (logNum !== null && targetNum !== null && logNum !== targetNum) {
+            return false;
+          }
+
+          // 4. Validasi kategori alat: Ekskavator tidak boleh pernah cocok dengan Bulldozer
+          const isLogExca = cleanLog.includes('EXCA') || cleanLog.includes('EX-');
+          const isTargetExca = cleanTarget.includes('EXCA') || cleanTarget.includes('EX-');
+          const isLogBull = cleanLog.includes('DZ') || cleanLog.includes('BULL');
+          const isTargetBull = cleanTarget.includes('DZ') || cleanTarget.includes('BULL');
+
+          if (isLogExca !== isTargetExca) return false;
+          if (isLogBull !== isTargetBull) return false;
+
+          // Jika nomor unit sama atau tidak ada nomor unit, verifikasi kecocokan
+          if (logNum !== null && targetNum !== null && logNum === targetNum) {
+            return (isLogExca === isTargetExca) && (isLogBull === isTargetBull);
           }
 
           return false;
@@ -361,7 +379,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
 
   // Step 3 & 5: Equipment Work Logs & Fuel Analytics
   const [equipmentLogs, setEquipmentLogs] = useState<EquipmentWorkLog[]>(() => {
-    const savedEquips = storageService.getActiveEquipmentsForDate(effectiveClientId, date);
+    const savedEquips = storageService.getEquipments();
     const initDate = date;
     return savedEquips.map((eq) => {
       const prevTankInitial = getPreviousRemainingFuelForEquipment(eq.id, initDate, effectiveClientId, eq.name);
@@ -1003,7 +1021,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
   };
 
   // Submit Handler
-  const handleSubmitReport = (asDraft: boolean = false) => {
+  const handleSubmitReport = async (asDraft: boolean = false) => {
     // Strict RBAC check for Pengawas: can only report for assigned client & assigned blocks
     if (isSupervisor) {
       if (selectedClient && authUser?.assignedClientId && authUser.assignedClientId !== 'all') {
@@ -1097,8 +1115,8 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
     };
 
     try {
-      storageService.saveReport(newReport);
-      onReportSaved(newReport);
+      const savedReport = await storageService.saveReport(newReport);
+      onReportSaved(savedReport);
     } catch (error) {
       console.error('Failed to save report:', error);
       // Assuming showToast is available in scope or needs to be handled

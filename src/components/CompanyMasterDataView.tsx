@@ -86,9 +86,17 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
   // =========================================================================
   const [profileForm, setProfileForm] = useState<CompanyProfile>(companyProfile);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   useEffect(() => {
-    setProfileForm(companyProfile);
+    if (companyProfile) {
+      setProfileForm((prev) => ({
+        ...companyProfile,
+        logoUrl: companyProfile.logoUrl && companyProfile.logoUrl !== '/logo-rbs.jpg'
+          ? companyProfile.logoUrl
+          : (prev.logoUrl || companyProfile.logoUrl),
+      }));
+    }
   }, [companyProfile]);
 
   const handleProfileChange = (field: keyof CompanyProfile, value: string) => {
@@ -128,7 +136,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const maxDim = 400;
+        const maxDim = 250;
         let width = img.width;
         let height = img.height;
 
@@ -145,7 +153,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.drawImage(img, 0, 0, width, height);
-          const compressedDataUrl = canvas.toDataURL('image/png', 0.9);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
           setProfileForm((prev) => ({ ...prev, logoUrl: compressedDataUrl }));
           showToast('Logo berhasil dimuat! Klik "Simpan Perubahan Identitas Perusahaan" untuk menerapkan ke seluruh sistem.', 'success');
         }
@@ -157,33 +165,59 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
   };
 
   const handleResetToDefaultLogo = () => {
-    const defaultSvg = createDefaultCompanyLogoSvg(
-      profileForm.shortName || 'RBS',
-      profileForm.officialName || 'PT. RBS GROUP'
-    );
     setProfileForm((prev) => ({
       ...prev,
-      logoUrl: defaultSvg,
+      logoUrl: '/logo-rbs.jpg',
     }));
-    showToast('Logo direset ke format vektor resmi perusahaan.', 'info');
+    showToast('Logo direset ke logo resmi PT RBS GROUP.', 'info');
   };
 
-  const handleSaveCompanyProfile = (e: React.FormEvent) => {
+  const validateLogoSize = (dataUrl: string): boolean => {
+    // 1MB limit for Firestore document field
+    const sizeInBytes = (dataUrl.length * 3) / 4;
+    if (sizeInBytes > 1024 * 1024) {
+      showToast('Logo terlalu besar (melebihi 1MB). Silakan gunakan gambar yang lebih kecil atau kompres ulang.', 'error');
+      return false;
+    }
+    return true;
+  };
+
+  const handleSaveCompanyProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!profileForm.shortName.trim()) {
+    if (!profileForm.shortName || !profileForm.shortName.trim()) {
       showToast('Nama Singkat Perusahaan (Nama Apps) wajib diisi.', 'error');
       return;
     }
-    if (!profileForm.officialName.trim()) {
+    if (!profileForm.officialName || !profileForm.officialName.trim()) {
       showToast('Nama Resmi Perusahaan wajib diisi.', 'error');
+      return;
+    }
+
+    if (profileForm.logoUrl && profileForm.logoUrl.startsWith('data:image/') && !validateLogoSize(profileForm.logoUrl)) {
       return;
     }
 
     setIsSavingProfile(true);
     try {
-      const resolvedAddress = profileForm.address ?? profileForm.headOfficeAddress ?? '';
-      const resolvedBank = profileForm.bankAccount ?? profileForm.bankAccountInfo ?? '';
+      const resolvedAddress = profileForm.address ?? profileForm.headOfficeAddress ?? companyProfile.headOfficeAddress ?? '';
+      const resolvedBank = profileForm.bankAccount ?? profileForm.bankAccountInfo ?? companyProfile.bankAccountInfo ?? '';
+      
+      let finalLogoUrl = profileForm.logoUrl || companyProfile.logoUrl || '/logo-rbs.jpg';
+      
+      if (finalLogoUrl.startsWith('data:image/')) {
+        // Attempt upload to storage
+        try {
+          setUploadProgress(0);
+          finalLogoUrl = await import('../services/imageManager').then(m => m.uploadImageWithFallback(finalLogoUrl, `company/logo-${Date.now()}`, (p) => setUploadProgress(p)));
+          setUploadProgress(null);
+        } catch (e) {
+          showToast('Upload logo ke storage gagal, menggunakan fallback lokal. Mohon periksa koneksi.', 'warning');
+          setUploadProgress(null);
+        }
+      }
+
       const payload: CompanyProfile = {
+        ...companyProfile,
         ...profileForm,
         shortName: profileForm.shortName.trim().toUpperCase(),
         officialName: profileForm.officialName.trim(),
@@ -191,6 +225,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
         headOfficeAddress: resolvedAddress,
         bankAccount: resolvedBank,
         bankAccountInfo: resolvedBank,
+        logoUrl: finalLogoUrl,
         updatedAt: new Date().toISOString(),
       };
 
@@ -208,7 +243,8 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
       });
 
       showToast(`Identitas resmi dan logo ${payload.shortName} berhasil disimpan & disinkronkan!`, 'success');
-    } catch {
+    } catch (err) {
+      console.error('Error saving company profile:', err);
       showToast('Gagal menyimpan profil identitas perusahaan.', 'error');
     } finally {
       setIsSavingProfile(false);
@@ -637,7 +673,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
           ? [selectedClient.contractNumber]
           : ['Akses Semua Blok']);
 
-    const signatureFinal = staffFormData.signatureUrl || createSimulatedSignatureSvg(staffFormData.fullName, staffFormData.jobRole);
+    const signatureFinal = staffFormData.signatureUrl || existingStaff?.signatureUrl || createSimulatedSignatureSvg(staffFormData.fullName, staffFormData.jobRole);
 
     const payload: CompanyStaff = {
       id: staffId,
@@ -1153,7 +1189,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                       type="text"
                       required
                       placeholder="Contoh: RBS"
-                      value={profileForm.shortName}
+                      value={profileForm.shortName || ''}
                       onChange={(e) => handleProfileChange('shortName', e.target.value.toUpperCase())}
                       className="w-full px-3.5 py-2.5 bg-white border border-amber-300 rounded-xl font-black text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
                     />
@@ -1171,7 +1207,7 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
                       type="text"
                       required
                       placeholder="Contoh: PT. RBS GROUP"
-                      value={profileForm.officialName}
+                      value={profileForm.officialName || ''}
                       onChange={(e) => handleProfileChange('officialName', e.target.value)}
                       className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 font-bold text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                     />
@@ -2946,6 +2982,23 @@ export const CompanyMasterDataView: React.FC<CompanyMasterDataViewProps> = ({
           </div>
         </div>
       )}
+
+        {/* SAVING INDICATOR */}
+        {isSavingProfile && (
+          <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white p-6 rounded-3xl shadow-2xl flex flex-col items-center gap-4">
+              <div className="w-10 h-10 border-4 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
+              <p className="text-sm font-bold text-slate-800">
+                {uploadProgress !== null ? `Mengunggah Logo... ${Math.round(uploadProgress)}%` : 'Menyimpan Perubahan...'}
+              </p>
+              {uploadProgress !== null && (
+                <div className="w-64 h-2 bg-slate-200 rounded-full overflow-hidden">
+                  <div className="h-full bg-amber-500 transition-all duration-300" style={{ width: `${uploadProgress}%` }}></div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
     </div>
   );

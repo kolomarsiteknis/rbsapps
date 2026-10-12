@@ -14,6 +14,7 @@ import {
   disableNetwork,
   getDocFromServer
 } from 'firebase/firestore';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import rawConfig from '../../firebase-applet-config.json';
 
 // Safe environment variable & config resolution to avoid undefined or malformed values
@@ -262,5 +263,9 @@ export {
   writeBatch, 
   enableNetwork, 
   disableNetwork,
-  getDocFromServer
+  getDocFromServer,
+  getStorage,
+  ref,
+  uploadBytes,
+  getDownloadURL
 };
